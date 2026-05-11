@@ -1,0 +1,297 @@
+"""CLI entry point for career-planner."""
+
+import typer
+
+app = typer.Typer(
+    name="career",
+    help="A local-first, CLI-based personal career planning tool.",
+    no_args_is_help=True,
+)
+
+# --- Command groups ---
+
+skills_app = typer.Typer(help="Manage your skills inventory.")
+app.add_typer(skills_app, name="skills")
+
+brag_app = typer.Typer(help="Record and review career achievements.")
+app.add_typer(brag_app, name="brag")
+
+opportunity_app = typer.Typer(help="Manage tracked career opportunities.")
+app.add_typer(opportunity_app, name="opportunity")
+
+profile_app = typer.Typer(help="View and edit your career profile.")
+app.add_typer(profile_app, name="profile")
+
+criteria_app = typer.Typer(help="Manage your job criteria and dealbreakers.")
+app.add_typer(criteria_app, name="criteria")
+
+path_app = typer.Typer(help="Explore career transition paths.")
+app.add_typer(path_app, name="path")
+
+data_app = typer.Typer(help="Download and update bundled datasets.")
+app.add_typer(data_app, name="data")
+
+memory_app = typer.Typer(help="Manage vector search and semantic memory.")
+app.add_typer(memory_app, name="memory")
+
+mcp_app = typer.Typer(help="Start the MCP server for external integrations.")
+app.add_typer(mcp_app, name="mcp")
+
+
+# --- Top-level commands (stubs) ---
+
+
+@app.command()
+def man() -> None:
+    """Open the career-planner manual in your pager."""
+    typer.echo("TODO: Open docs/man.md in pager (less/more)")
+
+
+@app.command()
+def init(
+    directory: str = typer.Argument(
+        ".", help="Directory to initialize the workspace in."
+    ),
+    language: str = typer.Option(
+        "en", "--language", "-l", help="CLI language (en or vi)."
+    ),
+) -> None:
+    """Initialize a new career workspace."""
+    typer.echo(f"TODO: Initialize workspace in {directory} with language={language}")
+
+
+@app.command()
+def status() -> None:
+    """Display a terminal dashboard of your career planning status."""
+    typer.echo("TODO: Show status dashboard")
+
+
+@app.command()
+def add(
+    item_type: str = typer.Argument(..., help="Type of item to add: resume, opportunity"),
+) -> None:
+    """Add a resume or opportunity to the workspace."""
+    typer.echo(f"TODO: Add {item_type}")
+
+
+@app.command()
+def gap(
+    opportunity: str = typer.Argument(..., help="Opportunity filename (without extension)."),
+    suggest: bool = typer.Option(False, "--suggest", help="Ask AI for gap-closing suggestions."),
+) -> None:
+    """Run a skill gap analysis against an opportunity."""
+    typer.echo(f"TODO: Gap analysis for {opportunity} (suggest={suggest})")
+
+
+@app.command()
+def compare(
+    opp1: str = typer.Argument(..., help="First opportunity."),
+    opp2: str = typer.Argument(..., help="Second opportunity."),
+    advise: bool = typer.Option(False, "--advise", help="Ask AI for trade-off analysis."),
+) -> None:
+    """Compare two opportunities side by side."""
+    typer.echo(f"TODO: Compare {opp1} vs {opp2} (advise={advise})")
+
+
+@app.command()
+def chat() -> None:
+    """Start an AI career coaching conversation."""
+    typer.echo("TODO: Start coaching chat")
+
+
+@app.command()
+def validate() -> None:
+    """Lint the workspace for completeness and freshness."""
+    typer.echo("TODO: Validate workspace")
+
+
+@app.command()
+def timeline() -> None:
+    """Render an ASCII timeline of your career history and goals."""
+    typer.echo("TODO: Show timeline")
+
+
+# --- Command group stubs ---
+
+
+@profile_app.command("edit")
+def profile_edit() -> None:
+    """Open profile.yml in your editor."""
+    typer.echo("TODO: Open profile in editor")
+
+
+@profile_app.command("show")
+def profile_show() -> None:
+    """Print a formatted summary of your profile."""
+    typer.echo("TODO: Show profile")
+
+
+@criteria_app.command("edit")
+def criteria_edit() -> None:
+    """Open criteria.yml to define job preferences and dealbreakers."""
+    typer.echo("TODO: Open criteria in editor")
+
+
+@criteria_app.command("show")
+def criteria_show() -> None:
+    """Print a formatted summary of your job criteria."""
+    typer.echo("TODO: Show criteria")
+
+
+@criteria_app.command("check")
+def criteria_check(
+    opportunity: str = typer.Argument(..., help="Opportunity to check against criteria."),
+) -> None:
+    """Check an opportunity against your job criteria."""
+    typer.echo(f"TODO: Check {opportunity} against criteria")
+
+
+@skills_app.command("list")
+def skills_list(
+    category: str | None = typer.Option(None, "--category", help="Filter by skill category."),
+) -> None:
+    """Display your skills inventory."""
+    typer.echo(f"TODO: List skills (category={category})")
+
+
+@skills_app.command("add")
+def skills_add(
+    skill: str = typer.Argument(..., help="Skill name to add."),
+    rating: int | None = typer.Option(None, "--rating", "-r", min=1, max=5, help="Self-rating 1-5."),
+    example: str | None = typer.Option(None, "--example", "-e", help="One-line real-world example."),
+) -> None:
+    """Add a skill to your inventory."""
+    typer.echo(f"TODO: Add skill '{skill}' rating={rating} example={example}")
+
+
+@skills_app.command("remove")
+def skills_remove(
+    skill: str = typer.Argument(..., help="Skill name to remove."),
+) -> None:
+    """Remove a skill from your inventory."""
+    typer.echo(f"TODO: Remove skill '{skill}'")
+
+
+@skills_app.command("browse")
+def skills_browse(
+    search: str | None = typer.Option(None, "--search", "-s", help="Keyword search."),
+    for_occupation: str | None = typer.Option(None, "--for", help="Show skills for an occupation."),
+    vs_occupation: str | None = typer.Option(None, "--vs", help="Compare with another occupation."),
+) -> None:
+    """Browse the ESCO skills taxonomy interactively."""
+    typer.echo(f"TODO: Browse skills (search={search}, for={for_occupation}, vs={vs_occupation})")
+
+
+@brag_app.command("add")
+def brag_add(
+    date: str | None = typer.Option(None, "--date", help="Entry date (YYYY-MM-DD)."),
+) -> None:
+    """Record a new achievement using the XYZ format."""
+    typer.echo(f"TODO: Add brag entry (date={date})")
+
+
+@brag_app.command("list")
+def brag_list(
+    last: int = typer.Option(10, "--last", "-n", help="Number of entries to show."),
+    tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag."),
+) -> None:
+    """List brag entries."""
+    typer.echo(f"TODO: List brag entries (last={last}, tag={tag})")
+
+
+@brag_app.command("show")
+def brag_show(
+    entry: str = typer.Argument(..., help="Entry filename."),
+) -> None:
+    """Show a specific brag entry."""
+    typer.echo(f"TODO: Show brag entry '{entry}'")
+
+
+@brag_app.command("summary")
+def brag_summary(
+    period: str = typer.Option("quarter", "--period", "-p", help="quarter, half, year, or all."),
+) -> None:
+    """Generate a plain-text accomplishment summary."""
+    typer.echo(f"TODO: Brag summary for period={period}")
+
+
+@brag_app.command("reflect")
+def brag_reflect(
+    last: int | None = typer.Option(None, "--last", "-n", help="Limit to N entries."),
+    tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag."),
+) -> None:
+    """Send brag entries to AI for pattern analysis. Requires API key."""
+    typer.echo(f"TODO: AI reflect on brag entries (last={last}, tag={tag})")
+
+
+@opportunity_app.command("list")
+def opportunity_list(
+    status: str | None = typer.Option(None, "--status", help="Filter by status."),
+) -> None:
+    """List tracked opportunities."""
+    typer.echo(f"TODO: List opportunities (status={status})")
+
+
+@opportunity_app.command("show")
+def opportunity_show(
+    opportunity: str = typer.Argument(..., help="Opportunity filename."),
+) -> None:
+    """Show details of a tracked opportunity."""
+    typer.echo(f"TODO: Show opportunity '{opportunity}'")
+
+
+@path_app.command("show")
+def path_show(
+    from_role: str | None = typer.Option(None, "--from", help="Starting role."),
+    to_role: str | None = typer.Option(None, "--to", help="Target role."),
+    online: bool = typer.Option(False, "--online", help="Query HuggingFace API for richer data."),
+) -> None:
+    """Show career transition paths between occupations."""
+    typer.echo(f"TODO: Show path from={from_role} to={to_role} (online={online})")
+
+
+@path_app.command("explore")
+def path_explore() -> None:
+    """Interactively explore career transitions from your current role."""
+    typer.echo("TODO: Interactive path explorer")
+
+
+@data_app.command("download")
+def data_download(
+    dataset: str = typer.Argument(..., help="Dataset to download: esco-full, onet-full."),
+) -> None:
+    """Download optional datasets."""
+    typer.echo(f"TODO: Download dataset '{dataset}'")
+
+
+@data_app.command("update")
+def data_update() -> None:
+    """Check for and apply JobHop transition matrix updates."""
+    typer.echo("TODO: Check for JobHop updates")
+
+
+@memory_app.command("enable")
+def memory_enable() -> None:
+    """Initialize LanceDB vector search."""
+    typer.echo("TODO: Enable memory/vector search")
+
+
+@memory_app.command("search")
+def memory_search(
+    query: str = typer.Argument(..., help="Search query."),
+) -> None:
+    """Semantic search across workspace content."""
+    typer.echo(f"TODO: Memory search for '{query}'")
+
+
+@mcp_app.command("start")
+def mcp_start(
+    transport: str = typer.Option("stdio", "--transport", help="stdio, sse, or streamable-http."),
+    port: int = typer.Option(8000, "--port", help="Port for HTTP transports."),
+) -> None:
+    """Start the career planner MCP server."""
+    typer.echo(f"TODO: Start MCP server (transport={transport}, port={port})")
+
+
+if __name__ == "__main__":
+    app()
