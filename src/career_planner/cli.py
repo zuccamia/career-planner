@@ -5,6 +5,7 @@ import typer
 from career_planner.commands import about as about_cmd
 from career_planner.commands import init as init_cmd
 from career_planner.commands import man as man_cmd
+from career_planner.commands import profile as profile_cmd
 from career_planner.commands import skills as skills_cmd
 from career_planner.i18n import setup as setup_i18n
 
@@ -152,15 +153,21 @@ def timeline() -> None:
 
 
 @profile_app.command("edit")
-def profile_edit() -> None:
-    """Open profile.yml in your editor."""
-    typer.echo("TODO: Open profile in editor")
+def profile_edit(
+    use_editor: bool = typer.Option(
+        False,
+        "--editor",
+        help="Open profile.yml in your editor instead of the guided prompts.",
+    ),
+) -> None:
+    """Edit your profile via guided prompts (--editor opens raw YAML)."""
+    profile_cmd.edit(use_editor=use_editor)
 
 
 @profile_app.command("show")
 def profile_show() -> None:
     """Print a formatted summary of your profile."""
-    typer.echo("TODO: Show profile")
+    profile_cmd.show()
 
 
 @criteria_app.command("edit")

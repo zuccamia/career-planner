@@ -9,6 +9,9 @@ from __future__ import annotations
 import shutil
 from importlib import resources
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 WORKSPACE_MARKER = "config.yml"
 
@@ -67,6 +70,15 @@ def require_workspace(start: Path | None = None) -> Path:
     if ws is None:
         raise SystemExit(2)
     return ws
+
+
+def load_config(workspace: Path) -> dict[str, Any]:
+    """Read ``config.yml`` from a workspace. Returns an empty dict if missing."""
+    path = workspace / WORKSPACE_MARKER
+    if not path.exists():
+        return {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return raw if isinstance(raw, dict) else {}
 
 
 def create_workspace(path: Path, language: str = "en") -> Path:

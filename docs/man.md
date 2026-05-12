@@ -36,9 +36,12 @@ The tool supports internationalization (i18n) via Python's `gettext` module. Set
 
 ### PROFILE
 
-**career profile edit**
+**career profile edit** [**--editor**]
 
-:   Open `profile.yml` in the user's editor. The profile contains the user's current role, target role, career history, values, and constraints. Fields are pre-populated with guided prompts on first run.
+:   Walk through the profile field by field via guided prompts. The current value is shown as the default — press Enter to keep it. For list fields (values, constraints, goals), entries are entered comma-separated; type `-` to clear a list. Existing career history is preserved as-is, and you're prompted to append new past roles at the end.
+
+    **--editor**
+    :   Skip the prompts and open `profile.yml` directly in the editor configured via the `editor` field in `config.yml` or the `$EDITOR` environment variable (fallback: `vim`). Useful for bulk edits or editing fields not covered by the prompts.
 
 **career profile show**
 
