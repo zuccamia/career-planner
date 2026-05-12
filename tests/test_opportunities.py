@@ -308,6 +308,89 @@ def test_extract_job_posting_salary_single_value() -> None:
     assert result["salary_currency"] == "EUR"
 
 
+def test_extract_job_posting_skills_string() -> None:
+    payload = """
+    {
+      "@type": "JobPosting",
+      "title": "Engineer",
+      "skills": "Python, AWS; Kubernetes"
+    }
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert result["required_skills"] == ["Python", "AWS", "Kubernetes"]
+
+
+def test_extract_job_posting_skills_list_of_strings() -> None:
+    payload = """
+    {
+      "@type": "JobPosting",
+      "title": "Engineer",
+      "skills": ["Python", "AWS", "Kubernetes"]
+    }
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert result["required_skills"] == ["Python", "AWS", "Kubernetes"]
+
+
+def test_extract_job_posting_skills_defined_terms() -> None:
+    payload = """
+    {
+      "@type": "JobPosting",
+      "title": "Engineer",
+      "skills": [
+        {"@type": "DefinedTerm", "name": "Python"},
+        {"@type": "DefinedTerm", "name": "AWS"}
+      ]
+    }
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert result["required_skills"] == ["Python", "AWS"]
+
+
+def test_extract_job_posting_skills_single_defined_term() -> None:
+    payload = """
+    {
+      "@type": "JobPosting",
+      "title": "Engineer",
+      "skills": {"@type": "DefinedTerm", "name": "Python"}
+    }
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert result["required_skills"] == ["Python"]
+
+
+def test_extract_job_posting_skills_falls_back_to_skills_required() -> None:
+    payload = """
+    {
+      "@type": "JobPosting",
+      "title": "Engineer",
+      "skillsRequired": "Python\\nAWS\\nKubernetes"
+    }
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert result["required_skills"] == ["Python", "AWS", "Kubernetes"]
+
+
+def test_extract_job_posting_skills_dedupes_preserving_order() -> None:
+    payload = """
+    {
+      "@type": "JobPosting",
+      "title": "Engineer",
+      "skills": ["Python", "python", "AWS", "PYTHON"]
+    }
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert result["required_skills"] == ["Python", "AWS"]
+
+
+def test_extract_job_posting_skills_absent_when_no_field() -> None:
+    payload = """
+    {"@type": "JobPosting", "title": "Engineer"}
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert "required_skills" not in result
+
+
 def test_extract_job_posting_ignores_malformed_jsonld() -> None:
     html_doc = (
         '<html><head>'
@@ -408,6 +491,38 @@ def test_cli_opportunity_add_with_jsonld_url_populates_fields(
     assert str(front["date_posted"]) == "2026-05-07"
     assert str(front["deadline"]) == "2026-11-03"
     assert "Build intelligent infrastructure" in body
+
+
+def test_cli_opportunity_add_with_jsonld_skills_writes_required_skills(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    payload = """
+    <script type="application/ld+json">
+    {
+      "@type": "JobPosting",
+      "title": "Senior Engineer",
+      "hiringOrganization": {"name": "Acme"},
+      "skills": ["Python", "AWS", "Kubernetes"]
+    }
+    </script>
+    """
+    with patch.object(opportunity_cmd.opp_core, "fetch_url", return_value=payload):
+        result = runner.invoke(
+            app,
+            [
+                "opportunity",
+                "add",
+                "--url",
+                "https://example.com/jobs/1",
+                "--no-editor",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+
+    target = ws / "opportunities" / "senior-engineer-at-acme.md"
+    front, _body = opp_core.parse_markdown(target.read_text(encoding="utf-8"))
+    assert front["required_skills"] == ["Python", "AWS", "Kubernetes"]
 
 
 def test_cli_opportunity_add_with_explicit_title_keeps_extracted_fields(

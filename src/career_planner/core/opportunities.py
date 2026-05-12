@@ -405,11 +405,61 @@ def _job_posting_to_fields(posting: dict[str, Any]) -> dict[str, Any]:
 
     result.update(_salary_from_jsonld(posting.get("baseSalary")))
 
+    skills = _skills_from_jsonld(posting)
+    if skills:
+        result["required_skills"] = skills
+
     description = _html_to_text(str(posting.get("description") or ""))
     if description:
         result["description"] = description
 
     return result
+
+
+_SKILL_SPLIT_RE = re.compile(r"[,;\n•|]+")
+
+
+def _skills_from_jsonld(posting: dict[str, Any]) -> list[str]:
+    """Extract required skills from a Schema.org JobPosting node.
+
+    Reads ``skills`` (current property) with a fallback to the deprecated
+    ``skillsRequired``. Values can be a string, a list of strings, a
+    DefinedTerm node, or a list of DefinedTerm nodes — all are coerced to
+    a deduplicated list of trimmed phrases, preserving input order.
+    """
+    raw = posting.get("skills")
+    if raw in (None, "", []):
+        raw = posting.get("skillsRequired")
+    items = _coerce_skill_items(raw)
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in items:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def _coerce_skill_items(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return _split_skill_string(value)
+    if isinstance(value, list):
+        out: list[str] = []
+        for entry in value:
+            out.extend(_coerce_skill_items(entry))
+        return out
+    if isinstance(value, dict):
+        name = value.get("name")
+        if isinstance(name, str) and name.strip():
+            return [name.strip()]
+    return []
+
+
+def _split_skill_string(text: str) -> list[str]:
+    parts = _SKILL_SPLIT_RE.split(text)
+    return [p.strip() for p in parts if p.strip()]
 
 
 def _organization_name(value: Any) -> str:
