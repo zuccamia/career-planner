@@ -3,6 +3,7 @@
 import typer
 
 from career_planner.commands import about as about_cmd
+from career_planner.commands import criteria as criteria_cmd
 from career_planner.commands import gap as gap_cmd
 from career_planner.commands import init as init_cmd
 from career_planner.commands import man as man_cmd
@@ -165,15 +166,21 @@ def profile_show() -> None:
 
 
 @criteria_app.command("edit")
-def criteria_edit() -> None:
-    """Open criteria.yml to define job preferences and dealbreakers."""
-    typer.echo("TODO: Open criteria in editor")
+def criteria_edit(
+    use_editor: bool = typer.Option(
+        False,
+        "--editor",
+        help="Open criteria.yml in your editor instead of the guided prompts.",
+    ),
+) -> None:
+    """Edit criteria via guided prompts (--editor opens raw YAML)."""
+    criteria_cmd.edit(use_editor=use_editor)
 
 
 @criteria_app.command("show")
 def criteria_show() -> None:
     """Print a formatted summary of your job criteria."""
-    typer.echo("TODO: Show criteria")
+    criteria_cmd.show()
 
 
 @criteria_app.command("check")
@@ -181,7 +188,7 @@ def criteria_check(
     opportunity: str = typer.Argument(..., help="Opportunity to check against criteria."),
 ) -> None:
     """Check an opportunity against your job criteria."""
-    typer.echo(f"TODO: Check {opportunity} against criteria")
+    criteria_cmd.check(opportunity=opportunity)
 
 
 @skills_app.command("list")

@@ -49,9 +49,12 @@ The tool supports internationalization (i18n) via Python's `gettext` module. Set
 
 ### JOB CRITERIA
 
-**career criteria edit**
+**career criteria edit** [**--editor**]
 
-:   Open `criteria.yml` in the user's editor. The criteria file captures the user's job preferences and dealbreakers across five dimensions: function, culture, growth, compensation, and location. Fields are pre-populated with guided prompts on first run.
+:   Walk through your job criteria dimension by dimension via guided prompts. The criteria file captures the user's job preferences and dealbreakers across five dimensions: function, culture, growth, compensation, and location. The current value is shown as the default — press Enter to keep it. For list fields (want, dread, dealbreakers, etc.), entries are entered comma-separated; type `-` to clear a list.
+
+    **--editor**
+    :   Skip the prompts and open `criteria.yml` directly in the editor configured via the `editor` field in `config.yml` or the `$EDITOR` environment variable (fallback: `vim`). Useful for bulk edits or preserving the file's comments.
 
     Example `criteria.yml`:
 
