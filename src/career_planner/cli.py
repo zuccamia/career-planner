@@ -2,6 +2,11 @@
 
 import typer
 
+from career_planner.commands import init as init_cmd
+from career_planner.i18n import setup as setup_i18n
+
+setup_i18n()
+
 app = typer.Typer(
     name="career",
     help="A local-first, CLI-based personal career planning tool.",
@@ -57,7 +62,7 @@ def init(
     ),
 ) -> None:
     """Initialize a new career workspace."""
-    typer.echo(f"TODO: Initialize workspace in {directory} with language={language}")
+    init_cmd.run(directory=directory, language=language)
 
 
 @app.command()

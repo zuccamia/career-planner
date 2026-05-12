@@ -1,0 +1,29 @@
+# Your Career Profile
+# Fill in as much or as little as you can. The AI coach (if enabled) will
+# reference this file. Update it as your situation evolves.
+
+name: ""
+
+# Where you are now
+current_role: ""        # e.g. "Software Engineer at Acme Corp"
+current_company: ""
+years_experience: 0
+
+# Where you want to go
+target_role: ""         # e.g. "Staff Engineer" or "Engineering Manager"
+target_timeline: ""     # e.g. "2-3 years"
+
+# What matters to you (free-form)
+values: []              # e.g. ["impact", "learning", "autonomy"]
+constraints: []         # e.g. ["needs visa sponsorship", "no relocation"]
+
+# Career history (most recent first)
+history:
+  - role: ""
+    company: ""
+    start: ""           # YYYY-MM
+    end: ""             # YYYY-MM or "present"
+    summary: ""
+
+# Future goals or milestones
+goals: []
