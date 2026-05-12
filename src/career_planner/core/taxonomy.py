@@ -26,6 +26,7 @@ class Skill:
     skill_type: str
     reuse_level: str
     description: str
+    alt_labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -37,6 +38,7 @@ class Occupation:
     isco_code: str
     code: str
     description: str
+    alt_labels: tuple[str, ...] = ()
 
 
 def _read_bundled(name: str) -> str:
@@ -45,6 +47,14 @@ def _read_bundled(name: str) -> str:
         .joinpath("data", name)
         .read_text(encoding="utf-8")
     )
+
+
+def _coerce_alt_labels(raw: object) -> tuple[str, ...]:
+    if not raw:
+        return ()
+    if isinstance(raw, str):
+        return (raw,)
+    return tuple(str(x) for x in raw if x)
 
 
 @lru_cache(maxsize=1)
@@ -62,6 +72,7 @@ def load_skills() -> tuple[Skill, ...]:
             skill_type=str(item.get("skill_type") or ""),
             reuse_level=str(item.get("reuse_level") or ""),
             description=str(item.get("description") or ""),
+            alt_labels=_coerce_alt_labels(item.get("alt_labels")),
         )
         for item in items
     )
@@ -102,6 +113,27 @@ def _score(query: str, label: str) -> float:
     return SequenceMatcher(None, q, lbl).ratio()
 
 
+def _best_label_score(
+    query: str, preferred: str, alts: tuple[str, ...]
+) -> tuple[float, bool]:
+    """Score a query against a label and its synonyms.
+
+    Returns ``(score, via_preferred)``. ``via_preferred`` is True when the
+    chosen score came from the preferred label rather than an alt. Callers
+    use it as a tiebreaker so the canonical name wins when scores match.
+    """
+    best = _score(query, preferred)
+    via_preferred = True
+    for alt in alts:
+        if best >= 1.0 and via_preferred:
+            break
+        score = _score(query, alt)
+        if score > best:
+            best = score
+            via_preferred = False
+    return best, via_preferred
+
+
 def find_skill_matches(
     query: str, *, limit: int = 8, threshold: float = 0.55
 ) -> list[tuple[Skill, float]]:
@@ -110,17 +142,21 @@ def find_skill_matches(
     Returns up to `limit` matches with a score >= `threshold`, sorted by score
     descending. An exact (case-insensitive) match scores 1.0; substring and
     word-subset matches score in the 0.8-0.95 range; everything else falls
-    back to ``difflib.SequenceMatcher.ratio()``.
+    back to ``difflib.SequenceMatcher.ratio()``. Alt labels (ESCO synonyms)
+    are scored alongside the preferred label; the best hit wins, with the
+    preferred label as the tiebreaker.
     """
     if not query or not query.strip():
         return []
-    scored: list[tuple[Skill, float]] = []
+    scored: list[tuple[Skill, float, int]] = []
     for skill in load_skills():
-        s = _score(query, skill.preferred_label)
+        s, via_preferred = _best_label_score(
+            query, skill.preferred_label, skill.alt_labels
+        )
         if s >= threshold:
-            scored.append((skill, s))
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    return scored[:limit]
+            scored.append((skill, s, 0 if via_preferred else 1))
+    scored.sort(key=lambda t: (t[1], -t[2]), reverse=True)
+    return [(skill, score) for skill, score, _ in scored[:limit]]
 
 
 def search_skills_text(
@@ -136,15 +172,22 @@ def search_skills_text(
         return []
     q = query.lower().strip()
     q_tokens = _tokens(q)
-    scored: list[tuple[Skill, float]] = []
+    scored: list[tuple[Skill, float, int]] = []
     for skill in load_skills():
-        label_score = _score(q, skill.preferred_label)
+        label_score, via_preferred = _best_label_score(
+            q, skill.preferred_label, skill.alt_labels
+        )
         desc_score = _description_score(q_tokens, skill.description)
-        s = max(label_score, desc_score)
+        if desc_score > label_score:
+            s = desc_score
+            tie_rank = 2  # description matches lose ties to label matches
+        else:
+            s = label_score
+            tie_rank = 0 if via_preferred else 1
         if s >= threshold:
-            scored.append((skill, s))
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    return scored[:limit]
+            scored.append((skill, s, tie_rank))
+    scored.sort(key=lambda t: (t[1], -t[2]), reverse=True)
+    return [(skill, score) for skill, score, _ in scored[:limit]]
 
 
 def _description_score(q_tokens: set[str], description: str) -> float:
@@ -180,6 +223,7 @@ def load_occupations() -> tuple[Occupation, ...]:
             isco_code=str(item.get("isco_code") or ""),
             code=str(item.get("code") or ""),
             description=str(item.get("description") or ""),
+            alt_labels=_coerce_alt_labels(item.get("alt_labels")),
         )
         for item in items
     )
@@ -199,16 +243,23 @@ def find_occupation_by_uri(uri: str) -> Occupation | None:
 def find_occupation_matches(
     query: str, *, limit: int = 8, threshold: float = 0.55
 ) -> list[tuple[Occupation, float]]:
-    """Fuzzy-match `query` against ESCO occupation titles."""
+    """Fuzzy-match `query` against ESCO occupation titles and their synonyms.
+
+    Preferred-label hits win ties against alt-label hits at the same score,
+    so the canonical name surfaces first when a query is a synonym shared
+    by multiple occupations.
+    """
     if not query or not query.strip():
         return []
-    scored: list[tuple[Occupation, float]] = []
+    scored: list[tuple[Occupation, float, int]] = []
     for occ in load_occupations():
-        s = _score(query, occ.preferred_label)
+        s, via_preferred = _best_label_score(
+            query, occ.preferred_label, occ.alt_labels
+        )
         if s >= threshold:
-            scored.append((occ, s))
-    scored.sort(key=lambda pair: pair[1], reverse=True)
-    return scored[:limit]
+            scored.append((occ, s, 0 if via_preferred else 1))
+    scored.sort(key=lambda t: (t[1], -t[2]), reverse=True)
+    return [(occ, score) for occ, score, _ in scored[:limit]]
 
 
 @lru_cache(maxsize=1)

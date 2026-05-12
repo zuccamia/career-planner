@@ -33,6 +33,28 @@ def test_find_occupation_matches_exact() -> None:
     assert score == 1.0
 
 
+def test_find_occupation_matches_via_alt_label() -> None:
+    # "software engineer" is an ESCO alt label for "software developer".
+    # Before alt-label scoring it ranked 9th; now it should be the top hit.
+    matches = taxonomy.find_occupation_matches("software engineer")
+    assert matches
+    top, score = matches[0]
+    assert top.preferred_label == "software developer"
+    assert score == 1.0
+
+
+def test_find_occupation_matches_preferred_wins_tie_against_alt() -> None:
+    # "data scientist" is the preferred label of one occupation and an alt
+    # label of another ("bioinformatics scientist"). Both score 1.0; the
+    # preferred-label hit must sort first so _resolve_occupation auto-picks
+    # the canonical match.
+    matches = taxonomy.find_occupation_matches("data scientist")
+    assert matches
+    top, score = matches[0]
+    assert top.preferred_label == "data scientist"
+    assert score == 1.0
+
+
 def test_find_occupation_by_uri_round_trip() -> None:
     occs = taxonomy.load_occupations()
     sample = occs[0]

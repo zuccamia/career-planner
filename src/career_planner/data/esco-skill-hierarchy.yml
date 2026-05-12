@@ -21,6 +21,8 @@ parents:
   http://data.europa.eu/esco/skill/04f1b938-d4d4-4cb1-a863-982af76b9d93:
   - http://data.europa.eu/esco/skill/21d2f96d-35f7-4e3f-9745-c533d2dd6e97
   - http://data.europa.eu/esco/skill/ad59afe4-6f8a-4bc4-acfd-0f228277508a
+  http://data.europa.eu/esco/skill/05e5e14f-ffa6-4106-b311-c6335ccc2bd2:
+  - http://data.europa.eu/esco/skill/f8413360-6114-40de-a276-c59b764b9913
   http://data.europa.eu/esco/skill/082967d4-b94c-4305-aa13-35a6aa8c5c7c:
   - http://data.europa.eu/esco/skill/60c78287-22eb-4103-9c8c-28deaa460da0
   - http://data.europa.eu/esco/skill/75d8e5d9-bef3-418b-9011-01bff9f27207

@@ -29,6 +29,15 @@ def test_find_skill_matches_exact_case_insensitive() -> None:
     assert score == 1.0
 
 
+def test_find_skill_matches_via_alt_label() -> None:
+    # "Client-side JavaScript" is an ESCO alt label of the "JavaScript" skill.
+    matches = taxonomy.find_skill_matches("Client-side JavaScript")
+    assert matches
+    top, score = matches[0]
+    assert top.preferred_label == "JavaScript"
+    assert score == 1.0
+
+
 def test_find_skill_matches_substring_query() -> None:
     matches = taxonomy.find_skill_matches("Python")
     labels = [s.preferred_label for s, _ in matches]

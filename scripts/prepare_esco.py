@@ -78,6 +78,27 @@ def _read_csv(path: Path) -> Iterator[dict[str, str]]:
         yield from csv.DictReader(fh)
 
 
+def _parse_alt_labels(raw: str, preferred: str) -> list[str]:
+    """Split ESCO's newline-separated altLabels field into a deduped list.
+
+    Drops blanks, exact duplicates of the preferred label (case-insensitive),
+    and duplicates within the alt-label list itself (case-insensitive), while
+    preserving original casing and order for the first occurrence.
+    """
+    seen: set[str] = {preferred.lower().strip()}
+    out: list[str] = []
+    for chunk in (raw or "").split("\n"):
+        label = chunk.strip()
+        if not label:
+            continue
+        key = label.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(label)
+    return out
+
+
 def _filter_occupations(rows: Iterable[dict[str, str]]) -> dict[str, dict]:
     keep: dict[str, dict] = {}
     for row in rows:
@@ -87,9 +108,12 @@ def _filter_occupations(rows: Iterable[dict[str, str]]) -> dict[str, dict]:
         uri = (row.get("conceptUri") or "").strip()
         if not uri:
             continue
+        preferred = (row.get("preferredLabel") or "").strip()
+        alt_labels = _parse_alt_labels(row.get("altLabels") or "", preferred)
         keep[uri] = {
             "uri": uri,
-            "preferred_label": (row.get("preferredLabel") or "").strip(),
+            "preferred_label": preferred,
+            "alt_labels": alt_labels or None,
             "isco_code": isco,
             "code": (row.get("code") or "").strip() or None,
             "description": (row.get("description") or "").strip() or None,
@@ -146,9 +170,12 @@ def _load_skills(rows: Iterable[dict[str, str]], allowed: set[str]) -> dict[str,
         uri = (row.get("conceptUri") or "").strip()
         if uri not in allowed:
             continue
+        preferred = (row.get("preferredLabel") or "").strip()
+        alt_labels = _parse_alt_labels(row.get("altLabels") or "", preferred)
         skills[uri] = {
             "uri": uri,
-            "preferred_label": (row.get("preferredLabel") or "").strip(),
+            "preferred_label": preferred,
+            "alt_labels": alt_labels or None,
             "skill_type": (row.get("skillType") or "").strip() or None,
             "reuse_level": (row.get("reuseLevel") or "").strip() or None,
             "description": (row.get("description") or "").strip() or None,
