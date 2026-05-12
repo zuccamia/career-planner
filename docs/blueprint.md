@@ -30,7 +30,7 @@ An "Obsidian for your career" — a lightweight, privacy-first tool where all da
 │               (Typer + Rich terminal UI)                │
 ├─────────────────────────────────────────────────────────┤
 │                   Command Layer                         │
-│   init │ journal │ skills │ gap │ status │ path │ ...   │
+│   init │ man │ brag │ skills │ gap │ status │ path │... │
 ├──────────────────┬──────────────────────────────────────┤
 │  Pure Software   │         AI Layer (optional)          │
 │    Engine        │  ┌─────────────────────────────────┐ │
@@ -232,9 +232,7 @@ Checks the HuggingFace API for a newer version of JobHop, and if found, re-runs 
 | Command | Description |
 |---|---|
 | `career init` | Create workspace with starter templates, bundled data, and coaching config |
-| `career criteria edit` | Open `criteria.yml` to define job preferences and dealbreakers across 5 dimensions |
-| `career criteria show` | Print formatted summary of current job criteria |
-| `career criteria check <opportunity>` | Check an opportunity against job criteria; flag dealbreaker violations |
+| `career man` | Open the full user manual (docs/man.md) in a pager; `--no-pager` prints to stdout |
 | `career criteria edit` | Open `criteria.yml` to set job preferences and dealbreakers (function, culture, growth, compensation, location) |
 | `career criteria show` | Print formatted summary of current job criteria, flag incomplete dimensions |
 | `career criteria check <opportunity>` | Check an opportunity against criteria; flag dealbreaker violations, score alignment |
@@ -299,7 +297,7 @@ These are additive flags or subcommands layered on Tier 1–3 features. All AI i
 | Command | Description |
 |---|---|
 | `career memory enable` | Initialize LanceDB in `data/.vectordb/`, index existing content |
-| `career memory search <query>` | Semantic search across journal entries, conversations, opportunities |
+| `career memory search <query>` | Semantic search across brag entries, conversations, opportunities |
 | `career chat` (enhanced) | AI coaching with full context retrieval from past sessions |
 
 ---
@@ -529,11 +527,11 @@ This session can be done with Claude Code (asking it to write the scripts) or ma
 
 Estimated context: ~35K tokens (script writing + testing against real CSV data).
 
-### Session 1 — Scaffold and `career init`
+### Session 1 — Scaffold, `career init`, and `career man`
 
-Implement: `pyproject.toml` with entry points and optional extras `[ai,memory,mcp]`, Typer app skeleton with command group structure, `career init` command (creates workspace directory + copies templates), workspace discovery module (find workspace root from any subdirectory), config loading (`config.yml` parsing).
+Implement: `pyproject.toml` with entry points and optional extras `[ai,memory,mcp]`, Typer app skeleton with command group structure, `career init` command (creates workspace directory + copies templates), `career man` command (renders `docs/man.md` through Rich's pager, with `--no-pager` for piping), workspace discovery module (find workspace root from any subdirectory), config loading (`config.yml` parsing). Bundle `docs/man.md` into the wheel via `[tool.hatch.build.targets.wheel.force-include]` so the man page ships with the installed package.
 
-End state: `pip install -e .` works, `career init my-career` produces a real workspace directory.
+End state: `pip install -e .` works, `career init my-career` produces a real workspace directory, and `career man` opens the manual.
 
 Estimated context: ~26K tokens.
 
@@ -604,7 +602,7 @@ No existing tool combines local-first CLI, skill taxonomies, gap analysis, and A
 1. **Project name**: `career-planner`. There is a small existing GitHub repo (`sanatladkat/career-planner`) using the same name — a Streamlit web app, architecturally very different. The name is generic enough to share; no PyPI conflict exists. Alternative candidates if a rename is ever needed: `career-cli`, `careerkit`, `pathwise`, `waypoint`.
 2. **Resume parsing**: v1 stores PDF resumes as-is in `resumes/` with YAML frontmatter for date and target role versioning. No PDF parsing in v1.
 3. **ESCO subset**: Bundle a curated top ~1,000 skills focused on knowledge-worker / tech-worker roles. Full 13K taxonomy available via `career data download esco-full`.
-4. **JobHop matrix**: Ship a pre-computed transition probability matrix (~1–2 MB YAML/JSON) with a version date stamp (e.g., `transitions-v2025.07.yml`). The JobHop dataset is designed to be regularly updated by the Ghent University team, though on no fixed schedule. Include a `career data update` command that checks the HuggingFace dataset's `updated_at` metadata and recomputes the matrix from the REST API when a newer version is available.
+4. **JobHop matrix**: Ship a pre-computed transition probability matrix (~1–2 MB YAML/JSON) as `transitions.yml` with an internal `version_date` field stamped from the JobHop dataset's `updated_at` metadata. The JobHop dataset is designed to be regularly updated by the Ghent University team, though on no fixed schedule. Include a `career data update` command that checks the HuggingFace dataset's `updated_at` metadata and recomputes the matrix from the REST API when a newer version is available.
 5. **Plugin system**: Not needed for v1. MCP provides extensibility for external integrations. A formal plugin mechanism and community contribution structure are v2 concerns, informed by actual user demand.
 
 ---
