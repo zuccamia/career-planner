@@ -3,6 +3,7 @@
 import typer
 
 from career_planner.commands import about as about_cmd
+from career_planner.commands import gap as gap_cmd
 from career_planner.commands import init as init_cmd
 from career_planner.commands import man as man_cmd
 from career_planner.commands import opportunity as opportunity_cmd
@@ -111,7 +112,7 @@ def gap(
     suggest: bool = typer.Option(False, "--suggest", help="Ask AI for gap-closing suggestions."),
 ) -> None:
     """Run a skill gap analysis against an opportunity."""
-    typer.echo(f"TODO: Gap analysis for {opportunity} (suggest={suggest})")
+    gap_cmd.run(opportunity=opportunity, suggest=suggest)
 
 
 @app.command()
