@@ -3,6 +3,7 @@
 import typer
 
 from career_planner.commands import init as init_cmd
+from career_planner.commands import man as man_cmd
 from career_planner.i18n import setup as setup_i18n
 
 setup_i18n()
@@ -47,9 +48,13 @@ app.add_typer(mcp_app, name="mcp")
 
 
 @app.command()
-def man() -> None:
+def man(
+    no_pager: bool = typer.Option(
+        False, "--no-pager", help="Print the manual without invoking a pager."
+    ),
+) -> None:
     """Open the career-planner manual in your pager."""
-    typer.echo("TODO: Open docs/man.md in pager (less/more)")
+    man_cmd.run(use_pager=not no_pager)
 
 
 @app.command()

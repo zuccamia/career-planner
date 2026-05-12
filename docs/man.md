@@ -1,4 +1,4 @@
-# CAREER(1) — Career Planner Manual
+# Career Planner Manual
 
 ## NAME
 
