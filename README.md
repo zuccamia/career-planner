@@ -33,6 +33,16 @@ career status
 - [Blueprint](docs/blueprint.md) — architecture, data strategy, implementation plan
 - [Manual](docs/man.md) — full command reference (also available via `career man`)
 
+## Data Sources & Attribution
+
+This service uses the ESCO classification of the European Commission.
+The bundled ESCO data is a modified and adapted subset of ESCO v1.2.1.
+
+This product includes data from the O*NET database (CC BY 4.0),
+sponsored by the U.S. Department of Labor / ETA.
+
+See [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) for full details.
+
 ## License
 
 MIT

@@ -2,6 +2,7 @@
 
 import typer
 
+from career_planner.commands import about as about_cmd
 from career_planner.commands import init as init_cmd
 from career_planner.commands import man as man_cmd
 from career_planner.i18n import setup as setup_i18n
@@ -13,6 +14,25 @@ app = typer.Typer(
     help="A local-first, CLI-based personal career planning tool.",
     no_args_is_help=True,
 )
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        about_cmd.run()
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show version and data attribution, then exit.",
+        callback=_version_callback,
+        is_eager=True,
+    ),
+) -> None:
+    """Root callback hosting global options like ``--version``."""
 
 # --- Command groups ---
 
@@ -45,6 +65,12 @@ app.add_typer(mcp_app, name="mcp")
 
 
 # --- Top-level commands (stubs) ---
+
+
+@app.command()
+def about() -> None:
+    """Show project version and data attribution."""
+    about_cmd.run()
 
 
 @app.command()
