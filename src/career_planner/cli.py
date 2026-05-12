@@ -5,6 +5,7 @@ import typer
 from career_planner.commands import about as about_cmd
 from career_planner.commands import init as init_cmd
 from career_planner.commands import man as man_cmd
+from career_planner.commands import opportunity as opportunity_cmd
 from career_planner.commands import profile as profile_cmd
 from career_planner.commands import skills as skills_cmd
 from career_planner.i18n import setup as setup_i18n
@@ -102,14 +103,6 @@ def init(
 def status() -> None:
     """Display a terminal dashboard of your career planning status."""
     typer.echo("TODO: Show status dashboard")
-
-
-@app.command()
-def add(
-    item_type: str = typer.Argument(..., help="Type of item to add: resume, opportunity"),
-) -> None:
-    """Add a resume or opportunity to the workspace."""
-    typer.echo(f"TODO: Add {item_type}")
 
 
 @app.command()
@@ -272,20 +265,36 @@ def brag_reflect(
     typer.echo(f"TODO: AI reflect on brag entries (last={last}, tag={tag})")
 
 
+@opportunity_app.command("add")
+def opportunity_add(
+    title: str | None = typer.Argument(
+        None, help="Title for the opportunity (omit when using --url)."
+    ),
+    url: str | None = typer.Option(
+        None, "--url", help="Import from a job posting URL."
+    ),
+    no_editor: bool = typer.Option(
+        False, "--no-editor", help="Create the file without opening an editor."
+    ),
+) -> None:
+    """Create a new opportunity file."""
+    opportunity_cmd.add(title=title, url=url, open_editor=not no_editor)
+
+
 @opportunity_app.command("list")
 def opportunity_list(
     status: str | None = typer.Option(None, "--status", help="Filter by status."),
 ) -> None:
     """List tracked opportunities."""
-    typer.echo(f"TODO: List opportunities (status={status})")
+    opportunity_cmd.list_opportunities(status=status)
 
 
 @opportunity_app.command("show")
 def opportunity_show(
-    opportunity: str = typer.Argument(..., help="Opportunity filename."),
+    opportunity: str = typer.Argument(..., help="Opportunity slug or filename."),
 ) -> None:
     """Show details of a tracked opportunity."""
-    typer.echo(f"TODO: Show opportunity '{opportunity}'")
+    opportunity_cmd.show(opportunity=opportunity)
 
 
 @path_app.command("show")

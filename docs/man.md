@@ -176,7 +176,7 @@ Inspired by Julia Evans' brag documents (https://jvns.ca/blog/brag-documents/) a
 
 ### RESUMES
 
-**career add resume** *file*
+**career resume add** *file*
 
 :   Import a resume PDF into the workspace. The file is copied to `resumes/` as-is. A YAML sidecar file is created alongside it, prompting the user for metadata.
 
@@ -186,9 +186,12 @@ Inspired by Julia Evans' brag documents (https://jvns.ca/blog/brag-documents/) a
     filename: resume-v1.pdf
     date: 2026-05-11
     target_role: Senior Software Engineer
+    opportunity: staff-engineer-at-acme-corp   # slug this version was tailored for; omit for a generic resume
     version: 1
     notes: Updated for Acme Corp application, emphasized backend experience
     ```
+
+    The `opportunity` field is the inverse of an opportunity's `attachments:` entry — `career resume list` uses it to show which opportunity each version was tailored for, and the MCP server uses it to surface the right file when exporting to an external tracker.
 
 **career resume list**
 
@@ -203,13 +206,21 @@ Inspired by Julia Evans' brag documents (https://jvns.ca/blog/brag-documents/) a
 
 ### OPPORTUNITIES
 
-**career add opportunity** *title*
+**career opportunity add** [*title*] [**--url** *url*] [**--no-editor**]
 
-:   Create a new opportunity file in `opportunities/`. Opens the user's editor with a structured Markdown template containing fields for: role, company, location, salary range, required skills (as ESCO codes or free text), pros, cons, deadline, status, and notes.
+:   Create a new opportunity file in `opportunities/`. Either *title* or `--url` must be provided. Opens the user's editor with a structured Markdown template containing frontmatter fields for: role, company, location, work type, URL, salary range, status, posted date, deadline, applied date, created date, attachments (filenames under `resumes/`), and required skills (as ESCO codes or free text). The body contains sections for description, pros, cons, and notes.
 
-**career add opportunity** **--url** *url*
+    **--url** *url*
+    :   Create the opportunity from a job posting URL. The tool fetches the page and runs a layered, best-effort structural extraction:
 
-:   Create a new opportunity file by fetching a job posting from a URL. In pure-software mode, the tool performs best-effort structural extraction of the page content (title, company, location, skills from common job board HTML patterns). The user is then dropped into the editor to review and complete the file.
+        1. **Schema.org `JobPosting` JSON-LD** — the richest source, mandated by Google Jobs and embedded in most reputable job boards (Microsoft, Greenhouse, Lever, Workday, LinkedIn, etc.). Populates `role`, `company`, `location`, `date_posted`, `deadline`, `work_type` (when the posting is marked `TELECOMMUTE`), salary range, and a plain-text description in the body.
+        2. **Open Graph + standard meta tags** — `og:title`, `og:site_name`, `og:description` when JSON-LD isn't present.
+        3. **`<title>` element** — last-resort title only.
+
+        The user is then dropped into the editor to review and complete the file. If the fetch fails the file is still created with the URL recorded and a warning is printed so the user can fill in details manually. SPA-only sites that don't pre-render any of the above will produce a near-empty file — use `--parse` for those.
+
+    **--no-editor**
+    :   Create the file but skip opening the editor. Useful for scripting and tests.
 
     **--parse** *(requires API key)*
     :   Used with `--url`. Send the fetched page content to the configured LLM for intelligent extraction, including parsing unstructured descriptions into ESCO-coded skill requirements, salary ranges, and structured fields.
@@ -223,7 +234,7 @@ Inspired by Julia Evans' brag documents (https://jvns.ca/blog/brag-documents/) a
 
 **career opportunity show** *opportunity*
 
-:   Print the full details of a specific opportunity.
+:   Print the full details of a specific opportunity. *opportunity* matches against slugs in `opportunities/` (without the `.md` extension); an exact slug match wins, otherwise the slug or title is matched as a substring and a disambiguation prompt is shown when more than one opportunity matches.
 
 ### SKILLS
 
@@ -699,8 +710,8 @@ Set up your job criteria and check an opportunity against them:
 
 Track a job opportunity and check skill gaps:
 
-    $ career add opportunity "Staff Engineer at Acme Corp"
-    $ career add opportunity --url https://example.com/jobs/12345
+    $ career opportunity add "Staff Engineer at Acme Corp"
+    $ career opportunity add --url https://example.com/jobs/12345
     $ career gap staff-engineer-at-acme-corp
 
 Explore career transition paths:

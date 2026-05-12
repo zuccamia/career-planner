@@ -239,9 +239,11 @@ Checks the HuggingFace API for a newer version of JobHop, and if found, re-runs 
 | `career brag add [--date]` | Record an achievement using XYZ format template; not daily — use per project/milestone |
 | `career brag list [--last N] [--tag TAG]` | List brag entries by date, filterable by tag |
 | `career brag summary [--period quarter\|half\|year]` | Generate plain-text accomplishment summary for a time period |
-| `career add resume <file>` | Import a resume PDF into `resumes/` as-is with a YAML sidecar (date, target role, version notes) |
-| `career add opportunity <title>` | Create structured opportunity file (role, company, pros/cons, skills, salary, deadline) |
-| `career add opportunity --url <url>` | Create opportunity from a job posting URL with best-effort HTML extraction; add `--parse` for AI-assisted extraction |
+| `career resume add <file>` | Import a resume PDF into `resumes/` as-is with a YAML sidecar (date, target role, version notes) |
+| `career opportunity add <title>` | Create structured opportunity file (role, company, pros/cons, skills, salary, deadline) |
+| `career opportunity add --url <url>` | Create opportunity from a job posting URL with best-effort HTML extraction; add `--parse` for AI-assisted extraction |
+| `career opportunity list [--status]` | List tracked opportunities, optionally filtered by status |
+| `career opportunity show <opportunity>` | Print full details of a specific opportunity |
 | `career skills list` | Show current skills inventory with ratings and one-line examples |
 | `career skills add <skill>` | Add a skill with self-rating and real-world example; fuzzy-match against ESCO taxonomy |
 | `career skills browse` | Interactive terminal browser for ESCO skill categories (see browse modes below) |
@@ -286,7 +288,7 @@ These are additive flags or subcommands layered on Tier 1–3 features. All AI i
 | Command | Description |
 |---|---|
 | `career brag reflect` | Send brag entries to LLM for pattern analysis, growth themes, and review talking points |
-| `career add opportunity --url <url> --parse` | AI-assisted extraction of job posting into structured opportunity file |
+| `career opportunity add --url <url> --parse` | AI-assisted extraction of job posting into structured opportunity file |
 | `career gap <opp> --suggest` | Ask LLM how to close identified skill gaps |
 | `career compare <opp1> <opp2> --advise` | LLM-powered nuanced reasoning about trade-offs |
 | `career chat` | Open-ended career coaching conversation, saved to `conversations/` |
@@ -477,8 +479,8 @@ career skills add "Project management" --rating 3 \
     --example "Led 4-person team for semester capstone project"
 
 # Track an opportunity (from title or URL)
-career add opportunity "Senior Engineer at Acme Corp"
-career add opportunity --url https://example.com/jobs/12345
+career opportunity add "Senior Engineer at Acme Corp"
+career opportunity add --url https://example.com/jobs/12345
 
 # Check skill gaps
 career gap senior-engineer-at-acme-corp
@@ -549,7 +551,7 @@ Estimated context: ~28K tokens.
 
 ### Session 4 — Opportunities and gap analysis
 
-Implement: `career add opportunity` (title mode + `--url` mode with HTML extraction), `career opportunity list/show`, `career gap` (skills inventory vs. opportunity requirements comparison, table output).
+Implement: `career opportunity add` (title mode + `--url` mode with HTML extraction), `career opportunity list/show`, `career gap` (skills inventory vs. opportunity requirements comparison, table output).
 
 Estimated context: ~42K tokens (heaviest pure-software session due to HTML parsing + gap logic).
 
