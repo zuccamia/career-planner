@@ -255,20 +255,20 @@ Inspired by Julia Evans' brag documents (https://jvns.ca/blog/brag-documents/) a
 
 :   Remove a skill from the inventory.
 
-**career skills browse** [**--search** *keyword*] [**--for** *occupation* [**--vs** *occupation*]]
+**career skills browse** [**--search** *keyword* | **--for** *occupation* [**--vs** *occupation*]]
 
-:   Interactive terminal browser for the ESCO skills taxonomy. Three modes:
-
-    *No flags* — Opens a navigable tree of the ESCO skill hierarchy. Use arrow keys to expand/collapse categories. Press `a` on any skill to add it to the inventory with a rating and example prompt. If a target role is set in `profile.yml`, skills relevant to that role are highlighted.
+:   Explore the bundled ESCO skill taxonomy. The primary entry point is `--search`; `--for` is useful for occupation-specific exploration; the bare command prints a static tree of the hierarchy.
 
     **--search** *keyword*
-    :   Fuzzy-search across ESCO skill labels and descriptions. Returns a ranked list of matching skills. Useful for translating informal language into standardized taxonomy terms.
+    :   Fuzzy-search across ESCO skill labels and descriptions. Returns a ranked table of matching skills with their type (knowledge vs. skill/competence) and a description snippet. This is the most practical way to translate informal language into standardized taxonomy terms — for example, `--search "client communication"` surfaces ESCO skills whose descriptions mention client communication. Once you find the right skill, run `career skills add "<name>"` to record it in your inventory.
 
     **--for** *occupation*
-    :   Show the skill profile for a specific ESCO occupation, grouped by category. The *occupation* argument is fuzzy-matched against ESCO occupation titles.
+    :   Show the skill profile for a specific ESCO occupation, grouped by skill type. The *occupation* argument is fuzzy-matched against ESCO occupation titles; ambiguous matches prompt you to pick. Useful for exploring unfamiliar fields or building a gap-analysis target before a formal `career gap` run.
 
     **--vs** *occupation*
-    :   Used with `--for`. Compare the skill profiles of two occupations side by side, showing overlapping skills and skills unique to each role.
+    :   Used with `--for`. Compare two occupations side by side, listing overlapping skills, skills unique to the first occupation, and skills unique to the second. Useful for identifying bridge skills when planning a career transition.
+
+    With no flags, prints the ESCO skill hierarchy as a Rich tree rooted at top-level categories (e.g., "computer programming", "manage supplies"). This is a static, printable view — there is no arrow-key navigation in v1, and skills that are not part of the hierarchy file are only reachable via `--search`. For day-to-day use, prefer `--search` for keyword lookup or `--for` for occupation-specific exploration.
 
 ### GAP ANALYSIS
 
@@ -675,9 +675,15 @@ Initialize a new workspace and set up a profile:
 
 Add skills with real-world examples:
 
+    $ career skills browse --search "client communication"
     $ career skills add "Python programming" --rating 4 \
         --example "Built data pipeline processing 2M records/day"
+    $ career skills list
+
+Explore the taxonomy by occupation:
+
     $ career skills browse --for "data engineer"
+    $ career skills browse --for "software developer" --vs "data scientist"
 
 Record an achievement:
 

@@ -5,6 +5,7 @@ import typer
 from career_planner.commands import about as about_cmd
 from career_planner.commands import init as init_cmd
 from career_planner.commands import man as man_cmd
+from career_planner.commands import skills as skills_cmd
 from career_planner.i18n import setup as setup_i18n
 
 setup_i18n()
@@ -187,7 +188,7 @@ def skills_list(
     category: str | None = typer.Option(None, "--category", help="Filter by skill category."),
 ) -> None:
     """Display your skills inventory."""
-    typer.echo(f"TODO: List skills (category={category})")
+    skills_cmd.list_skills(category=category)
 
 
 @skills_app.command("add")
@@ -197,7 +198,7 @@ def skills_add(
     example: str | None = typer.Option(None, "--example", "-e", help="One-line real-world example."),
 ) -> None:
     """Add a skill to your inventory."""
-    typer.echo(f"TODO: Add skill '{skill}' rating={rating} example={example}")
+    skills_cmd.add(skill=skill, rating=rating, example=example)
 
 
 @skills_app.command("remove")
@@ -205,7 +206,7 @@ def skills_remove(
     skill: str = typer.Argument(..., help="Skill name to remove."),
 ) -> None:
     """Remove a skill from your inventory."""
-    typer.echo(f"TODO: Remove skill '{skill}'")
+    skills_cmd.remove(skill=skill)
 
 
 @skills_app.command("browse")
@@ -214,8 +215,12 @@ def skills_browse(
     for_occupation: str | None = typer.Option(None, "--for", help="Show skills for an occupation."),
     vs_occupation: str | None = typer.Option(None, "--vs", help="Compare with another occupation."),
 ) -> None:
-    """Browse the ESCO skills taxonomy interactively."""
-    typer.echo(f"TODO: Browse skills (search={search}, for={for_occupation}, vs={vs_occupation})")
+    """Browse the ESCO skills taxonomy."""
+    skills_cmd.browse(
+        search=search,
+        for_occupation=for_occupation,
+        vs_occupation=vs_occupation,
+    )
 
 
 @brag_app.command("add")
