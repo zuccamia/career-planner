@@ -250,57 +250,17 @@ def test_extract_description_section_returns_empty_when_missing() -> None:
     assert gap_core.extract_description_section("## Pros\n\nx\n") == ""
 
 
-def test_scan_text_for_skills_finds_an_esco_label() -> None:
-    """Pick any bundled ESCO skill with a word-shaped preferred label."""
-    from career_planner.core import taxonomy
-
-    target = next(
-        (
-            s
-            for s in taxonomy.load_skills()
-            if len(s.preferred_label) >= 4
-            and " " not in s.preferred_label.strip()
-            and s.preferred_label.isalpha()
-        ),
-        None,
-    )
-    if target is None:
-        pytest.skip("No suitable single-word ESCO label in bundled subset")
-
-    text = f"Candidates should know {target.preferred_label} and other things."
-    reqs = gap_core.scan_text_for_skills(text)
-    assert any(r.esco_code == target.uri for r in reqs)
+def test_find_inventory_skills_in_text_matches_own_label() -> None:
+    inventory = [_entry(skill="totally-fake-skill-x", rating=4)]
+    text = "We use totally-fake-skill-x daily in our team."
+    hits = gap_core.find_inventory_skills_in_text(inventory, text)
+    assert len(hits) == 1
+    assert hits[0].entry is inventory[0]
+    assert "totally-fake-skill-x" in hits[0].context
 
 
-def test_scan_text_for_skills_word_boundary() -> None:
-    """A label embedded in a longer word should NOT match."""
-    from career_planner.core import taxonomy
-
-    target = next(
-        (
-            s
-            for s in taxonomy.load_skills()
-            if len(s.preferred_label) >= 4
-            and " " not in s.preferred_label.strip()
-            and s.preferred_label.isalpha()
-        ),
-        None,
-    )
-    if target is None:
-        pytest.skip("No suitable single-word ESCO label in bundled subset")
-
-    # Embed the label inside a non-word run on both sides.
-    text = f"prefix{target.preferred_label}suffix is not the same thing."
-    reqs = gap_core.scan_text_for_skills(text)
-    assert not any(r.esco_code == target.uri for r in reqs)
-
-
-def test_scan_text_for_skills_empty_input() -> None:
-    assert gap_core.scan_text_for_skills("") == []
-    assert gap_core.scan_text_for_skills("   ") == []
-
-
-def test_scan_text_for_skills_dedupes_by_uri() -> None:
+def test_find_inventory_skills_in_text_matches_esco_alt_label() -> None:
+    """An ESCO-coded inventory entry matches any of its alt-labels in prose."""
     from career_planner.core import taxonomy
 
     target = next(
@@ -308,19 +268,79 @@ def test_scan_text_for_skills_dedupes_by_uri() -> None:
             s
             for s in taxonomy.load_skills()
             if s.alt_labels
-            and len(s.preferred_label) >= 4
-            and any(len(a) >= 4 for a in s.alt_labels)
+            and any(
+                len(a) >= 4 and " " not in a and a.isalpha()
+                for a in s.alt_labels
+            )
         ),
         None,
     )
     if target is None:
-        pytest.skip("No skill with usable alt labels in bundled subset")
+        pytest.skip("No ESCO skill with single-word alt labels available")
 
-    alt = next(a for a in target.alt_labels if len(a) >= 4)
-    text = f"We use {target.preferred_label} extensively, and {alt} daily."
-    reqs = gap_core.scan_text_for_skills(text)
-    hits = [r for r in reqs if r.esco_code == target.uri]
+    alt = next(
+        a for a in target.alt_labels
+        if len(a) >= 4 and " " not in a and a.isalpha()
+    )
+    inventory = [
+        _entry(
+            skill=target.preferred_label,
+            rating=3,
+            esco_code=target.uri,
+        )
+    ]
+    text = f"We work with {alt} in production."
+    hits = gap_core.find_inventory_skills_in_text(inventory, text)
     assert len(hits) == 1
+    assert alt.lower() in hits[0].context.lower()
+
+
+def test_find_inventory_skills_in_text_word_boundary() -> None:
+    """An inventory label embedded in a longer word should NOT match alone."""
+    inventory = [_entry(skill="zskill", rating=4)]
+    # 'zskill' embedded inside 'zskillery' must not match.
+    text = "Our zskillery is famous but unrelated."
+    hits = gap_core.find_inventory_skills_in_text(inventory, text)
+    assert hits == []
+
+
+def test_find_inventory_skills_in_text_omits_unmentioned() -> None:
+    inventory = [
+        _entry(skill="totally-fake-x", rating=4),
+        _entry(skill="totally-fake-y", rating=3),
+    ]
+    text = "We only use totally-fake-x here."
+    hits = gap_core.find_inventory_skills_in_text(inventory, text)
+    assert [h.entry.get("skill") for h in hits] == ["totally-fake-x"]
+
+
+def test_find_inventory_skills_in_text_handles_empty_inputs() -> None:
+    assert gap_core.find_inventory_skills_in_text([], "anything") == []
+    assert (
+        gap_core.find_inventory_skills_in_text(
+            [_entry(skill="x", rating=4)], ""
+        )
+        == []
+    )
+
+
+def test_find_inventory_skills_context_carries_surrounding_prose() -> None:
+    inventory = [_entry(skill="totally-fake-x", rating=4)]
+    text = "Candidates write production code in totally-fake-x for our data team."
+    hits = gap_core.find_inventory_skills_in_text(inventory, text)
+    assert len(hits) == 1
+    ctx = hits[0].context
+    assert "production code" in ctx
+    assert "data team" in ctx
+
+
+def test_find_inventory_skills_context_truncates_with_ellipsis() -> None:
+    inventory = [_entry(skill="totally-fake-x", rating=4)]
+    padding = ("filler " * 40).strip()
+    text = f"{padding} totally-fake-x {padding}"
+    hits = gap_core.find_inventory_skills_in_text(inventory, text)
+    assert hits[0].context.startswith("…")
+    assert hits[0].context.endswith("…")
 
 
 # --- CLI: career gap ---
@@ -399,55 +419,74 @@ def test_cli_gap_renders_partial_when_under_threshold(
     assert "0%" in result.output
 
 
-def test_cli_gap_no_required_skills_and_no_description_exits_1(
+def test_cli_gap_fallback_shows_inventory_hits_in_description(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ws = _init_workspace(tmp_path, monkeypatch)
-    # Template already includes "## Description" but with no body text.
-    _write_opportunity(ws, "engineer-at-acme", required_skills=[])
-
-    result = runner.invoke(app, ["gap", "engineer-at-acme"])
-    assert result.exit_code == 1
-    assert "no required_skills" in result.output.lower()
-
-
-def test_cli_gap_falls_back_to_description_scan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """When required_skills is empty, the gap command should scan the
-    description and surface ESCO skills found in the prose.
-    """
-    from career_planner.core import taxonomy
-
-    target = next(
-        (
-            s
-            for s in taxonomy.load_skills()
-            if len(s.preferred_label) >= 4
-            and " " not in s.preferred_label.strip()
-            and s.preferred_label.isalpha()
-        ),
-        None,
-    )
-    if target is None:
-        pytest.skip("No suitable single-word ESCO label in bundled subset")
-
+    """No required_skills: surface inventory skills mentioned in description
+    and warn that missing skills cannot be reliably extracted."""
     ws = _init_workspace(tmp_path, monkeypatch)
     path = opp_core.create_opportunity(ws, title="prose-only-role")
     front, body = opp_core.parse_markdown(path.read_text(encoding="utf-8"))
     body = body.replace(
         "## Description\n",
-        f"## Description\n\nWe work with {target.preferred_label} daily.\n",
+        "## Description\n\nWe work with totally-fake-x daily.\n",
         1,
     )
-    path.write_text(
-        opp_core.serialize_markdown(front, body), encoding="utf-8"
+    path.write_text(opp_core.serialize_markdown(front, body), encoding="utf-8")
+    _seed_inventory(
+        ws,
+        [
+            _entry(skill="totally-fake-x", rating=4, example="prior role"),
+            _entry(skill="totally-fake-y", rating=3, example="other role"),
+        ],
     )
 
     result = runner.invoke(app, ["gap", "prose-only-role"])
     assert result.exit_code == 0, result.output
-    assert "scanned" in result.output.lower()
-    assert target.preferred_label in result.output
+    # The mentioned skill is shown; the unmentioned one is not.
+    assert "totally-fake-x" in result.output
+    assert "totally-fake-y" not in result.output
+    # Warning panel directs the user to --parse for missing skills.
+    assert "missing skills" in result.output.lower()
+    assert "--parse" in result.output
+
+
+def test_cli_gap_fallback_when_no_inventory_hits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    path = opp_core.create_opportunity(ws, title="prose-only-role")
+    front, body = opp_core.parse_markdown(path.read_text(encoding="utf-8"))
+    body = body.replace(
+        "## Description\n",
+        "## Description\n\nSome generic prose unrelated to my skills.\n",
+        1,
+    )
+    path.write_text(opp_core.serialize_markdown(front, body), encoding="utf-8")
+    _seed_inventory(ws, [_entry(skill="totally-fake-x", rating=4)])
+
+    result = runner.invoke(app, ["gap", "prose-only-role"])
+    assert result.exit_code == 0, result.output
+    assert "none of your inventory" in result.output.lower()
+    assert "--parse" in result.output
+
+
+def test_cli_gap_fallback_when_no_description(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No required_skills and no Description body: still exit 0 with a warning."""
+    ws = _init_workspace(tmp_path, monkeypatch)
+    _write_opportunity(ws, "engineer-at-acme", required_skills=[])
+    # Strip the Description heading out so the body has nothing to scan.
+    path = ws / "opportunities" / "engineer-at-acme.md"
+    front, body = opp_core.parse_markdown(path.read_text(encoding="utf-8"))
+    body = body.replace("## Description\n", "")
+    path.write_text(opp_core.serialize_markdown(front, body), encoding="utf-8")
+
+    result = runner.invoke(app, ["gap", "engineer-at-acme"])
+    assert result.exit_code == 0, result.output
+    assert "no description" in result.output.lower()
+    assert "--parse" in result.output
 
 
 def test_cli_gap_missing_opportunity_exits_1(

@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Any
 
 from career_planner.core import taxonomy
@@ -304,14 +303,41 @@ def _entry_rating(entry: dict[str, Any]) -> int | None:
 
 # --- Description scanning (fallback for postings without required_skills) ---
 
-# Labels shorter than this are skipped to avoid catastrophic false positives
-# from single-character abbreviations ("R", "C") appearing as random words.
+# Labels shorter than this are skipped to avoid false positives from
+# single-character abbreviations ("R", "C") appearing as random words.
 _MIN_SCAN_LABEL_LEN = 3
 
 _DESCRIPTION_HEADING_RE = re.compile(
     r"^##\s+Description\s*\n(.*?)(?=^##\s|\Z)",
     re.MULTILINE | re.DOTALL,
 )
+
+
+@dataclass(frozen=True)
+class InventoryHit:
+    """An inventory skill confirmed to appear in an opportunity's prose."""
+
+    entry: dict[str, Any]
+    context: str
+
+    @property
+    def label(self) -> str:
+        return str(self.entry.get("skill") or "")
+
+    @property
+    def rating(self) -> int | None:
+        try:
+            return int(self.entry.get("rating"))
+        except (TypeError, ValueError):
+            return None
+
+    @property
+    def example(self) -> str:
+        return str(self.entry.get("example") or "")
+
+    @property
+    def esco_code(self) -> str:
+        return str(self.entry.get("esco_code") or "")
 
 
 def extract_description_section(body: str) -> str:
@@ -328,64 +354,88 @@ def extract_description_section(body: str) -> str:
     return match.group(1).strip()
 
 
-@lru_cache(maxsize=1)
-def _label_index() -> tuple[dict[str, str], re.Pattern[str] | None]:
-    """Build a ``{lowercase_label: skill_uri}`` index and a single matcher.
+def find_inventory_skills_in_text(
+    inventory: list[dict[str, Any]], text: str
+) -> list[InventoryHit]:
+    """Return inventory skills that appear (word-bounded) in `text`.
 
-    The matcher is a single compiled alternation of word-bounded labels
-    sorted longest-first so "Python (computer programming)" wins over a
-    nested "Python" when both happen to appear. Labels shorter than
-    :data:`_MIN_SCAN_LABEL_LEN` are excluded.
+    For each inventory entry, scans the entry's own label plus — when an
+    ESCO code is recorded — that skill's preferred and alt-labels. The
+    first occurrence wins for the context snippet. Skills not found in
+    the text are omitted (no "missing" output: pure software can't
+    reliably know what's missing from prose).
     """
-    label_to_uri: dict[str, str] = {}
-    for skill in taxonomy.load_skills():
-        for label in (skill.preferred_label, *skill.alt_labels):
-            label_l = label.strip().lower()
-            if len(label_l) < _MIN_SCAN_LABEL_LEN:
-                continue
-            # first-write-wins so a preferred label keeps its URI when an
-            # alt-label collides across skills.
-            label_to_uri.setdefault(label_l, skill.uri)
-
-    if not label_to_uri:
-        return {}, None
-
-    sorted_labels = sorted(label_to_uri.keys(), key=len, reverse=True)
-    pattern = r"\b(" + "|".join(re.escape(lbl) for lbl in sorted_labels) + r")\b"
-    return label_to_uri, re.compile(pattern, re.IGNORECASE)
-
-
-def scan_text_for_skills(text: str) -> list[Requirement]:
-    """Find ESCO skills mentioned in `text` by word-bounded label match.
-
-    Used as a fallback for the gap command when an opportunity has no
-    ``required_skills`` listed. Returns one :class:`Requirement` per
-    unique skill (by ESCO URI), label set to the canonical preferred
-    label so the gap report reads cleanly. No min_rating is inferred.
-
-    This is heuristic — callers should make clear in the rendered output
-    that these requirements came from prose, not a curated list.
-    """
-    if not text or not text.strip():
-        return []
-    label_to_uri, regex = _label_index()
-    if regex is None:
+    if not text or not text.strip() or not inventory:
         return []
 
-    seen: dict[str, None] = {}
-    for match in regex.finditer(text):
-        uri = label_to_uri.get(match.group(1).lower())
-        if uri and uri not in seen:
-            seen[uri] = None
-
-    out: list[Requirement] = []
-    for uri in seen:
-        skill = taxonomy.find_skill_by_uri(uri)
-        if skill is None:
+    hits: list[InventoryHit] = []
+    for entry in inventory:
+        labels = _entry_search_labels(entry)
+        position = _first_label_match(text, labels)
+        if position is None:
             continue
-        out.append(
-            Requirement(
-                label=skill.preferred_label, esco_code=uri, min_rating=None
-            )
+        start, end = position
+        hits.append(
+            InventoryHit(entry=entry, context=_context_window(text, start, end))
         )
-    return out
+    return hits
+
+
+def _entry_search_labels(entry: dict[str, Any]) -> list[str]:
+    """All scannable labels for an inventory entry (preferred + ESCO alts)."""
+    out: list[str] = []
+    own = str(entry.get("skill") or "").strip()
+    if own:
+        out.append(own)
+    code = entry.get("esco_code")
+    if code:
+        skill = taxonomy.find_skill_by_uri(str(code))
+        if skill is not None:
+            if skill.preferred_label:
+                out.append(skill.preferred_label)
+            out.extend(skill.alt_labels)
+    return [label for label in out if len(label) >= _MIN_SCAN_LABEL_LEN]
+
+
+def _first_label_match(text: str, labels: list[str]) -> tuple[int, int] | None:
+    """First word-bounded match of any `label` in `text` (case-insensitive)."""
+    if not labels:
+        return None
+    # Longest-first so multi-word labels beat their shorter sub-labels at
+    # the same position.
+    sorted_labels = sorted(set(labels), key=len, reverse=True)
+    pattern = r"\b(" + "|".join(re.escape(lbl) for lbl in sorted_labels) + r")\b"
+    match = re.search(pattern, text, re.IGNORECASE)
+    if match is None:
+        return None
+    return match.start(), match.end()
+
+
+_CONTEXT_CHARS_EACH_SIDE = 60
+
+
+def _context_window(text: str, start: int, end: int) -> str:
+    """Return a short, word-bounded snippet of `text` around ``[start:end]``.
+
+    Trims to the nearest whitespace so the snippet doesn't begin or end
+    on a partial word, normalizes internal whitespace, and prepends /
+    appends an ellipsis when the text was truncated on either side.
+    """
+    left = max(0, start - _CONTEXT_CHARS_EACH_SIDE)
+    right = min(len(text), end + _CONTEXT_CHARS_EACH_SIDE)
+    if left > 0:
+        next_space = text.find(" ", left, start)
+        if next_space != -1:
+            left = next_space + 1
+    if right < len(text):
+        prev_space = text.rfind(" ", end, right)
+        if prev_space != -1:
+            right = prev_space
+    snippet = " ".join(text[left:right].split())
+    if not snippet:
+        return ""
+    if left > 0:
+        snippet = "…" + snippet
+    if right < len(text):
+        snippet = snippet + "…"
+    return snippet

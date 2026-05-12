@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -27,44 +28,31 @@ def run(opportunity: str, *, suggest: bool = False) -> None:
     workspace = require_workspace()
 
     opp = _resolve_opportunity(workspace, opportunity)
+    inventory = skills_core.load_inventory(workspace)
     requirements = gap_core.parse_requirements(
         opp.frontmatter.get("required_skills")
     )
-    scanned = False
 
-    if not requirements:
-        description = gap_core.extract_description_section(opp.body)
-        if description:
-            requirements = gap_core.scan_text_for_skills(description)
-            scanned = True
+    if requirements:
+        analysis = gap_core.analyze(inventory, requirements)
+        _render_header(opp, analysis)
+        _render_matched(analysis)
+        _render_partial(analysis)
+        _render_missing(analysis)
+        if suggest:
+            _print_suggest_stub()
+        return
 
-    if not requirements:
-        console.print(
-            _(
-                "Opportunity '{slug}' has no required_skills and no "
-                "scannable description. Edit the file and add ESCO codes "
-                "or skill labels under `required_skills:`."
-            ).format(slug=opp.slug),
-            style="yellow",
-        )
-        raise typer.Exit(1)
-
-    inventory = skills_core.load_inventory(workspace)
-    analysis = gap_core.analyze(inventory, requirements)
-
-    _render_header(opp, analysis, scanned=scanned)
-    if scanned:
-        console.print(
-            _(
-                "required_skills was empty — scanned the description for "
-                "ESCO skill labels. Results are heuristic; review before "
-                "trusting."
-            ),
-            style="dim",
-        )
-    _render_matched(analysis)
-    _render_partial(analysis)
-    _render_missing(analysis)
+    # No curated requirements — fall back to scanning the description for
+    # the user's own inventory skills (closed set, low noise). Missing
+    # skills can't be extracted reliably from prose, so we don't try.
+    description = gap_core.extract_description_section(opp.body)
+    hits = (
+        gap_core.find_inventory_skills_in_text(inventory, description)
+        if description
+        else []
+    )
+    _render_fallback(opp, hits, has_description=bool(description))
 
     if suggest:
         _print_suggest_stub()
@@ -74,31 +62,22 @@ def run(opportunity: str, *, suggest: bool = False) -> None:
 
 
 def _render_header(
-    opp: opp_core.Opportunity,
-    analysis: gap_core.GapAnalysis,
-    *,
-    scanned: bool = False,
+    opp: opp_core.Opportunity, analysis: gap_core.GapAnalysis
 ) -> None:
     total = len(analysis.matches)
     coverage_pct = int(round(analysis.coverage * 100))
-    source = (
-        _("scanned from description")
-        if scanned
-        else _("from required_skills")
-    )
     lines = [
         _("Opportunity: {t}").format(t=opp.title),
         _("Slug: {s}").format(s=opp.slug),
         _(
             "Coverage: {pct}%  ({matched} matched, {partial} partial, "
-            "{missing} missing, {total} required — {source})"
+            "{missing} missing, {total} required)"
         ).format(
             pct=coverage_pct,
             matched=len(analysis.matched),
             partial=len(analysis.partial),
             missing=len(analysis.missing),
             total=total,
-            source=source,
         ),
     ]
     border = _coverage_border(analysis)
@@ -204,6 +183,88 @@ def _format_rating_cell(rating: int | None, required: int | None) -> str:
     if required is not None and rating < required:
         label += f"  < {required}/5"
     return label
+
+
+def _render_fallback(
+    opp: opp_core.Opportunity,
+    hits: list[gap_core.InventoryHit],
+    *,
+    has_description: bool,
+) -> None:
+    """Render the no-requirements path: which of my skills are mentioned, plus a warning.
+
+    Pure software can't reliably extract what's *missing* from prose, so
+    we deliberately don't try. We show the user which of their existing
+    skills the posting mentions (closed-set scan, low noise) and point
+    them at the AI parser for full extraction.
+    """
+    console.print(
+        Panel(
+            "\n".join(
+                [
+                    _("Opportunity: {t}").format(t=opp.title),
+                    _("Slug: {s}").format(s=opp.slug),
+                    _(
+                        "required_skills is empty — showing which of your "
+                        "inventory skills appear in the description."
+                    ),
+                ]
+            ),
+            title=_("Skill gap analysis (partial)"),
+            border_style="yellow",
+        )
+    )
+
+    if hits:
+        table = Table(
+            title=_("Your skills mentioned in the description ({n})").format(
+                n=len(hits)
+            ),
+            title_style="green",
+        )
+        table.add_column(_("Skill"), style="cyan")
+        table.add_column(_("Your rating"), justify="center")
+        table.add_column(_("Example"))
+        table.add_column(_("Context from posting"))
+
+        for hit in hits:
+            table.add_row(
+                hit.label,
+                _format_rating_cell(hit.rating, None),
+                hit.example,
+                f"[dim italic]{escape(hit.context)}[/dim italic]"
+                if hit.context
+                else "",
+            )
+        console.print(table)
+    elif has_description:
+        console.print(
+            _(
+                "None of your inventory skills appear verbatim in the "
+                "description."
+            ),
+            style="yellow",
+        )
+    else:
+        console.print(
+            _("Opportunity has no description to scan."),
+            style="yellow",
+        )
+
+    console.print(
+        Panel(
+            _(
+                "Missing skills cannot be extracted reliably from a "
+                "free-text description by pure software — ESCO labels "
+                "and natural prose don't line up well enough.\n\n"
+                "For a complete gap analysis, re-import this opportunity "
+                "with the AI parser:\n"
+                "  career opportunity add --url <url> --parse"
+            ),
+            title=_("Why no missing skills?"),
+            border_style="yellow",
+        )
+    )
 
 
 def _short_code(code: str) -> str:
