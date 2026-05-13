@@ -38,7 +38,6 @@ BUNDLED_DATA_FILES: tuple[str, ...] = (
     "esco-occupations.yml",
     "esco-occupation-skills.yml",
     "esco-skill-hierarchy.yml",
-    "transitions.yml",
     "crosswalk.csv",
 )
 

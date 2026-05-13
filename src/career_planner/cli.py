@@ -12,7 +12,6 @@ from career_planner.commands import opportunity as opportunity_cmd
 from career_planner.commands import profile as profile_cmd
 from career_planner.commands import skills as skills_cmd
 from career_planner.commands import status as status_cmd
-from career_planner.commands import timeline as timeline_cmd
 from career_planner.i18n import setup as setup_i18n
 
 setup_i18n()
@@ -59,17 +58,8 @@ app.add_typer(profile_app, name="profile")
 criteria_app = typer.Typer(help="Manage your job criteria and dealbreakers.")
 app.add_typer(criteria_app, name="criteria")
 
-path_app = typer.Typer(help="Explore career transition paths.")
-app.add_typer(path_app, name="path")
-
-data_app = typer.Typer(help="Download and update bundled datasets.")
-app.add_typer(data_app, name="data")
-
 memory_app = typer.Typer(help="Manage vector search and semantic memory.")
 app.add_typer(memory_app, name="memory")
-
-mcp_app = typer.Typer(help="Start the MCP server for external integrations.")
-app.add_typer(mcp_app, name="mcp")
 
 config_app = typer.Typer(help="Configure tool settings.")
 app.add_typer(config_app, name="config")
@@ -142,18 +132,6 @@ def gap(
     gap_cmd.run(opportunity=opportunity, suggest=suggest)
 
 
-@app.command()
-def chat() -> None:
-    """Start an AI career coaching conversation."""
-    typer.echo("TODO: Start coaching chat")
-
-
-@app.command()
-def timeline() -> None:
-    """Render an ASCII timeline of your career history and goals."""
-    timeline_cmd.run()
-
-
 # --- Command group stubs ---
 
 
@@ -196,14 +174,9 @@ def criteria_show() -> None:
 @criteria_app.command("check")
 def criteria_check(
     opportunity: str = typer.Argument(..., help="Opportunity to check against criteria."),
-    reason: bool = typer.Option(
-        False,
-        "--reason",
-        help="Augment the check with LLM reasoning. Requires an API key.",
-    ),
 ) -> None:
-    """Check an opportunity against your job criteria."""
-    criteria_cmd.check(opportunity=opportunity, reason=reason)
+    """Check an opportunity against your job criteria (AI-driven)."""
+    criteria_cmd.check(opportunity=opportunity)
 
 
 @skills_app.command("list")
@@ -234,16 +207,10 @@ def skills_remove(
 
 @skills_app.command("browse")
 def skills_browse(
-    search: str | None = typer.Option(None, "--search", "-s", help="Keyword search."),
-    for_occupation: str | None = typer.Option(None, "--for", help="Show skills for an occupation."),
-    vs_occupation: str | None = typer.Option(None, "--vs", help="Compare with another occupation."),
+    query: str = typer.Argument(..., help="Keyword to search for in the ESCO skills taxonomy."),
 ) -> None:
-    """Browse the ESCO skills taxonomy."""
-    skills_cmd.browse(
-        search=search,
-        for_occupation=for_occupation,
-        vs_occupation=vs_occupation,
-    )
+    """Search the bundled ESCO skills taxonomy by keyword."""
+    skills_cmd.browse(query=query)
 
 
 @brag_app.command("add")
@@ -342,36 +309,6 @@ def opportunity_show(
     opportunity_cmd.show(opportunity=opportunity)
 
 
-@path_app.command("show")
-def path_show(
-    from_role: str | None = typer.Option(None, "--from", help="Starting role."),
-    to_role: str | None = typer.Option(None, "--to", help="Target role."),
-    online: bool = typer.Option(False, "--online", help="Query HuggingFace API for richer data."),
-) -> None:
-    """Show career transition paths between occupations."""
-    typer.echo(f"TODO: Show path from={from_role} to={to_role} (online={online})")
-
-
-@path_app.command("explore")
-def path_explore() -> None:
-    """Interactively explore career transitions from your current role."""
-    typer.echo("TODO: Interactive path explorer")
-
-
-@data_app.command("download")
-def data_download(
-    dataset: str = typer.Argument(..., help="Dataset to download: esco-full, onet-full."),
-) -> None:
-    """Download optional datasets."""
-    typer.echo(f"TODO: Download dataset '{dataset}'")
-
-
-@data_app.command("update")
-def data_update() -> None:
-    """Check for and apply JobHop transition matrix updates."""
-    typer.echo("TODO: Check for JobHop updates")
-
-
 @memory_app.command("enable")
 def memory_enable() -> None:
     """Initialize LanceDB vector search."""
@@ -384,15 +321,6 @@ def memory_search(
 ) -> None:
     """Semantic search across workspace content."""
     typer.echo(f"TODO: Memory search for '{query}'")
-
-
-@mcp_app.command("start")
-def mcp_start(
-    transport: str = typer.Option("stdio", "--transport", help="stdio, sse, or streamable-http."),
-    port: int = typer.Option(8000, "--port", help="Port for HTTP transports."),
-) -> None:
-    """Start the career planner MCP server."""
-    typer.echo(f"TODO: Start MCP server (transport={transport}, port={port})")
 
 
 if __name__ == "__main__":

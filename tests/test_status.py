@@ -273,11 +273,24 @@ def _write_criteria(workspace: Path, data: dict) -> None:
 
 
 def _run_criteria_check(workspace: Path, opp_slug: str) -> None:
-    """Mimic `career criteria check` so we can observe the cache it writes."""
+    """Mimic `career criteria check` cache-write without calling the LLM."""
     opp = opp_core.load_opportunity(workspace, opp_slug)
     assert opp is not None
     criteria = criteria_core.load_criteria(workspace)
-    result = criteria_core.check_against_opportunity(criteria, opp)
+    result = criteria_core.CriteriaCheck(
+        opportunity_slug=opp.slug,
+        opportunity_title=opp.title,
+        dimensions=tuple(
+            criteria_core.DimensionResult(
+                name=dim,
+                status=criteria_core.STATUS_UNKNOWN,
+                positives=(),
+                negatives=(),
+                violations=(),
+            )
+            for dim in criteria_core.DIMENSIONS
+        ),
+    )
     criteria_core.save_check_to_opportunity(
         workspace, result, criteria, today=TODAY
     )
@@ -311,7 +324,7 @@ def test_save_check_to_opportunity_writes_cache_block(tmp_path: Path) -> None:
     assert "alignment" in cache
     assert "dealbreaker_count" in cache
     assert "scored_dimensions" in cache
-    assert cache["ai_augmented"] is False
+    assert "ai_augmented" not in cache
 
 
 def test_status_reads_cached_fit_without_recomputing(tmp_path: Path) -> None:
@@ -325,7 +338,6 @@ def test_status_reads_cached_fit_without_recomputing(tmp_path: Path) -> None:
     fit = report.active_opportunities[0].fit
     assert fit is not None
     assert fit.stale is False
-    assert fit.ai_augmented is False
     assert fit.checked_at == TODAY
 
 

@@ -401,13 +401,11 @@ def _render_field(value: Any) -> str | None:
 # --- check ---
 
 
-def check(opportunity: str, *, reason: bool = False) -> None:
-    """Check an opportunity against the user's criteria.
+def check(opportunity: str) -> None:
+    """Check an opportunity against the user's criteria via the configured LLM.
 
-    When ``reason`` is True, the structured check is augmented with LLM
-    reasoning via the provider configured in ``config.yml``. Missing
-    config exits with code 3; an API/network failure prints a warning
-    and falls back to the pure-software result.
+    Exits 3 if no LLM provider is configured. Network/API/parse failures
+    print the error and exit 1.
     """
     workspace = require_workspace()
 
@@ -423,40 +421,13 @@ def check(opportunity: str, *, reason: bool = False) -> None:
         raise typer.Exit(1)
 
     opp = _resolve_opportunity(workspace, opportunity)
-    result = criteria_core.check_against_opportunity(data, opp)
 
-    if reason:
-        result = _augment_or_warn(workspace, result, data, opp)
-
-    criteria_core.save_check_to_opportunity(workspace, result, data)
-
-    _render_check_header(result)
-    if result.has_violations:
-        _render_violations(result)
-    _render_dimensions(result)
-    if result.ai_augmented:
-        _render_ai_summary(result)
-
-
-def _augment_or_warn(
-    workspace: Path,
-    result: criteria_core.CriteriaCheck,
-    data: dict[str, Any],
-    opp: opp_core.Opportunity,
-) -> criteria_core.CriteriaCheck:
-    """Run :func:`criteria_core.augment_with_llm` with friendly errors.
-
-    Missing config is fatal (exit 3, per the man page's exit-code table
-    for AI commands run without configuration). Network and parsing
-    errors fall back to the pure-software result with a printed warning
-    so the user still sees actionable output.
-    """
     try:
         config = llm_core.load_config(workspace)
     except llm_core.LLMConfigError as exc:
         console.print(
             _(
-                "--reason needs an LLM provider in config.yml: {err}"
+                "`criteria check` needs an LLM provider in config.yml: {err}"
             ).format(err=exc),
             style="red",
         )
@@ -464,16 +435,20 @@ def _augment_or_warn(
 
     with console.status(_("Reasoning with {model}…").format(model=config.model)):
         try:
-            return criteria_core.augment_with_llm(result, data, opp, config)
+            result = criteria_core.check_against_opportunity(data, opp, config)
         except llm_core.LLMError as exc:
             console.print(
-                _(
-                    "LLM augmentation failed ({err}); showing pure-software "
-                    "result only."
-                ).format(err=exc),
-                style="yellow",
+                _("LLM check failed: {err}").format(err=exc),
+                style="red",
             )
-            return result
+            raise typer.Exit(1) from None
+
+    criteria_core.save_check_to_opportunity(workspace, result, data)
+
+    _render_check_header(result)
+    if result.has_violations:
+        _render_violations(result)
+    _render_dimensions(result)
 
 
 def _resolve_opportunity(
@@ -510,6 +485,9 @@ def _render_check_header(result: criteria_core.CriteriaCheck) -> None:
             pct=alignment_pct, v=len(result.violations)
         ),
     ]
+    if result.summary:
+        lines.append("")
+        lines.append(result.summary)
     console.print(
         Panel(
             "\n".join(lines),
@@ -525,14 +503,12 @@ def _render_violations(result: criteria_core.CriteriaCheck) -> None:
         title_style="red",
     )
     table.add_column(_("Dimension"), style="cyan")
-    table.add_column(_("Source"), style="dim")
     table.add_column(_("Phrase"))
     table.add_column(_("Context"))
 
     for violation in result.violations:
         table.add_row(
             _dimension_label(violation.dimension),
-            violation.source,
             violation.phrase,
             violation.context or "—",
         )
@@ -540,23 +516,16 @@ def _render_violations(result: criteria_core.CriteriaCheck) -> None:
 
 
 def _render_dimensions(result: criteria_core.CriteriaCheck) -> None:
-    table = Table(
-        title=_("Dimension alignment"),
-        title_style="cyan",
-    )
+    table = Table(title=_("Dimension alignment"), title_style="cyan")
     table.add_column(_("Dimension"), style="cyan")
     table.add_column(_("Status"), justify="center")
-    table.add_column(_("Positives"), justify="right")
-    table.add_column(_("Negatives"), justify="right")
-    table.add_column(_("Notes"))
+    table.add_column(_("Summary"))
 
     for dim in result.dimensions:
         table.add_row(
             _dimension_label(dim.name),
             _format_status(dim.status),
-            str(len(dim.positives)) if dim.positives else "—",
-            str(len(dim.negatives)) if dim.negatives else "—",
-            _dimension_notes(dim),
+            dim.summary or "—",
         )
     console.print(table)
     _render_dimension_details(result)
@@ -573,72 +542,22 @@ def _format_status(status: str) -> str:
     return style.get(status, status)
 
 
-def _dimension_notes(dim: criteria_core.DimensionResult) -> str:
-    parts: list[str] = []
-    parts.extend(dim.notes)
-    if dim.positives:
-        parts.append(
-            _("matches: ") + ", ".join(p.phrase for p in dim.positives[:3])
-        )
-    if dim.negatives:
-        parts.append(
-            _("concerns: ") + ", ".join(n.phrase for n in dim.negatives[:3])
-        )
-    return "; ".join(parts) if parts else "—"
-
-
 def _render_dimension_details(result: criteria_core.CriteriaCheck) -> None:
-    """Print the per-dimension context snippets for matched phrases."""
+    """Print the per-dimension positives/negatives with quoted context."""
     for dim in result.dimensions:
         if not (dim.positives or dim.negatives):
             continue
         lines: list[str] = []
         for match in dim.positives:
-            tag = " [ai]" if match.source == "llm" else ""
-            lines.append(
-                _("+{tag} {p}: {c}").format(
-                    tag=tag, p=match.phrase, c=match.context
-                )
-            )
+            lines.append(f"+ {match.phrase}: {match.context}")
         for match in dim.negatives:
-            tag = " [ai]" if match.source == "llm" else ""
-            lines.append(
-                _("-{tag} {p}: {c}").format(
-                    tag=tag, p=match.phrase, c=match.context
-                )
+            lines.append(f"- {match.phrase}: {match.context}")
+        console.print(
+            Panel(
+                "\n".join(lines),
+                title=_("Matches — {dim}").format(
+                    dim=_dimension_label(dim.name)
+                ),
+                border_style="dim",
             )
-        if lines:
-            console.print(
-                Panel(
-                    "\n".join(lines),
-                    title=_("Matches — {dim}").format(
-                        dim=_dimension_label(dim.name)
-                    ),
-                    border_style="dim",
-                )
-            )
-
-
-def _render_ai_summary(result: criteria_core.CriteriaCheck) -> None:
-    """Render the LLM's overall summary and per-dimension reasoning notes."""
-    lines: list[str] = []
-    if result.ai_summary:
-        lines.append(result.ai_summary)
-    dim_lines = [
-        f"• {_dimension_label(d.name)}: {d.ai_note}"
-        for d in result.dimensions
-        if d.ai_note
-    ]
-    if dim_lines:
-        if lines:
-            lines.append("")
-        lines.extend(dim_lines)
-    if not lines:
-        return
-    console.print(
-        Panel(
-            "\n".join(lines),
-            title=_("AI reasoning"),
-            border_style="magenta",
         )
-    )

@@ -4,9 +4,8 @@ Equivalent to running each of these in sequence:
 
     python scripts/prepare_esco.py
     python scripts/prepare_onet_crosswalk.py
-    python scripts/prepare_jobhop_matrix.py
 
-The ESCO step must run first; the other two depend on
+The ESCO step must run first; the crosswalk step depends on
 ``src/career_planner/data/esco-occupations.yml`` existing.
 """
 
@@ -25,7 +24,6 @@ if str(SCRIPTS_DIR) not in sys.path:
 STEPS: tuple[tuple[str, str], ...] = (
     ("prepare_esco", "ESCO taxonomy"),
     ("prepare_onet_crosswalk", "ESCO <-> O*NET crosswalk"),
-    ("prepare_jobhop_matrix", "JobHop transition matrix"),
 )
 
 console = Console()
@@ -35,12 +33,7 @@ def main() -> None:
     for module_name, label in STEPS:
         console.rule(f"[bold cyan]{label}")
         module = importlib.import_module(module_name)
-        # prepare_jobhop_matrix.main() takes an optional argv; pass [] so it
-        # ignores prepare_all.py's own sys.argv when argparse runs.
-        if module_name == "prepare_jobhop_matrix":
-            module.main([])
-        else:
-            module.main()
+        module.main()
 
 
 if __name__ == "__main__":

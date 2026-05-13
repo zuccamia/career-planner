@@ -47,15 +47,14 @@ class CriteriaFit:
     """Cached criteria-check summary read from an opportunity's frontmatter.
 
     Written by ``career criteria check``; ``career status`` reads it back
-    so the dashboard does not need to rerun the (potentially LLM-augmented)
-    check on every invocation. ``stale`` flips True when ``criteria.yml``
-    has changed since the cached check was written.
+    so the dashboard does not need to rerun the LLM check on every
+    invocation. ``stale`` flips True when ``criteria.yml`` has changed
+    since the cached check was written.
     """
 
     alignment: int  # percent 0–100
     dealbreaker_count: int
     scored_dimensions: int
-    ai_augmented: bool
     checked_at: date | None
     stale: bool
 
@@ -394,7 +393,6 @@ def _read_cached_fit(
         alignment=_coerce_int(raw.get("alignment"), default=0),
         dealbreaker_count=_coerce_int(raw.get("dealbreaker_count"), default=0),
         scored_dimensions=_coerce_int(raw.get("scored_dimensions"), default=0),
-        ai_augmented=bool(raw.get("ai_augmented")),
         checked_at=_coerce_date(raw.get("checked_at")),
         stale=stored_hash != current_criteria_hash,
     )

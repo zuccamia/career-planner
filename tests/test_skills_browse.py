@@ -1,4 +1,4 @@
-"""Tests for `career skills browse` (tree, search, --for/--vs)."""
+"""Tests for `career skills browse` (keyword search)."""
 
 from __future__ import annotations
 
@@ -127,22 +127,11 @@ def _workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return ws
 
 
-def test_browse_tree_no_flags_prints_hierarchy(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _workspace(tmp_path, monkeypatch)
-    result = runner.invoke(app, ["skills", "browse"])
-    assert result.exit_code == 0, result.output
-    assert "ESCO skill hierarchy" in result.output
-    # A known root label that's present in the curated subset.
-    assert "computer programming" in result.output
-
-
 def test_browse_search_finds_matches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _workspace(tmp_path, monkeypatch)
-    result = runner.invoke(app, ["skills", "browse", "--search", "Haskell"])
+    result = runner.invoke(app, ["skills", "browse", "Haskell"])
     assert result.exit_code == 0, result.output
     assert "Haskell" in result.output
 
@@ -151,95 +140,6 @@ def test_browse_search_with_no_matches_reports_yellow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _workspace(tmp_path, monkeypatch)
-    result = runner.invoke(
-        app, ["skills", "browse", "--search", "zzz-no-such-skill-xyz"]
-    )
+    result = runner.invoke(app, ["skills", "browse", "zzz-no-such-skill-xyz"])
     assert result.exit_code == 0, result.output
     assert "no esco skills matched" in result.output.lower()
-
-
-def test_browse_for_occupation_lists_skills(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _workspace(tmp_path, monkeypatch)
-    result = runner.invoke(
-        app, ["skills", "browse", "--for", "software developer"]
-    )
-    assert result.exit_code == 0, result.output
-    assert "Occupation: software developer" in result.output
-    # Both ESCO skill_type buckets should appear when present.
-    assert "knowledge" in result.output or "skill/competence" in result.output
-
-
-def test_browse_for_unknown_occupation_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _workspace(tmp_path, monkeypatch)
-    result = runner.invoke(
-        app, ["skills", "browse", "--for", "zzz-fake-occupation-xyz"]
-    )
-    assert result.exit_code == 1
-    assert "no esco occupation matched" in result.output.lower()
-
-
-def test_browse_compare_two_occupations(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _workspace(tmp_path, monkeypatch)
-    result = runner.invoke(
-        app,
-        [
-            "skills",
-            "browse",
-            "--for",
-            "software developer",
-            "--vs",
-            "mobile application developer",
-        ],
-    )
-    assert result.exit_code == 0, result.output
-    assert "software developer" in result.output
-    assert "mobile application developer" in result.output
-    assert "Overlap" in result.output
-
-
-def test_browse_vs_without_for_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _workspace(tmp_path, monkeypatch)
-    result = runner.invoke(
-        app, ["skills", "browse", "--vs", "software developer"]
-    )
-    assert result.exit_code == 1
-    assert "--vs requires --for" in result.output
-
-
-def test_browse_search_with_for_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _workspace(tmp_path, monkeypatch)
-    result = runner.invoke(
-        app,
-        ["skills", "browse", "--search", "x", "--for", "software developer"],
-    )
-    assert result.exit_code == 1
-    assert "--search cannot be combined" in result.output
-
-
-def test_browse_compare_same_occupation_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _workspace(tmp_path, monkeypatch)
-    result = runner.invoke(
-        app,
-        [
-            "skills",
-            "browse",
-            "--for",
-            "software developer",
-            "--vs",
-            "software developer",
-        ],
-    )
-    assert result.exit_code == 1
-    assert "same occupation" in result.output.lower()

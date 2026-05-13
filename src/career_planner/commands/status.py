@@ -173,8 +173,7 @@ def _format_fit(opp: status_core.OpportunitySummary) -> str:
         return f"[red]⚠ {fit.dealbreaker_count}[/red]"
     if fit.scored_dimensions == 0:
         return _("—")
-    suffix = " 🤖" if fit.ai_augmented else ""
-    return f"{fit.alignment}%{suffix}"
+    return f"{fit.alignment}%"
 
 
 def _render_bar(coverage: float) -> str:
