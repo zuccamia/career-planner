@@ -3,6 +3,7 @@
 import typer
 
 from career_planner.commands import about as about_cmd
+from career_planner.commands import brag as brag_cmd
 from career_planner.commands import config as config_cmd
 from career_planner.commands import criteria as criteria_cmd
 from career_planner.commands import gap as gap_cmd
@@ -215,10 +216,15 @@ def skills_browse(
 
 @brag_app.command("add")
 def brag_add(
-    date: str | None = typer.Option(None, "--date", help="Entry date (YYYY-MM-DD)."),
+    title: str | None = typer.Argument(
+        None, help="Short title for the entry. Prompted if omitted."
+    ),
+    date: str | None = typer.Option(
+        None, "--date", help="Entry date (YYYY-MM-DD). Defaults to today."
+    ),
 ) -> None:
     """Record a new achievement using the XYZ format."""
-    typer.echo(f"TODO: Add brag entry (date={date})")
+    brag_cmd.add(title=title, date_str=date)
 
 
 @brag_app.command("list")
@@ -226,33 +232,16 @@ def brag_list(
     last: int = typer.Option(10, "--last", "-n", help="Number of entries to show."),
     tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag."),
 ) -> None:
-    """List brag entries."""
-    typer.echo(f"TODO: List brag entries (last={last}, tag={tag})")
+    """List brag entries (most recent first)."""
+    brag_cmd.list_entries(last=last, tag=tag)
 
 
 @brag_app.command("show")
 def brag_show(
-    entry: str = typer.Argument(..., help="Entry filename."),
+    entry: str = typer.Argument(..., help="Entry slug or substring."),
 ) -> None:
     """Show a specific brag entry."""
-    typer.echo(f"TODO: Show brag entry '{entry}'")
-
-
-@brag_app.command("summary")
-def brag_summary(
-    period: str = typer.Option("quarter", "--period", "-p", help="quarter, half, year, or all."),
-) -> None:
-    """Generate a plain-text accomplishment summary."""
-    typer.echo(f"TODO: Brag summary for period={period}")
-
-
-@brag_app.command("reflect")
-def brag_reflect(
-    last: int | None = typer.Option(None, "--last", "-n", help="Limit to N entries."),
-    tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag."),
-) -> None:
-    """Send brag entries to AI for pattern analysis. Requires API key."""
-    typer.echo(f"TODO: AI reflect on brag entries (last={last}, tag={tag})")
+    brag_cmd.show(entry=entry)
 
 
 @opportunity_app.command("add")

@@ -7,14 +7,12 @@ No Rich/IO concerns live here — the command layer renders.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any
 
-import yaml
-
+from career_planner.core import brag as brag_core
 from career_planner.core import criteria as criteria_core
 from career_planner.core import gap as gap_core
 from career_planner.core import opportunities as opp_core
@@ -223,63 +221,12 @@ def _skills_freshness(
 def _brag_freshness(
     workspace: Path, today: date
 ) -> tuple[int, date | None, int | None]:
-    """Count brag entries and return the most recent date."""
-    folder = workspace / "brag"
-    if not folder.exists():
+    """Count dated brag entries and return the most recent date."""
+    dated = [e for e in brag_core.list_entries(workspace) if e.date is not None]
+    if not dated:
         return 0, None, None
-    entries: list[date] = []
-    for path in sorted(folder.glob("*.md")):
-        parsed = _read_brag_date(path)
-        if parsed is not None:
-            entries.append(parsed)
-    if not entries:
-        return 0, None, None
-    latest = max(entries)
-    return len(entries), latest, (today - latest).days
-
-
-_FRONT_DELIM = "---"
-_FILENAME_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
-
-
-def _read_brag_date(path: Path) -> date | None:
-    """Extract a date from a brag entry. Prefers frontmatter, then filename."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    parsed = _frontmatter_date(text)
-    if parsed is not None:
-        return parsed
-    return _filename_date(path)
-
-
-def _frontmatter_date(text: str) -> date | None:
-    if not text.startswith(_FRONT_DELIM):
-        return None
-    rest = text[len(_FRONT_DELIM):]
-    if rest.startswith("\n"):
-        rest = rest[1:]
-    end = rest.find(f"\n{_FRONT_DELIM}")
-    if end == -1:
-        return None
-    block = rest[:end]
-    try:
-        data = yaml.safe_load(block) or {}
-    except yaml.YAMLError:
-        return None
-    if not isinstance(data, dict):
-        return None
-    return _coerce_date(data.get("date"))
-
-
-def _filename_date(path: Path) -> date | None:
-    match = _FILENAME_DATE_RE.match(path.name)
-    if not match:
-        return None
-    return _coerce_date(
-        f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
-    )
+    latest = max(e.date for e in dated)
+    return len(dated), latest, (today - latest).days
 
 
 def _coerce_date(value: Any) -> date | None:
