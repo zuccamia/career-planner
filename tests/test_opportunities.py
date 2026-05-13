@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -414,6 +416,264 @@ def test_extract_job_posting_skips_non_job_jsonld() -> None:
     result = opp_core.extract_job_posting(html_doc)
     # No JobPosting node → falls through to OG.
     assert result["title"] == "Some Role at Acme"
+
+
+def test_extract_job_posting_infers_salary_from_description() -> None:
+    # JSON-LD lacks baseSalary, but the description prose carries it — a
+    # common shape on ATSes (Eightfold, Workday) that don't fill in the
+    # structured field.
+    payload = """
+    {
+      "@type": "JobPosting",
+      "title": "Engineer",
+      "description": "<p>USD $150,000 - $200,000 per year plus benefits.</p>"
+    }
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert result["salary_min"] == 150000
+    assert result["salary_max"] == 200000
+    assert result["salary_currency"] == "USD"
+
+
+def test_extract_job_posting_does_not_override_structured_salary() -> None:
+    # When JSON-LD already has baseSalary, body-text inference must not
+    # clobber it even if the description happens to mention other numbers.
+    payload = """
+    {
+      "@type": "JobPosting",
+      "title": "Engineer",
+      "baseSalary": {
+        "@type": "MonetaryAmount",
+        "currency": "USD",
+        "value": {"minValue": 120000, "maxValue": 140000}
+      },
+      "description": "<p>The role pays $150,000 - $200,000.</p>"
+    }
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert result["salary_min"] == 120000
+    assert result["salary_max"] == 140000
+
+
+def test_extract_job_posting_infers_work_type_from_description() -> None:
+    payload = """
+    {
+      "@type": "JobPosting",
+      "title": "Engineer",
+      "description": "<p>This role is fully remote.</p>"
+    }
+    """
+    result = opp_core.extract_job_posting(_wrap_jsonld(payload))
+    assert result["work_type"] == "remote"
+
+
+def test_html_to_text_strips_script_and_style_content() -> None:
+    html_doc = (
+        "<div>Hello"
+        "<script>var secret = {pay: 1234};</script>"
+        "<style>body { color: red; }</style>"
+        " world</div>"
+    )
+    assert opp_core._html_to_text(html_doc) == "Hello world"
+
+
+# --- Eightfold ATS detour ---
+
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        (
+            "https://apply.careers.microsoft.com/careers?pid=1970393556752618"
+            "&hl=en",
+            "1970393556752618",
+        ),
+        (
+            "https://apply.careers.microsoft.com/careers/job/1970393556752618",
+            "1970393556752618",
+        ),
+        (
+            "https://acme-corp.eightfold.ai/careers?pid=42",
+            "42",
+        ),
+        (
+            "https://jobs.example.com/listing?pid=42",
+            "",
+        ),
+        (
+            "https://apply.careers.microsoft.com/careers?query=engineer",
+            "",
+        ),
+    ],
+)
+def test_eightfold_pid_detects_supported_url_shapes(url: str, expected: str) -> None:
+    assert opp_core._eightfold_pid(url) == expected
+
+
+def test_company_from_eightfold_host() -> None:
+    f = opp_core._company_from_eightfold_host
+    assert f("https://apply.careers.microsoft.com/careers?pid=1") == "Microsoft"
+    assert (
+        f("https://apply.careers.bristol-myers-squibb.com/careers?pid=1")
+        == "Bristol Myers Squibb"
+    )
+    assert f("https://acme-corp.eightfold.ai/careers?pid=1") == "Acme Corp"
+    assert f("https://example.com/careers") == ""
+
+
+def _eightfold_payload(**overrides: Any) -> dict[str, Any]:
+    """Build a minimal Eightfold API payload, with overridable fields."""
+    base = {
+        "id": 1970393556752618,
+        "name": "Teams Copilot Software Engineer",
+        "location": "United States, Washington, Redmond",
+        "locations": ["United States, Washington, Redmond"],
+        "job_description": (
+            "<b>Overview</b><br><div>Build the next generation of Teams.</div>"
+            "<br><br><p>Software Engineering IC3 - The typical base pay range "
+            "for this role across the U.S. is USD $100,600 - $199,000 per "
+            "year.</p>"
+        ),
+        "department": "Software Engineering",
+        "business_unit": "Experiences + Devices",
+        "t_create": 1770394659,
+        "t_update": 1770403633,
+        "location_flexibility": None,
+        "work_location_option": None,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_fetch_url_uses_eightfold_api_when_pid_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Eightfold detour should call /api/apply/v2/jobs/<pid> and produce
+    a synthesized HTML document whose downstream extraction yields the
+    salary, location, and date the SPA shell never carries."""
+    payload = _eightfold_payload()
+    captured: dict[str, str] = {}
+
+    class _FakeResponse:
+        def __init__(self, data: dict[str, Any]):
+            self._data = data
+            self.text = json.dumps(data)
+
+        def raise_for_status(self) -> None: ...
+
+        def json(self) -> dict[str, Any]:
+            return self._data
+
+    def fake_get(url: str, **kwargs: Any) -> _FakeResponse:
+        captured["url"] = url
+        return _FakeResponse(payload)
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    url = (
+        "https://apply.careers.microsoft.com/careers?domain=microsoft.com"
+        "&pid=1970393556752618&hl=en"
+    )
+    synth = opp_core.fetch_url(url)
+    assert (
+        captured["url"]
+        == "https://apply.careers.microsoft.com/api/apply/v2/jobs/1970393556752618"
+    )
+
+    fields = opp_core.extract_job_posting(synth)
+    assert fields["role"] == "Teams Copilot Software Engineer"
+    assert fields["company"] == "Microsoft"
+    assert "Redmond" in fields["location"]
+    assert fields["date_posted"] == "2026-02-06"
+    assert fields["salary_min"] == 100600
+    assert fields["salary_max"] == 199000
+    assert fields["salary_currency"] == "USD"
+    assert "Build the next generation of Teams" in fields["description"]
+
+    # The LLM path reads tag-stripped text and so needs the structured
+    # fields rendered as visible body text — without them the LLM never
+    # sees location/date_posted, which live only in the JSON-LD <script>.
+    body_text = opp_core._html_to_text(synth)
+    assert "Role: Teams Copilot Software Engineer" in body_text
+    assert "Company: Microsoft" in body_text
+    assert "Location: United States, Washington, Redmond" in body_text
+    assert "Date posted: 2026-02-06" in body_text
+    # Salary lives in the description prose, not the JSON. Without a
+    # labeled line, the LLM tends to anchor on the labeled fields and
+    # leave salary blank — surface the inference here too.
+    assert "Salary: USD 100,600 - 199,000" in body_text
+
+
+def test_fetch_url_eightfold_maps_remote_flexibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _eightfold_payload(location_flexibility="remoteGlobal")
+
+    class _FakeResponse:
+        def __init__(self, data: dict[str, Any]):
+            self._data = data
+            self.text = json.dumps(data)
+
+        def raise_for_status(self) -> None: ...
+
+        def json(self) -> dict[str, Any]:
+            return self._data
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", lambda url, **kw: _FakeResponse(payload))
+
+    synth = opp_core.fetch_url(
+        "https://apply.careers.microsoft.com/careers?pid=42"
+    )
+    assert opp_core.extract_job_posting(synth)["work_type"] == "remote"
+
+
+def test_fetch_url_falls_back_to_html_when_eightfold_api_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failing API call must not break the add flow — we should fall
+    back to the regular HTML fetch so the user still gets *something*."""
+    calls: list[str] = []
+
+    class _FailingResponse:
+        def raise_for_status(self) -> None:
+            import httpx
+
+            raise httpx.HTTPStatusError(
+                "boom", request=None, response=None  # type: ignore[arg-type]
+            )
+
+        def json(self) -> dict[str, Any]:
+            return {}
+
+        @property
+        def text(self) -> str:
+            return ""
+
+    class _HtmlResponse:
+        text = "<html><head><title>Backup</title></head></html>"
+
+        def raise_for_status(self) -> None: ...
+
+    def fake_get(url: str, **kwargs: Any) -> Any:
+        calls.append(url)
+        if "/api/apply/" in url:
+            return _FailingResponse()
+        return _HtmlResponse()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", fake_get)
+
+    body = opp_core.fetch_url(
+        "https://apply.careers.microsoft.com/careers?pid=42"
+    )
+    assert "Backup" in body
+    assert any("/api/apply/" in u for u in calls)
+    assert any("/api/apply/" not in u for u in calls)
 
 
 # --- llm_extract_posting ---
