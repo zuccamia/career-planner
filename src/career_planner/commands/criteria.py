@@ -428,6 +428,8 @@ def check(opportunity: str, *, reason: bool = False) -> None:
     if reason:
         result = _augment_or_warn(workspace, result, data, opp)
 
+    criteria_core.save_check_to_opportunity(workspace, result, data)
+
     _render_check_header(result)
     if result.has_violations:
         _render_violations(result)

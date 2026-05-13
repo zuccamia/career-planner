@@ -11,9 +11,11 @@ Pure software — no LLM involved.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -110,6 +112,17 @@ def save_criteria(workspace: Path, data: dict[str, Any]) -> None:
         yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
+
+
+def criteria_hash(data: dict[str, Any]) -> str:
+    """Short stable hash of a criteria dict.
+
+    Used to detect when a cached ``criteria_check`` block on an opportunity
+    is stale because the underlying criteria changed. Serialization is
+    sorted to keep the hash deterministic across reorderings.
+    """
+    payload = json.dumps(data or {}, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
 # --- dimension introspection ---
@@ -292,6 +305,54 @@ def check_against_opportunity(
         opportunity_title=opp.title,
         dimensions=tuple(results),
     )
+
+
+# --- cache write -------------------------------------------------------------
+
+# Keys written to the opportunity's ``criteria_check:`` frontmatter block.
+# Kept narrow on purpose — the dashboard only needs a summary, and a smaller
+# payload keeps the YAML readable when a user opens the .md file directly.
+_CACHE_KEYS: tuple[str, ...] = (
+    "checked_at",
+    "alignment",
+    "dealbreaker_count",
+    "scored_dimensions",
+    "ai_augmented",
+    "criteria_hash",
+)
+
+
+def save_check_to_opportunity(
+    workspace: Path,
+    check: "CriteriaCheck",
+    criteria_data: dict[str, Any],
+    *,
+    today: date | None = None,
+) -> None:
+    """Persist a compact ``criteria_check`` block onto the opportunity file.
+
+    ``career status`` reads this block to render the fit column without
+    rerunning the check. The block is rewritten in place every time the
+    user runs ``career criteria check`` so the cache stays aligned with
+    the most recent verdict (including LLM-augmented ones).
+    """
+    path = opp_core.opportunity_path(workspace, check.opportunity_slug)
+    if not path.exists():
+        return
+
+    text = path.read_text(encoding="utf-8")
+    front, body = opp_core.parse_markdown(text)
+    front["criteria_check"] = {
+        "checked_at": (today or date.today()).isoformat(),
+        "alignment": round(check.alignment * 100),
+        "dealbreaker_count": len(check.violations),
+        "scored_dimensions": sum(
+            1 for d in check.dimensions if d.status != STATUS_UNKNOWN
+        ),
+        "ai_augmented": check.ai_augmented,
+        "criteria_hash": criteria_hash(criteria_data),
+    }
+    path.write_text(opp_core.serialize_markdown(front, body), encoding="utf-8")
 
 
 def _effective_signals(

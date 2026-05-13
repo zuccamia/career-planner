@@ -1533,13 +1533,15 @@ def test_cli_opportunity_list_filters_by_status(
     assert "a-job" not in applied.output
 
 
-def test_cli_opportunity_list_rejects_unknown_status(
+def test_cli_opportunity_list_accepts_free_form_status(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Status is free-form; filtering with a value not in the suggested set
+    just returns no matches rather than erroring out."""
     _init_workspace(tmp_path, monkeypatch)
-    result = runner.invoke(app, ["opportunity", "list", "--status", "bogus"])
-    assert result.exit_code == 1
-    assert "unknown status" in result.output.lower()
+    result = runner.invoke(app, ["opportunity", "list", "--status", "OA"])
+    assert result.exit_code == 0
+    assert "no opportunities with status 'oa'" in result.output.lower()
 
 
 def test_cli_opportunity_show_prints_details(

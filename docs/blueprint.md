@@ -250,7 +250,8 @@ Checks the HuggingFace API for a newer version of JobHop, and if found, re-runs 
 | `career skills browse --search <keyword>` | Keyword search across ESCO skills (e.g., `--search "negotiation"`) |
 | `career skills browse --for <occupation>` | Show skills associated with a specific ESCO occupation |
 | `career gap <opportunity>` | Compare your skills against an opportunity's requirements; show matches and gaps |
-| `career status` | Terminal dashboard: active opportunities, days since last brag, skill coverage, deadlines |
+| `career status` | Terminal dashboard: active opportunities, days since last brag, skill coverage, deadlines; surfaces stale/missing/orphaned warnings inline |
+| `career timeline` | ASCII timeline of career history and future goals from profile |
 
 **`career skills browse` — detail**
 
@@ -268,33 +269,24 @@ The browse command serves multiple user scenarios with three entry points:
 |---|---|
 | `career path [--from <role>] [--to <role>]` | Show common transition paths between ESCO occupations using bundled JobHop data; add `--online` for deeper lookups via API |
 | `career path explore` | Given current role from profile, show most common next-step occupations |
-| `career compare <opp1> <opp2>` | Side-by-side weighted comparison of two opportunities |
 | `career data download <dataset>` | Download optional datasets (onet-full, esco-full) |
 | `career data update` | Check for newer JobHop data on HuggingFace and recompute the transition matrix if available |
 
 The `career path` output renders as an ASCII graph in the terminal showing transition chains and their relative frequency. This is a preview/lite version — directional, not definitive.
 
-### Tier 3 — Validation (no AI)
+### Tier 3 — AI-Enhanced Features (requires API key)
 
-| Command | Description |
-|---|---|
-| `career validate` | Lint the workspace: missing profile fields, stale opportunities, outdated skills, no recent brag entries |
-| `career timeline` | ASCII timeline of career history and future goals from profile |
-
-### Tier 4 — AI-Enhanced Features (requires API key)
-
-These are additive flags or subcommands layered on Tier 1–3 features. All AI interactions are governed by the coaching policies in `data/coaching/`.
+These are additive flags or subcommands layered on Tier 1–2 features. All AI interactions are governed by the coaching policies in `data/coaching/`.
 
 | Command | Description |
 |---|---|
 | `career brag reflect` | Send brag entries to LLM for pattern analysis, growth themes, and review talking points |
 | `career opportunity parse <url>` | AI-assisted extraction of job posting into structured opportunity file |
 | `career gap <opp> --suggest` | Ask LLM how to close identified skill gaps |
-| `career compare <opp1> <opp2> --advise` | LLM-powered nuanced reasoning about trade-offs |
 | `career chat` | Open-ended career coaching conversation, saved to `conversations/` |
 | `career resume review` | LLM critique of latest resume against a target opportunity |
 
-### Tier 5 — Vector Search (advanced, optional)
+### Tier 4 — Vector Search (advanced, optional)
 
 | Command | Description |
 |---|---|
@@ -574,15 +566,15 @@ Implement: `career opportunity add` (title mode + `--url` mode with HTML extract
 
 Estimated context: ~42K tokens (heaviest pure-software session due to HTML parsing + gap logic).
 
-### Session 5 — Status, validate, timeline
+### Session 5 — Status and timeline
 
-Implement: `career status` (Rich terminal dashboard), `career validate` (workspace linting), `career timeline` (ASCII timeline rendering).
+Implement: `career status` (Rich terminal dashboard with inline workspace lint warnings: missing profile fields, stale opportunities, outdated skills, no recent brag entries, orphaned files), `career timeline` (ASCII timeline rendering).
 
 Estimated context: ~30K tokens.
 
 ### Session 6 — Career paths
 
-Implement: `career path` (load bundled transition matrix, ASCII graph rendering, `--online` mode via HuggingFace API), `career path explore` (interactive drill-down), `career compare` (weighted decision matrix), `career data download/update`.
+Implement: `career path` (load bundled transition matrix, ASCII graph rendering, `--online` mode via HuggingFace API), `career path explore` (interactive drill-down), `career data download/update`.
 
 Estimated context: ~38K tokens.
 

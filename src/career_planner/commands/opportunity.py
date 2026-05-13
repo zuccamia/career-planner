@@ -82,15 +82,6 @@ def list_opportunities(status: str | None = None) -> None:
     """List tracked opportunities as a Rich table."""
     workspace = require_workspace()
 
-    if status and status not in opp_core.VALID_STATUSES:
-        console.print(
-            _("Unknown status '{s}'. Valid: {choices}").format(
-                s=status, choices=", ".join(opp_core.VALID_STATUSES)
-            ),
-            style="red",
-        )
-        raise typer.Exit(1)
-
     opps = opp_core.list_opportunities(workspace, status=status)
     if not opps:
         if status:

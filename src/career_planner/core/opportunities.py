@@ -24,7 +24,12 @@ OPPORTUNITIES_RELPATH = Path("opportunities")
 FRONTMATTER_DELIM = "---"
 TEMPLATE_NAME = "opportunity.md"
 
-VALID_STATUSES: tuple[str, ...] = (
+# Status values are free-form strings — users track interview stages and
+# pipeline state however they want (e.g. "applied", "OA", "first interview",
+# "onsite", "offer_negotiation"). The values below are common suggestions and
+# the set that downstream code treats as terminal/closed; everything else is
+# considered "open" for dashboard purposes.
+SUGGESTED_STATUSES: tuple[str, ...] = (
     "active",
     "applied",
     "interviewing",
@@ -33,6 +38,33 @@ VALID_STATUSES: tuple[str, ...] = (
     "closed",
     "withdrawn",
 )
+
+CLOSED_STATUSES: frozenset[str] = frozenset({"closed", "rejected", "withdrawn"})
+
+
+def is_open_status(status: str) -> bool:
+    """Return True for any status not in :data:`CLOSED_STATUSES`."""
+    return (status or "").strip().lower() not in CLOSED_STATUSES
+
+
+def shorten_location(location: str, *, max_len: int = 22) -> str:
+    """Compact a multi-part location for tabular display.
+
+    Keeps the leading two comma-separated parts (typically city + region)
+    and drops the country tail. Truncates with an ellipsis when the result
+    still exceeds ``max_len``. Single-part locations (e.g. ``"Remote"``) are
+    returned unchanged aside from length capping.
+    """
+    text = (location or "").strip()
+    if not text:
+        return ""
+    parts = [p.strip() for p in text.split(",") if p.strip()]
+    if not parts:
+        return ""
+    short = ", ".join(parts[:2])
+    if len(short) > max_len:
+        return short[: max_len - 1] + "…"
+    return short
 
 _SLUG_STRIP_RE = re.compile(r"[^a-z0-9]+")
 _TITLE_RE = re.compile(

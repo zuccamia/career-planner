@@ -11,6 +11,8 @@ from career_planner.commands import man as man_cmd
 from career_planner.commands import opportunity as opportunity_cmd
 from career_planner.commands import profile as profile_cmd
 from career_planner.commands import skills as skills_cmd
+from career_planner.commands import status as status_cmd
+from career_planner.commands import timeline as timeline_cmd
 from career_planner.i18n import setup as setup_i18n
 
 setup_i18n()
@@ -127,8 +129,8 @@ def init(
 
 @app.command()
 def status() -> None:
-    """Display a terminal dashboard of your career planning status."""
-    typer.echo("TODO: Show status dashboard")
+    """Display a terminal dashboard of your career planning status and surface stale/missing/orphaned items."""
+    status_cmd.run()
 
 
 @app.command()
@@ -141,31 +143,15 @@ def gap(
 
 
 @app.command()
-def compare(
-    opp1: str = typer.Argument(..., help="First opportunity."),
-    opp2: str = typer.Argument(..., help="Second opportunity."),
-    advise: bool = typer.Option(False, "--advise", help="Ask AI for trade-off analysis."),
-) -> None:
-    """Compare two opportunities side by side."""
-    typer.echo(f"TODO: Compare {opp1} vs {opp2} (advise={advise})")
-
-
-@app.command()
 def chat() -> None:
     """Start an AI career coaching conversation."""
     typer.echo("TODO: Start coaching chat")
 
 
 @app.command()
-def validate() -> None:
-    """Lint the workspace for completeness and freshness."""
-    typer.echo("TODO: Validate workspace")
-
-
-@app.command()
 def timeline() -> None:
     """Render an ASCII timeline of your career history and goals."""
-    typer.echo("TODO: Show timeline")
+    timeline_cmd.run()
 
 
 # --- Command group stubs ---
