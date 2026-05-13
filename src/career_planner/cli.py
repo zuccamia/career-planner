@@ -9,7 +9,6 @@ from career_planner.commands import gap as gap_cmd
 from career_planner.commands import init as init_cmd
 from career_planner.commands import man as man_cmd
 from career_planner.commands import opportunity as opportunity_cmd
-from career_planner.commands import profile as profile_cmd
 from career_planner.commands import skills as skills_cmd
 from career_planner.commands import status as status_cmd
 from career_planner.i18n import setup as setup_i18n
@@ -51,9 +50,6 @@ app.add_typer(brag_app, name="brag")
 
 opportunity_app = typer.Typer(help="Manage tracked career opportunities.")
 app.add_typer(opportunity_app, name="opportunity")
-
-profile_app = typer.Typer(help="View and edit your career profile.")
-app.add_typer(profile_app, name="profile")
 
 criteria_app = typer.Typer(help="Manage your job criteria and dealbreakers.")
 app.add_typer(criteria_app, name="criteria")
@@ -133,24 +129,6 @@ def gap(
 
 
 # --- Command group stubs ---
-
-
-@profile_app.command("edit")
-def profile_edit(
-    use_editor: bool = typer.Option(
-        False,
-        "--editor",
-        help="Open profile.yml in your editor instead of the guided prompts.",
-    ),
-) -> None:
-    """Edit your profile via guided prompts (--editor opens raw YAML)."""
-    profile_cmd.edit(use_editor=use_editor)
-
-
-@profile_app.command("show")
-def profile_show() -> None:
-    """Print a formatted summary of your profile."""
-    profile_cmd.show()
 
 
 @criteria_app.command("edit")

@@ -42,22 +42,6 @@ def run(today: date | None = None) -> None:
 
 def _summary_block(report: status_core.StatusReport) -> str:
     lines: list[str] = []
-
-    lines.append(
-        _("Profile completeness: {pct}% ({filled}/{total})").format(
-            pct=report.profile_completeness,
-            filled=report.profile_filled_fields,
-            total=report.profile_total_fields,
-        )
-    )
-    if report.profile_missing:
-        lines.append(
-            _("  Missing: {fields}").format(
-                fields=", ".join(report.profile_missing)
-            )
-        )
-
-    lines.append("")
     lines.append(_skills_line(report))
     lines.append(_brag_line(report))
 

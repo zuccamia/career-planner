@@ -1,8 +1,8 @@
 """Workspace status snapshot for ``career status``.
 
-Pure data gathering: read profile, skills inventory, opportunities, resumes,
-and brag entries from a workspace; report freshness, coverage, and
-warnings. No Rich/IO concerns live here — the command layer renders.
+Pure data gathering: read skills inventory, opportunities, and brag
+entries from a workspace; report freshness, coverage, and warnings.
+No Rich/IO concerns live here — the command layer renders.
 """
 
 from __future__ import annotations
@@ -18,20 +18,8 @@ import yaml
 from career_planner.core import criteria as criteria_core
 from career_planner.core import gap as gap_core
 from career_planner.core import opportunities as opp_core
-from career_planner.core import profile as profile_core
 from career_planner.core import skills as skills_core
 from career_planner.i18n import _
-
-# Required profile fields used to compute completeness. Order matters — the
-# "missing" report preserves it so users see the same prompt order they see
-# in `career profile edit`.
-PROFILE_REQUIRED_FIELDS: tuple[str, ...] = (
-    "name",
-    "current_role",
-    "current_company",
-    "target_role",
-    "target_timeline",
-)
 
 # Freshness thresholds, in days. Tuned to the cadence the man page promises:
 # brag at least once a quarter, skills refreshed every six months,
@@ -87,9 +75,6 @@ class OpportunitySummary:
 class StatusReport:
     """Full snapshot used by the renderer and any future MCP consumer."""
 
-    profile_filled_fields: int
-    profile_total_fields: int
-    profile_missing: tuple[str, ...]
     skills_count: int
     skills_last_updated: date | None
     days_since_skills_update: int | None
@@ -102,13 +87,6 @@ class StatusReport:
     orphan_resumes: tuple[Path, ...]
     orphan_files: tuple[Path, ...]
     warnings: tuple[str, ...] = field(default_factory=tuple)
-
-    @property
-    def profile_completeness(self) -> int:
-        """Percent of required profile fields filled, 0–100."""
-        if not self.profile_total_fields:
-            return 0
-        return round(100 * self.profile_filled_fields / self.profile_total_fields)
 
     @property
     def skills_stale(self) -> bool:
@@ -126,13 +104,11 @@ class StatusReport:
 def gather(workspace: Path, *, today: date | None = None) -> StatusReport:
     """Read the workspace and return a populated :class:`StatusReport`."""
     today = today or date.today()
-    profile = profile_core.load_profile(workspace)
     inventory = skills_core.load_inventory(workspace)
     opportunities = opp_core.list_opportunities(workspace)
     criteria = criteria_core.load_criteria(workspace)
     current_criteria_hash = criteria_core.criteria_hash(criteria)
 
-    filled, missing = _profile_completeness(profile)
     skills_last, skills_days = _skills_freshness(inventory, today)
     brag_count, last_brag, brag_days = _brag_freshness(workspace, today)
 
@@ -157,9 +133,6 @@ def gather(workspace: Path, *, today: date | None = None) -> StatusReport:
     orphan_files = tuple(_find_orphan_files(workspace))
 
     report = StatusReport(
-        profile_filled_fields=filled,
-        profile_total_fields=len(PROFILE_REQUIRED_FIELDS),
-        profile_missing=tuple(missing),
         skills_count=len(inventory),
         skills_last_updated=skills_last,
         days_since_skills_update=skills_days,
@@ -177,12 +150,6 @@ def gather(workspace: Path, *, today: date | None = None) -> StatusReport:
 
 def _attach_warnings(report: StatusReport) -> StatusReport:
     warnings: list[str] = []
-    if report.profile_missing:
-        warnings.append(
-            _("Profile is missing: {fields}").format(
-                fields=", ".join(report.profile_missing)
-            )
-        )
     if report.skills_count == 0:
         warnings.append(_("Skills inventory is empty — run `career skills add`."))
     elif report.skills_stale:
@@ -217,9 +184,6 @@ def _attach_warnings(report: StatusReport) -> StatusReport:
         )
 
     return StatusReport(
-        profile_filled_fields=report.profile_filled_fields,
-        profile_total_fields=report.profile_total_fields,
-        profile_missing=report.profile_missing,
         skills_count=report.skills_count,
         skills_last_updated=report.skills_last_updated,
         days_since_skills_update=report.days_since_skills_update,
@@ -235,29 +199,6 @@ def _attach_warnings(report: StatusReport) -> StatusReport:
     )
 
 
-def _profile_completeness(
-    profile: dict[str, Any]
-) -> tuple[int, list[str]]:
-    """Return ``(filled_count, missing_field_names)`` over the required set."""
-    filled = 0
-    missing: list[str] = []
-    for field_name in PROFILE_REQUIRED_FIELDS:
-        if _has_value(profile.get(field_name)):
-            filled += 1
-        else:
-            missing.append(field_name)
-    return filled, missing
-
-
-def _has_value(value: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    if isinstance(value, (list, dict)):
-        return bool(value)
-    if isinstance(value, bool):
-        return value
     if isinstance(value, (int, float)):
         return value != 0
     return True

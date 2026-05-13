@@ -26,7 +26,6 @@ def test_create_workspace_writes_directory_tree(tmp_path: Path) -> None:
     create_workspace(ws)
 
     assert (ws / "config.yml").is_file()
-    assert (ws / "profile.yml").is_file()
     assert (ws / "criteria.yml").is_file()
     assert (ws / "skills" / "inventory.yml").is_file()
 
@@ -51,14 +50,11 @@ def test_create_workspace_starter_files_are_valid_yaml(tmp_path: Path) -> None:
     create_workspace(ws)
 
     config = yaml.safe_load((ws / "config.yml").read_text(encoding="utf-8"))
-    profile = yaml.safe_load((ws / "profile.yml").read_text(encoding="utf-8"))
     criteria = yaml.safe_load((ws / "criteria.yml").read_text(encoding="utf-8"))
     inventory = yaml.safe_load((ws / "skills" / "inventory.yml").read_text(encoding="utf-8"))
 
     assert config["language"] == "en"
     assert "llm" in config and "data" in config and "mcp" in config
-
-    assert {"name", "current_role", "target_role", "history"} <= profile.keys()
 
     assert {"function", "culture", "growth", "compensation", "location"} <= criteria.keys()
     assert "dealbreakers" in criteria["function"]

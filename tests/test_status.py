@@ -10,7 +10,6 @@ from typer.testing import CliRunner
 from career_planner.cli import app
 from career_planner.core import criteria as criteria_core
 from career_planner.core import opportunities as opp_core
-from career_planner.core import profile as profile_core
 from career_planner.core import skills as skills_core
 from career_planner.core import status as status_core
 from career_planner.core.workspace import create_workspace
@@ -27,10 +26,6 @@ def _make_workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "ws"
     create_workspace(workspace)
     return workspace
-
-
-def _save_profile(workspace: Path, **fields) -> None:
-    profile_core.save_profile(workspace, dict(fields))
 
 
 def _save_inventory(workspace: Path, skills: list[dict]) -> None:
@@ -88,9 +83,6 @@ def test_gather_empty_workspace(tmp_path: Path) -> None:
     workspace = _make_workspace(tmp_path)
     report = status_core.gather(workspace, today=TODAY)
 
-    assert report.profile_filled_fields == 0
-    assert report.profile_total_fields == len(status_core.PROFILE_REQUIRED_FIELDS)
-    assert report.profile_missing == status_core.PROFILE_REQUIRED_FIELDS
     assert report.skills_count == 0
     assert report.brag_count == 0
     assert report.active_opportunities == ()
@@ -98,36 +90,6 @@ def test_gather_empty_workspace(tmp_path: Path) -> None:
     assert report.stale_opportunities == ()
     assert report.no_recent_brag is True
     assert report.skills_stale is True
-
-
-def test_profile_completeness_counts_filled_fields(tmp_path: Path) -> None:
-    workspace = _make_workspace(tmp_path)
-    _save_profile(
-        workspace,
-        name="Alex",
-        current_role="Engineer",
-        current_company="Acme",
-        target_role="Staff Engineer",
-        target_timeline="2-3 years",
-    )
-    report = status_core.gather(workspace, today=TODAY)
-    assert report.profile_filled_fields == 5
-    assert report.profile_completeness == 100
-    assert report.profile_missing == ()
-
-
-def test_profile_partial_completeness_reports_missing_fields(
-    tmp_path: Path,
-) -> None:
-    workspace = _make_workspace(tmp_path)
-    _save_profile(
-        workspace, name="Alex", current_role="Engineer", target_role=""
-    )
-    report = status_core.gather(workspace, today=TODAY)
-    assert report.profile_filled_fields == 2
-    assert "current_company" in report.profile_missing
-    assert "target_role" in report.profile_missing
-    assert report.profile_completeness == 40
 
 
 def test_skills_freshness_uses_latest_added_date(tmp_path: Path) -> None:
@@ -500,7 +462,6 @@ def test_dotfiles_are_not_orphans(tmp_path: Path) -> None:
 
 def test_warnings_compose_correctly(tmp_path: Path) -> None:
     workspace = _make_workspace(tmp_path)
-    _save_profile(workspace, name="Alex")  # most fields still missing
     _write_brag(workspace, "2025-09-01-old.md", date_str="2025-09-01")
     _save_inventory(
         workspace, [{"skill": "Python", "added": "2024-10-01", "rating": 4}]
@@ -515,7 +476,6 @@ def test_warnings_compose_correctly(tmp_path: Path) -> None:
 
     report = status_core.gather(workspace, today=TODAY)
     joined = " | ".join(report.warnings)
-    assert "Profile is missing" in joined
     assert "Skills inventory hasn't been updated" in joined
     assert "No brag entries in the last quarter" in joined
     assert "30+ days" in joined
@@ -543,7 +503,6 @@ def _pin_today(monkeypatch, today: date = TODAY) -> None:
 
 def test_status_renders_summary(tmp_path: Path, monkeypatch) -> None:
     workspace = _make_workspace(tmp_path)
-    _save_profile(workspace, name="Alex", current_role="Engineer")
     _save_inventory(
         workspace, [{"skill": "Python", "added": "2026-04-01", "rating": 4}]
     )
@@ -563,7 +522,6 @@ def test_status_renders_summary(tmp_path: Path, monkeypatch) -> None:
     assert result.exit_code == 0
     out = result.output
     assert "Career status" in out
-    assert "Profile completeness" in out
     assert "Skills inventory" in out
     assert "Senior Engineer" in out
     assert "Upcoming deadlines" in out
