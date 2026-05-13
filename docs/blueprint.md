@@ -241,7 +241,7 @@ Checks the HuggingFace API for a newer version of JobHop, and if found, re-runs 
 | `career brag summary [--period quarter\|half\|year]` | Generate plain-text accomplishment summary for a time period |
 | `career resume add <file>` | Import a resume PDF into `resumes/` as-is with a YAML sidecar (date, target role, version notes) |
 | `career opportunity add <title>` | Create structured opportunity file (role, company, pros/cons, skills, salary, deadline) |
-| `career opportunity add --url <url>` | Create opportunity from a job posting URL with best-effort HTML extraction; add `--parse` for AI-assisted extraction |
+| `career opportunity add --url <url>` | Create opportunity from a job posting URL with best-effort HTML extraction (use `career opportunity parse` for AI-assisted enrichment) |
 | `career opportunity list [--status]` | List tracked opportunities, optionally filtered by status |
 | `career opportunity show <opportunity>` | Print full details of a specific opportunity |
 | `career skills list` | Show current skills inventory with ratings and one-line examples |
@@ -288,7 +288,7 @@ These are additive flags or subcommands layered on Tier 1–3 features. All AI i
 | Command | Description |
 |---|---|
 | `career brag reflect` | Send brag entries to LLM for pattern analysis, growth themes, and review talking points |
-| `career opportunity add --url <url> --parse` | AI-assisted extraction of job posting into structured opportunity file |
+| `career opportunity parse <url>` | AI-assisted extraction of job posting into structured opportunity file |
 | `career gap <opp> --suggest` | Ask LLM how to close identified skill gaps |
 | `career compare <opp1> <opp2> --advise` | LLM-powered nuanced reasoning about trade-offs |
 | `career chat` | Open-ended career coaching conversation, saved to `conversations/` |
@@ -434,11 +434,30 @@ Example MCP client configuration (`claude_desktop_config.json`):
 language: en
 
 # LLM Provider (optional — tool works without this)
+# Two providers are supported: "anthropic" and "openai-compatible".
+# The openai-compatible shape covers OpenAI, Ollama (local + cloud),
+# Together, Fireworks, OpenRouter, MiniMax, and most hosted gateways.
 llm:
-  provider: openai-compatible    # or "anthropic", "ollama"
-  base_url: https://api.anthropic.com/v1   # or http://localhost:11434 for Ollama
+  provider: anthropic
+  base_url: https://api.anthropic.com/v1
   api_key_env: ANTHROPIC_API_KEY           # env var name (never store keys in file)
   model: claude-sonnet-4-20250514
+  #
+  # Examples for other providers (replace the block above):
+  #
+  # Ollama Cloud (hosted, API key required):
+  #   provider: openai-compatible
+  #   base_url: https://ollama.com/v1       # verify in your dashboard
+  #   api_key_env: OLLAMA_API_KEY
+  #   model: gpt-oss:120b
+  #
+  # Local Ollama (no auth needed; omit api_key_env):
+  #   provider: openai-compatible
+  #   base_url: http://localhost:11434/v1
+  #   model: llama3.1:8b
+  #
+  # MiniMax / OpenAI / OpenRouter etc. follow the same shape — set
+  # base_url and model to whatever the provider publishes.
   
 # Data preferences
 data:
@@ -575,7 +594,7 @@ Estimated context: ~45K tokens (touches many files but each change is mechanical
 
 ### Session 8 — AI layer
 
-Implement: LLM adapter (supports OpenAI-compatible, Anthropic, Ollama), coaching system prompt loader with `{{variable}}` interpolation, policies loader, `career chat` (conversation loop, save to `conversations/`), all AI flags: `--reflect`, `--suggest`, `--advise`, `--parse`, `career resume review`.
+Implement: LLM adapter (supports OpenAI-compatible, Anthropic, Ollama), coaching system prompt loader with `{{variable}}` interpolation, policies loader, `career chat` (conversation loop, save to `conversations/`), all AI subcommands and flags: `--reflect`, `--suggest`, `--advise`, `career opportunity parse`, `career resume review`.
 
 Estimated context: ~50K tokens. Consider splitting into two sessions (adapter + chat vs. enhancement flags) if context runs high.
 

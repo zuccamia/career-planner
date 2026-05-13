@@ -34,6 +34,16 @@ The tool supports internationalization (i18n) via Python's `gettext` module. Set
 
 :   Display a terminal dashboard summarizing the current state of the workspace. Shows active opportunities and their statuses, days since last brag entry, skills coverage summary across active opportunities, upcoming deadlines, and profile completeness.
 
+**career config llm**
+
+:   Interactively configure the LLM provider used by AI-enhanced commands (`criteria check --reason`, `opportunity parse`, etc.). Walks the user through a preset list — Anthropic Console, Ollama Cloud, Local Ollama, OpenAI, OpenRouter, or Custom (openai-compatible) — then prompts for `base_url`, `model`, and the name of the environment variable holding the API key (which can be left blank for local Ollama). The new `llm:` block replaces the previous one in `config.yml` while leaving comments and other sections (`language`, `data`, `mcp`, `editor`) intact.
+
+    For security, the API key itself is never read or stored by this command — only the *name* of the environment variable. If that variable is already exported in the current shell (or the provider needs no key), the wizard sends a small "ping" prompt to verify the configuration immediately; otherwise it prints the expected `export` line and points at `career config llm test`.
+
+**career config llm test**
+
+:   Re-runnable connection check. Loads the workspace's `llm:` block, resolves the API key from the environment variable named by `api_key_env` (or skips that step when no key is required), and sends a short "say ok" prompt to the configured model. Prints the response snippet on success. Exits **3** when the LLM is not configured (missing block, missing required field, unbound env var) and **1** when the request reaches the provider but fails (HTTP error, malformed body, network failure) — the failure message includes the diagnostic snippet returned by the provider.
+
 ### PROFILE
 
 **career profile edit** [**--editor**]
@@ -225,13 +235,22 @@ Inspired by Julia Evans' brag documents (https://jvns.ca/blog/brag-documents/) a
         2. **Open Graph + standard meta tags** — `og:title`, `og:site_name`, `og:description` when JSON-LD isn't present.
         3. **`<title>` element** — last-resort title only.
 
-        The user is then dropped into the editor to review and complete the file. If the fetch fails the file is still created with the URL recorded and a warning is printed so the user can fill in details manually. SPA-only sites that don't pre-render any of the above will produce a near-empty file — use `--parse` for those.
+        The user is then dropped into the editor to review and complete the file. If the fetch fails the file is still created with the URL recorded and a warning is printed so the user can fill in details manually. SPA-only sites that don't pre-render any of the above will produce a near-empty file — use `career opportunity parse` for those.
 
     **--no-editor**
     :   Create the file but skip opening the editor. Useful for scripting and tests.
 
-    **--parse** *(requires API key)*
-    :   Used with `--url`. Send the fetched page content to the configured LLM for intelligent extraction, including parsing unstructured descriptions into ESCO-coded skill requirements, salary ranges, and structured fields.
+**career opportunity parse** *url* [**--title** *text*] [**--no-editor**] *(requires API key)*
+
+:   Create an opportunity from a job posting *url* by asking the configured LLM to extract the full structured field set in a single pass over the page text — `title`, `role`, `company`, `location`, `work_type`, `date_posted`, `deadline`, salary range, `required_skills`, and a plain-text `description` for the Markdown body. The deterministic JSON-LD / Open Graph extractor used by `opportunity add --url` is **not** consulted on the happy path; the LLM reads the stripped page directly.
+
+    Requires an LLM provider in `config.yml` (see `career config llm`). If the LLM is not configured the command exits **3**. Network, API, or JSON-parse failures during extraction print a warning and **fall back to the deterministic extractor** (`extract_job_posting`) so the opportunity file is still populated with whatever JSON-LD / Open Graph fields the page exposes.
+
+    **--title** *text*
+    :   Override the title extracted from the page (the `role` frontmatter field is cleared so the two don't drift).
+
+    **--no-editor**
+    :   Create the file without opening it in the editor afterwards.
 
 **career opportunity list** [**--status** *status*]
 
@@ -578,16 +597,16 @@ To set up, add both MCP servers to your client's configuration (e.g., `claude_de
 The workspace is configured via `config.yml` in the workspace root. Key settings:
 
 **llm.provider**
-:   LLM provider type. Values: `openai-compatible`, `anthropic`, `ollama`.
+:   LLM provider type. Values: `anthropic`, `openai-compatible`. The `openai-compatible` shape covers OpenAI itself, Ollama (local and cloud), Together, Fireworks, OpenRouter, MiniMax, and any other gateway exposing the OpenAI Chat Completions API.
 
 **llm.base_url**
-:   API endpoint URL.
+:   API endpoint URL. Required for `openai-compatible`; optional for `anthropic` (defaults to `https://api.anthropic.com/v1`).
 
 **llm.api_key_env**
-:   Name of the environment variable holding the API key. Keys are never stored in config files.
+:   Name of the environment variable holding the API key. Keys are never stored in config files. Required for `anthropic`. Optional for `openai-compatible` — omit it for local Ollama (the request goes out without an `Authorization` header).
 
 **llm.model**
-:   Model identifier (e.g., `claude-sonnet-4-20250514`, `gpt-4o`, `llama3`).
+:   Model identifier (e.g., `claude-sonnet-4-20250514`, `gpt-4o`, `llama3.1:8b`).
 
 **data.taxonomy**
 :   Primary skill taxonomy. Values: `esco` (default), `onet`.

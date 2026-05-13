@@ -3,6 +3,7 @@
 import typer
 
 from career_planner.commands import about as about_cmd
+from career_planner.commands import config as config_cmd
 from career_planner.commands import criteria as criteria_cmd
 from career_planner.commands import gap as gap_cmd
 from career_planner.commands import init as init_cmd
@@ -67,6 +68,29 @@ app.add_typer(memory_app, name="memory")
 
 mcp_app = typer.Typer(help="Start the MCP server for external integrations.")
 app.add_typer(mcp_app, name="mcp")
+
+config_app = typer.Typer(help="Configure tool settings.")
+app.add_typer(config_app, name="config")
+
+llm_app = typer.Typer(
+    help="Configure the LLM provider for AI-enhanced commands.",
+    invoke_without_command=True,
+    no_args_is_help=False,
+)
+config_app.add_typer(llm_app, name="llm")
+
+
+@llm_app.callback(invoke_without_command=True)
+def _llm_default(ctx: typer.Context) -> None:
+    """Run the interactive setup when no subcommand is given."""
+    if ctx.invoked_subcommand is None:
+        config_cmd.setup_llm()
+
+
+@llm_app.command("test")
+def config_llm_test() -> None:
+    """Send a minimal prompt to verify the configured LLM is reachable."""
+    config_cmd.test_llm()
 
 
 # --- Top-level commands (stubs) ---
@@ -292,6 +316,28 @@ def opportunity_add(
 ) -> None:
     """Create a new opportunity file."""
     opportunity_cmd.add(title=title, url=url, open_editor=not no_editor)
+
+
+@opportunity_app.command("parse")
+def opportunity_parse(
+    url: str = typer.Argument(..., help="Job posting URL to fetch and parse."),
+    title: str | None = typer.Option(
+        None, "--title", help="Override the title pulled from the page."
+    ),
+    no_editor: bool = typer.Option(
+        False, "--no-editor", help="Create the file without opening an editor."
+    ),
+) -> None:
+    """Create an opportunity from a URL with LLM-assisted field enrichment.
+
+    Shortcut for ``opportunity add --url <url>`` with LLM enrichment always
+    on — the page is fetched, structurally extracted, then the configured
+    LLM is asked to fill in fields the extractor missed (skills, salary,
+    work type, deadline). Requires an LLM provider in ``config.yml``.
+    """
+    opportunity_cmd.add(
+        title=title, url=url, open_editor=not no_editor, parse=True
+    )
 
 
 @opportunity_app.command("list")

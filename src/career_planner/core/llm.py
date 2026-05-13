@@ -1,9 +1,14 @@
 """LLM adapter for career-planner.
 
-Supports Anthropic's Messages API. All LLM calls go through this module —
-callers should never construct provider requests directly. Additional
-providers (OpenAI-compatible, Ollama) can land here without changing the
-public surface (:class:`LLMConfig`, :func:`load_config`, :func:`complete`).
+Supports two provider families:
+
+* ``anthropic`` — the Messages API, with assistant-prefill for JSON mode.
+* ``openai-compatible`` — the Chat Completions API shape used by OpenAI,
+  Ollama (local + cloud), Together, Fireworks, OpenRouter, MiniMax, etc.
+  JSON mode uses ``response_format: {"type": "json_object"}``.
+
+All LLM calls go through this module — callers should never construct
+provider requests directly.
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from career_planner.core.workspace import load_config as load_workspace_config
 ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 ANTHROPIC_API_VERSION = "2023-06-01"
 
-SUPPORTED_PROVIDERS: tuple[str, ...] = ("anthropic",)
+SUPPORTED_PROVIDERS: tuple[str, ...] = ("anthropic", "openai-compatible")
 
 
 class LLMError(Exception):
@@ -50,9 +55,12 @@ def load_config(workspace: Path) -> LLMConfig:
     """Build an :class:`LLMConfig` from the workspace's ``config.yml``.
 
     Raises :class:`LLMConfigError` when the provider is unsupported, the
-    API-key environment variable is unset, or required fields are missing.
-    The API key is read from the env var named by ``llm.api_key_env`` —
-    keys are never stored in the config file itself.
+    API-key environment variable is set but unbound, or required fields
+    are missing. The API key is read from the env var named by
+    ``llm.api_key_env`` — keys are never stored in the config file
+    itself. For ``openai-compatible``, ``api_key_env`` may be omitted
+    entirely (the local Ollama case); the request goes out without an
+    ``Authorization`` header.
     """
     raw = load_workspace_config(workspace).get("llm") or {}
     if not isinstance(raw, dict):
@@ -65,24 +73,36 @@ def load_config(workspace: Path) -> LLMConfig:
         )
     if provider not in SUPPORTED_PROVIDERS:
         raise LLMConfigError(
-            f"unsupported LLM provider '{provider}' — only "
-            f"{', '.join(SUPPORTED_PROVIDERS)} is implemented in this build"
+            f"unsupported LLM provider '{provider}' — supported: "
+            f"{', '.join(SUPPORTED_PROVIDERS)}"
         )
 
-    base_url = str(raw.get("base_url") or ANTHROPIC_DEFAULT_BASE_URL).rstrip("/")
+    base_url_raw = str(raw.get("base_url") or "").strip()
+    if provider == "anthropic":
+        base_url = (base_url_raw or ANTHROPIC_DEFAULT_BASE_URL).rstrip("/")
+    else:
+        if not base_url_raw:
+            raise LLMConfigError(
+                f"set llm.base_url in config.yml — required for provider "
+                f"'{provider}'"
+            )
+        base_url = base_url_raw.rstrip("/")
+
     model = str(raw.get("model") or "").strip()
     if not model:
         raise LLMConfigError("set llm.model in config.yml")
 
     api_key_env = str(raw.get("api_key_env") or "").strip()
-    if not api_key_env:
+    api_key = ""
+    if api_key_env:
+        api_key = os.environ.get(api_key_env, "").strip()
+        if not api_key:
+            raise LLMConfigError(
+                f"environment variable {api_key_env} is unset; export it "
+                "before running AI-enhanced commands"
+            )
+    elif provider == "anthropic":
         raise LLMConfigError("set llm.api_key_env in config.yml")
-    api_key = os.environ.get(api_key_env, "").strip()
-    if not api_key:
-        raise LLMConfigError(
-            f"environment variable {api_key_env} is unset; export it before "
-            "running AI-enhanced commands"
-        )
 
     return LLMConfig(
         provider=provider,
@@ -103,36 +123,39 @@ def complete(
 ) -> str:
     """Send a completion request and return the assistant's text response.
 
-    When ``json_prefill`` is True the assistant message is primed with
-    ``{`` so the model's output is forced to start a JSON object; the
-    returned text is then re-prepended with ``{`` so callers can pass it
-    straight to ``json.loads``.
+    When ``json_prefill`` is True the returned text is guaranteed to be
+    a JSON-loadable string (via assistant-prefill on Anthropic, or
+    ``response_format: json_object`` on OpenAI-compatible endpoints).
 
     Raises :class:`LLMAPIError` on network or HTTP failure, malformed
     bodies, or empty content blocks.
     """
-    messages: list[dict[str, Any]] = [{"role": "user", "content": user}]
-    if json_prefill:
-        messages.append({"role": "assistant", "content": "{"})
-
-    payload = {
-        "model": config.model,
-        "max_tokens": max_tokens,
-        "system": system,
-        "messages": messages,
-    }
-
-    try:
-        response = httpx.post(
-            f"{config.base_url}/messages",
-            json=payload,
-            headers={
-                "x-api-key": config.api_key,
-                "anthropic-version": ANTHROPIC_API_VERSION,
-                "content-type": "application/json",
-            },
+    if config.provider == "anthropic":
+        return _complete_anthropic(
+            config,
+            system=system,
+            user=user,
+            max_tokens=max_tokens,
+            json_prefill=json_prefill,
             timeout=timeout,
         )
+    if config.provider == "openai-compatible":
+        return _complete_openai_compatible(
+            config,
+            system=system,
+            user=user,
+            max_tokens=max_tokens,
+            json_prefill=json_prefill,
+            timeout=timeout,
+        )
+    # load_config validates the provider list, so this branch is defensive.
+    raise LLMAPIError(f"unsupported provider '{config.provider}'")
+
+
+def _post_json(url: str, *, payload: dict[str, Any], headers: dict[str, str], timeout: float) -> dict[str, Any]:
+    """Shared HTTP POST → JSON body, with consistent error mapping."""
+    try:
+        response = httpx.post(url, json=payload, headers=headers, timeout=timeout)
     except httpx.HTTPError as exc:
         raise LLMAPIError(f"network error contacting LLM: {exc}") from exc
 
@@ -143,9 +166,41 @@ def complete(
         )
 
     try:
-        body = response.json()
+        return response.json()
     except json.JSONDecodeError as exc:
         raise LLMAPIError(f"LLM returned non-JSON body: {exc}") from exc
+
+
+def _complete_anthropic(
+    config: LLMConfig,
+    *,
+    system: str,
+    user: str,
+    max_tokens: int,
+    json_prefill: bool,
+    timeout: float,
+) -> str:
+    messages: list[dict[str, Any]] = [{"role": "user", "content": user}]
+    if json_prefill:
+        messages.append({"role": "assistant", "content": "{"})
+
+    payload = {
+        "model": config.model,
+        "max_tokens": max_tokens,
+        "system": system,
+        "messages": messages,
+    }
+    headers = {
+        "x-api-key": config.api_key,
+        "anthropic-version": ANTHROPIC_API_VERSION,
+        "content-type": "application/json",
+    }
+    body = _post_json(
+        f"{config.base_url}/messages",
+        payload=payload,
+        headers=headers,
+        timeout=timeout,
+    )
 
     content = body.get("content")
     if not isinstance(content, list) or not content:
@@ -160,3 +215,60 @@ def complete(
     if json_prefill:
         text = "{" + text
     return text
+
+
+def _complete_openai_compatible(
+    config: LLMConfig,
+    *,
+    system: str,
+    user: str,
+    max_tokens: int,
+    json_prefill: bool,
+    timeout: float,
+) -> str:
+    payload: dict[str, Any] = {
+        "model": config.model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
+        ],
+    }
+    if json_prefill:
+        # OpenAI, recent Ollama, Together, vLLM, and most major providers
+        # honor this; providers that don't will ignore it and rely on the
+        # prompt's "respond with JSON" instruction.
+        payload["response_format"] = {"type": "json_object"}
+
+    headers: dict[str, str] = {"content-type": "application/json"}
+    if config.api_key:
+        headers["authorization"] = f"Bearer {config.api_key}"
+
+    body = _post_json(
+        f"{config.base_url}/chat/completions",
+        payload=payload,
+        headers=headers,
+        timeout=timeout,
+    )
+
+    choices = body.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise LLMAPIError("LLM response has no choices")
+    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+    if not isinstance(message, dict):
+        raise LLMAPIError("LLM response missing message in first choice")
+    content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        finish_reason = (
+            choices[0].get("finish_reason") if isinstance(choices[0], dict) else None
+        )
+        if finish_reason == "length":
+            reasoning = message.get("reasoning")
+            in_reasoning = isinstance(reasoning, str) and reasoning.strip()
+            where = "during reasoning " if in_reasoning else ""
+            raise LLMAPIError(
+                f"model exhausted max_tokens {where}before producing "
+                "visible content; increase max_tokens"
+            )
+        raise LLMAPIError("LLM response has empty message content")
+    return content.strip()

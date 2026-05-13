@@ -11,6 +11,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
 from career_planner.core import profile as profile_core
 from career_planner.core.workspace import load_config, require_workspace
@@ -23,11 +24,14 @@ def add(
     title: str | None = None,
     url: str | None = None,
     open_editor: bool = True,
+    parse: bool = False,
 ) -> None:
     """Create an opportunity file and optionally open it in the editor.
 
     Either ``title`` or ``url`` must be provided. When only ``url`` is given,
     the page is fetched and ``<title>`` is used as the opportunity title.
+    ``parse`` adds an LLM gap-filling pass on top of the deterministic
+    extractor; it requires an LLM provider in ``config.yml``.
     """
     if not title and not url:
         console.print(
@@ -36,8 +40,17 @@ def add(
         )
         raise typer.Exit(1)
 
+    if parse and not url:
+        console.print(
+            _("LLM parsing requires a URL to fetch."),
+            style="red",
+        )
+        raise typer.Exit(1)
+
     workspace = require_workspace()
-    resolved_title, extra, body_description = _resolve_title_and_extras(title, url)
+    resolved_title, extra, body_description = _resolve_title_and_extras(
+        title, url, parse=parse, workspace=workspace
+    )
 
     target = opp_core.create_opportunity(
         workspace,
@@ -149,13 +162,22 @@ def show(opportunity: str) -> None:
 
 
 def _resolve_title_and_extras(
-    title: str | None, url: str | None
+    title: str | None,
+    url: str | None,
+    *,
+    parse: bool = False,
+    workspace: Path | None = None,
 ) -> tuple[str, dict[str, Any], str]:
     """Resolve the opportunity title, frontmatter extras, and body description.
 
-    When ``url`` is provided, the page is fetched and
-    :func:`opp_core.extract_job_posting` is used to pull as many structured
-    fields as the page exposes (JSON-LD JobPosting → Open Graph → ``<title>``).
+    When ``url`` is provided, the page is fetched and either:
+
+    * ``parse=False`` — :func:`opp_core.extract_job_posting` pulls fields
+      via JSON-LD → Open Graph → ``<title>``.
+    * ``parse=True`` — :func:`opp_core.llm_extract_posting` does a single
+      LLM pass over the stripped page text. On any LLM failure the path
+      falls back to :func:`opp_core.extract_job_posting` with a warning,
+      so the user always gets a populated file.
     """
     extra: dict[str, Any] = {}
     body_description = ""
@@ -163,14 +185,20 @@ def _resolve_title_and_extras(
         return title or "", extra, body_description
 
     extracted: dict[str, Any] = {}
+    page = ""
     try:
         page = opp_core.fetch_url(url)
-        extracted = opp_core.extract_job_posting(page)
     except Exception as exc:
         console.print(
             _("Could not fetch {url}: {err}").format(url=url, err=exc),
             style="yellow",
         )
+
+    if page:
+        if parse and workspace is not None:
+            extracted = _llm_extract(workspace, page)
+        else:
+            extracted = opp_core.extract_job_posting(page)
 
     extracted_title = str(extracted.pop("title", "") or "")
     body_description = str(extracted.pop("description", "") or "")
@@ -183,6 +211,43 @@ def _resolve_title_and_extras(
     extra.update(extracted)
     final_title = title or extracted_title or url
     return final_title, extra, body_description
+
+
+def _llm_extract(workspace: Path, page: str) -> dict[str, Any]:
+    """Run pure-LLM extraction; fall back to structured extraction on failure.
+
+    Missing config is a hard error (exit 3, matching ``criteria check
+    --reason``). Network, API, and JSON-parse failures fall back to
+    :func:`opp_core.extract_job_posting` with a yellow warning so the
+    file still gets useful content.
+    """
+    try:
+        config = llm_core.load_config(workspace)
+    except llm_core.LLMConfigError as exc:
+        console.print(
+            _(
+                "'opportunity parse' needs an LLM provider in config.yml: {err}"
+            ).format(err=exc),
+            style="red",
+        )
+        raise typer.Exit(3) from None
+
+    with console.status(_("Extracting with {model}…").format(model=config.model)):
+        try:
+            return opp_core.llm_extract_posting(page, config)
+        except (llm_core.LLMError, ValueError) as exc:
+            console.print(
+                _(
+                    "LLM extraction failed ({err}); falling back to "
+                    "structured extraction."
+                ).format(err=exc),
+                style="yellow",
+            )
+            return opp_core.extract_job_posting(page)
+
+    for key, value in enrichment.items():
+        if not extracted.get(key):
+            extracted[key] = value
 
 
 def _open_in_editor(workspace: Path, target: Path) -> None:

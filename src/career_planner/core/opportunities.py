@@ -328,6 +328,133 @@ def extract_title_from_html(html_text: str) -> str:
     return str(extract_job_posting(html_text).get("title", ""))
 
 
+_LLM_EXTRACTION_FIELDS = """\
+- title: full opportunity title combining role and company (e.g. "Senior \
+Engineer at Acme"); never null
+- role: the job title alone (e.g. "Senior Engineer")
+- company: hiring organization name
+- location: "City, Region, Country" or "Remote"; null if not stated
+- work_type: one of "remote" (fully remote), "hybrid" (any in-office \
+expectation alongside remote work), "in-person" (fully onsite), or null
+- date_posted: ISO date (YYYY-MM-DD) when the posting was published, or null
+- deadline: ISO date application deadline, or null
+- salary_min: integer expressing the full amount (150000, not 150), or null
+- salary_max: integer expressing the full amount, or null
+- salary_currency: 3-letter ISO currency code (USD, EUR, GBP, ...), or null
+- required_skills: array of short skill phrases the role calls out \
+("Python", "AWS", "distributed systems"); [] if none are stated
+- description: 2–5 short paragraphs of plain text summarizing the role, \
+its responsibilities, and the team — for the Markdown body, not frontmatter
+"""
+
+
+def llm_extract_posting(
+    html_text: str,
+    llm_config: Any,
+    *,
+    max_chars: int = 60_000,
+) -> dict[str, Any]:
+    """Pure-LLM extraction of a job posting from raw HTML.
+
+    Strips the page to plain text, sends it to the configured LLM, and
+    asks for the full structured field set in one JSON response. Returns
+    a dict in the same frontmatter shape as :func:`extract_job_posting`,
+    including the special ``description`` key meant for the Markdown body.
+
+    Raises :class:`LLMAPIError` (from the adapter) on network/API failure
+    and :class:`json.JSONDecodeError` when the response is not valid
+    JSON — the command layer is expected to catch both and fall back to
+    :func:`extract_job_posting` so the user still gets a usable file.
+    """
+    from career_planner.core import llm as llm_core
+
+    body_text = _html_to_text(html_text)
+    if len(body_text) > max_chars:
+        body_text = body_text[:max_chars]
+
+    system = (
+        "You extract structured fields from job postings. Respond with a "
+        "single JSON object using exactly the requested keys. Use null "
+        "for any value you cannot determine confidently from the posting. "
+        "Do not invent values."
+    )
+    user = (
+        f"Extract these fields from the job posting below:\n"
+        f"{_LLM_EXTRACTION_FIELDS}\n"
+        f"<posting>\n{body_text}\n</posting>"
+    )
+
+    response = llm_core.complete(
+        llm_config,
+        system=system,
+        user=user,
+        json_prefill=True,
+        max_tokens=4000,
+    )
+    data = json.loads(response)
+    if not isinstance(data, dict):
+        return {}
+    return _coerce_llm_extraction(data)
+
+
+def _coerce_llm_extraction(data: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize a full-extraction LLM response."""
+    out: dict[str, Any] = {}
+
+    for key in ("title", "role", "company", "location", "description"):
+        value = data.get(key)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped:
+                out[key] = stripped
+
+    work_type = data.get("work_type")
+    if isinstance(work_type, str):
+        choice = work_type.strip().lower()
+        if choice in {"remote", "hybrid", "in-person"}:
+            out["work_type"] = choice
+
+    for key in ("date_posted", "deadline"):
+        value = data.get(key)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if _ISO_DATE_RE.match(stripped):
+                out[key] = stripped[:10]
+
+    for key in ("salary_min", "salary_max"):
+        value = data.get(key)
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            out[key] = value
+        elif isinstance(value, float) and value.is_integer():
+            out[key] = int(value)
+
+    currency = data.get("salary_currency")
+    if isinstance(currency, str):
+        code = currency.strip().upper()
+        if re.fullmatch(r"[A-Z]{3}", code):
+            out["salary_currency"] = code
+
+    skills = data.get("required_skills")
+    if isinstance(skills, list):
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for entry in skills:
+            if not isinstance(entry, str):
+                continue
+            text = entry.strip()
+            key = text.lower()
+            if not text or key in seen:
+                continue
+            seen.add(key)
+            cleaned.append(text)
+        if cleaned:
+            out["required_skills"] = cleaned
+
+    return out
+
+
 def _find_job_posting_jsonld(html_text: str) -> dict[str, Any] | None:
     """Return the first JSON-LD ``JobPosting`` node found, or None."""
     for match in _JSON_LD_RE.finditer(html_text):

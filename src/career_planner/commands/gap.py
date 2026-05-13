@@ -259,7 +259,7 @@ def _render_fallback(
                 "and natural prose don't line up well enough.\n\n"
                 "For a complete gap analysis, re-import this opportunity "
                 "with the AI parser:\n"
-                "  career opportunity add --url <url> --parse"
+                "  career opportunity parse <url>"
             ),
             title=_("Why no missing skills?"),
             border_style="yellow",

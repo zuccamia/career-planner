@@ -446,9 +446,9 @@ def test_cli_gap_fallback_shows_inventory_hits_in_description(
     # The mentioned skill is shown; the unmentioned one is not.
     assert "totally-fake-x" in result.output
     assert "totally-fake-y" not in result.output
-    # Warning panel directs the user to --parse for missing skills.
+    # Warning panel directs the user to `opportunity parse` for missing skills.
     assert "missing skills" in result.output.lower()
-    assert "--parse" in result.output
+    assert "opportunity parse" in result.output
 
 
 def test_cli_gap_fallback_when_no_inventory_hits(
@@ -468,7 +468,7 @@ def test_cli_gap_fallback_when_no_inventory_hits(
     result = runner.invoke(app, ["gap", "prose-only-role"])
     assert result.exit_code == 0, result.output
     assert "none of your inventory" in result.output.lower()
-    assert "--parse" in result.output
+    assert "opportunity parse" in result.output
 
 
 def test_cli_gap_fallback_when_no_description(
@@ -486,7 +486,7 @@ def test_cli_gap_fallback_when_no_description(
     result = runner.invoke(app, ["gap", "engineer-at-acme"])
     assert result.exit_code == 0, result.output
     assert "no description" in result.output.lower()
-    assert "--parse" in result.output
+    assert "opportunity parse" in result.output
 
 
 def test_cli_gap_missing_opportunity_exits_1(

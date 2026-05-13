@@ -3,11 +3,12 @@
 # CLI interface language ("en" or "vi")
 language: en
 
-# LLM Provider (optional — the tool works without this)
+# LLM Provider (optional — the tool works without this).
+# Run `career config llm` for an interactive walkthrough.
 llm:
-  provider: openai-compatible    # "openai-compatible", "anthropic", or "ollama"
+  provider: anthropic              # "anthropic" or "openai-compatible"
   base_url: https://api.anthropic.com/v1
-  api_key_env: ANTHROPIC_API_KEY  # env var name; keys are never stored in this file
+  api_key_env: ANTHROPIC_API_KEY   # env var name; keys are never stored in this file
   model: claude-sonnet-4-20250514
 
 # Data preferences

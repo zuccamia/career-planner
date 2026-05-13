@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 from career_planner.cli import app
 from career_planner.commands import opportunity as opportunity_cmd
+from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
 from career_planner.core.workspace import create_workspace
 
@@ -413,6 +414,160 @@ def test_extract_job_posting_skips_non_job_jsonld() -> None:
     result = opp_core.extract_job_posting(html_doc)
     # No JobPosting node → falls through to OG.
     assert result["title"] == "Some Role at Acme"
+
+
+# --- llm_extract_posting ---
+
+
+def _fake_llm_config() -> llm_core.LLMConfig:
+    return llm_core.LLMConfig(
+        provider="anthropic",
+        base_url="https://api.anthropic.com/v1",
+        model="claude-sonnet-4-20250514",
+        api_key="sk-fake",
+    )
+
+
+def test_llm_extract_posting_returns_full_frontmatter_shape() -> None:
+    captured: dict = {}
+
+    def fake_complete(config, *, system, user, **kwargs):
+        captured["user"] = user
+        return (
+            '{"title": "Senior Engineer at Acme", "role": "Senior Engineer", '
+            '"company": "Acme", "location": "NYC", "work_type": "hybrid", '
+            '"date_posted": "2026-05-01", "deadline": "2026-09-30", '
+            '"salary_min": 150000, "salary_max": 200000, '
+            '"salary_currency": "USD", '
+            '"required_skills": ["Python", "AWS"], '
+            '"description": "Build the platform."}'
+        )
+
+    with patch.object(llm_core, "complete", side_effect=fake_complete):
+        out = opp_core.llm_extract_posting(
+            "<p>Acme is hiring a Senior Engineer.</p>",
+            _fake_llm_config(),
+        )
+
+    assert out == {
+        "title": "Senior Engineer at Acme",
+        "role": "Senior Engineer",
+        "company": "Acme",
+        "location": "NYC",
+        "work_type": "hybrid",
+        "date_posted": "2026-05-01",
+        "deadline": "2026-09-30",
+        "salary_min": 150_000,
+        "salary_max": 200_000,
+        "salary_currency": "USD",
+        "required_skills": ["Python", "AWS"],
+        "description": "Build the platform.",
+    }
+    # The prompt should include all the field names we expect the LLM to fill.
+    for key in (
+        "title",
+        "role",
+        "company",
+        "location",
+        "work_type",
+        "salary_min",
+        "salary_currency",
+        "required_skills",
+        "description",
+    ):
+        assert key in captured["user"]
+
+
+def test_llm_extract_posting_drops_nulls_and_invalid_values() -> None:
+    def fake_complete(*args, **kwargs):
+        return (
+            '{"title": "Engineer at Acme", "role": "Engineer", '
+            '"company": "Acme", "location": null, '
+            '"work_type": "flexible", "date_posted": null, '
+            '"deadline": "someday", "salary_min": null, "salary_max": null, '
+            '"salary_currency": "dollars", "required_skills": [], '
+            '"description": null}'
+        )
+
+    with patch.object(llm_core, "complete", side_effect=fake_complete):
+        out = opp_core.llm_extract_posting("<p>...</p>", _fake_llm_config())
+
+    assert out["title"] == "Engineer at Acme"
+    assert out["role"] == "Engineer"
+    assert out["company"] == "Acme"
+    # Invalid work_type, malformed deadline, bad currency, null description
+    # and the empty-skills list are all dropped.
+    for key in (
+        "location",
+        "work_type",
+        "date_posted",
+        "deadline",
+        "salary_currency",
+        "salary_min",
+        "salary_max",
+        "required_skills",
+        "description",
+    ):
+        assert key not in out
+
+
+def test_llm_extract_posting_dedupes_skills_case_insensitive() -> None:
+    def fake_complete(*args, **kwargs):
+        return (
+            '{"title": "Engineer at Acme", "role": "Engineer", '
+            '"company": "Acme", '
+            '"required_skills": ["Python", "python", "AWS", "aws", "Go"]}'
+        )
+
+    with patch.object(llm_core, "complete", side_effect=fake_complete):
+        out = opp_core.llm_extract_posting("<p>...</p>", _fake_llm_config())
+
+    assert out["required_skills"] == ["Python", "AWS", "Go"]
+
+
+def test_llm_extract_posting_coerces_float_salary_to_int() -> None:
+    def fake_complete(*args, **kwargs):
+        return (
+            '{"title": "Engineer at Acme", "role": "Engineer", '
+            '"company": "Acme", '
+            '"salary_min": 100000.0, "salary_max": 150000.5, '
+            '"salary_currency": "USD"}'
+        )
+
+    with patch.object(llm_core, "complete", side_effect=fake_complete):
+        out = opp_core.llm_extract_posting("<p>...</p>", _fake_llm_config())
+
+    # 100000.0 → 100000 (integer-valued float is accepted); 150000.5 is
+    # dropped because it can't be safely coerced to a clean integer.
+    assert out["salary_min"] == 100_000
+    assert "salary_max" not in out
+
+
+def test_llm_extract_posting_raises_on_malformed_json() -> None:
+    def fake_complete(*args, **kwargs):
+        return "not json at all"
+
+    with patch.object(llm_core, "complete", side_effect=fake_complete):
+        with pytest.raises(ValueError):
+            opp_core.llm_extract_posting("<p>...</p>", _fake_llm_config())
+
+
+def test_llm_extract_posting_truncates_long_pages() -> None:
+    captured: dict = {}
+
+    def fake_complete(config, *, system, user, **kwargs):
+        captured["user"] = user
+        return '{"title": "X", "role": "Y", "company": "Z"}'
+
+    long_body = "<p>" + ("lorem ipsum " * 10_000) + "</p>"
+    with patch.object(llm_core, "complete", side_effect=fake_complete):
+        opp_core.llm_extract_posting(
+            long_body, _fake_llm_config(), max_chars=5_000
+        )
+
+    # The prompt body should be capped at max_chars; the surrounding system
+    # instructions and field list add a small constant on top.
+    assert len(captured["user"]) < 5_000 + 2_000
 
 
 # --- body-text salary and work_type inference ---
@@ -850,6 +1005,225 @@ def test_cli_opportunity_add_with_url_and_explicit_title(
     front, _ = opp_core.parse_markdown(target.read_text(encoding="utf-8"))
     assert front["title"] == "My Custom Title"
     assert front["url"] == "https://example.com/x"
+
+
+# --- CLI: career opportunity parse <url> ---
+
+
+def _write_llm_config(ws: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (ws / "config.yml").write_text(
+        "llm:\n"
+        "  provider: anthropic\n"
+        "  model: claude-sonnet-4-20250514\n"
+        "  api_key_env: CAREER_PARSE_TEST_KEY\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CAREER_PARSE_TEST_KEY", "sk-fake")
+
+
+def test_cli_opportunity_parse_writes_llm_fields_to_frontmatter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pure-AI extraction: the LLM returns the full field set in one shot,
+    and the opportunity file is populated entirely from that response."""
+    ws = _init_workspace(tmp_path, monkeypatch)
+    _write_llm_config(ws, monkeypatch)
+
+    # The JSON-LD here is intentionally *wrong* compared to the LLM response
+    # so we can prove the parse path no longer pre-extracts from JSON-LD.
+    payload = """
+    <html><body>
+    <script type="application/ld+json">
+    {"@type": "JobPosting", "title": "Stale JSON-LD Title",
+     "hiringOrganization": {"name": "Stale Inc"}}
+    </script>
+    <p>Real posting text the LLM would actually read.</p>
+    </body></html>
+    """
+
+    llm_response = (
+        '{"title": "Senior Engineer at Globex", '
+        '"role": "Senior Engineer", "company": "Globex", '
+        '"location": "NYC", "work_type": "hybrid", '
+        '"date_posted": "2026-05-01", "deadline": null, '
+        '"salary_min": 180000, "salary_max": 220000, '
+        '"salary_currency": "USD", '
+        '"required_skills": ["Python", "Go"], '
+        '"description": "Build the platform team."}'
+    )
+
+    with patch.object(
+        opportunity_cmd.opp_core, "fetch_url", return_value=payload
+    ), patch.object(llm_core, "complete", return_value=llm_response):
+        result = runner.invoke(
+            app,
+            [
+                "opportunity",
+                "parse",
+                "https://example.com/jobs/x",
+                "--no-editor",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    target = ws / "opportunities" / "senior-engineer-at-globex.md"
+    front, body = opp_core.parse_markdown(target.read_text(encoding="utf-8"))
+    # All fields come from the LLM; JSON-LD is not consulted on the happy path.
+    assert front["company"] == "Globex"
+    assert front["role"] == "Senior Engineer"
+    assert front["location"] == "NYC"
+    assert front["work_type"] == "hybrid"
+    assert front["required_skills"] == ["Python", "Go"]
+    assert front["salary_min"] == 180_000
+    assert front["salary_max"] == 220_000
+    assert front["salary_currency"] == "USD"
+    assert "Build the platform team." in body
+    # The stale JSON-LD title/company are never written.
+    assert "Stale" not in target.read_text(encoding="utf-8")
+
+
+def test_cli_opportunity_parse_missing_llm_config_exits_3(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    # No llm block in config.yml (the default from `career init`).
+    payload = (
+        '<script type="application/ld+json">'
+        '{"@type": "JobPosting", "title": "Role",'
+        ' "hiringOrganization": {"name": "Acme"}}'
+        "</script>"
+    )
+    with patch.object(
+        opportunity_cmd.opp_core, "fetch_url", return_value=payload
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "opportunity",
+                "parse",
+                "https://example.com/x",
+                "--no-editor",
+            ],
+        )
+    assert result.exit_code == 3, result.output
+    assert "config.yml" in result.output
+    # The opportunity file should not have been written.
+    assert not list((ws / "opportunities").glob("*.md"))
+
+
+def test_cli_opportunity_parse_llm_failure_falls_back_to_structured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An LLM API error during parse should warn and fall back to the
+    deterministic structured extractor so the file still has useful fields."""
+    ws = _init_workspace(tmp_path, monkeypatch)
+    _write_llm_config(ws, monkeypatch)
+
+    payload = (
+        '<script type="application/ld+json">'
+        '{"@type": "JobPosting", "title": "Senior Engineer",'
+        ' "hiringOrganization": {"name": "Acme"}}'
+        "</script>"
+    )
+
+    with patch.object(
+        opportunity_cmd.opp_core, "fetch_url", return_value=payload
+    ), patch.object(
+        llm_core, "complete", side_effect=llm_core.LLMAPIError("HTTP 500")
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "opportunity",
+                "parse",
+                "https://example.com/x",
+                "--no-editor",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "extraction failed" in result.output.lower()
+    target = ws / "opportunities" / "senior-engineer-at-acme.md"
+    assert target.exists()
+    front, _body = opp_core.parse_markdown(target.read_text(encoding="utf-8"))
+    # Fields come from the JSON-LD fallback path.
+    assert front["company"] == "Acme"
+    assert front["role"] == "Senior Engineer"
+
+
+def test_cli_opportunity_parse_malformed_json_falls_back_to_structured(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    _write_llm_config(ws, monkeypatch)
+
+    payload = (
+        '<script type="application/ld+json">'
+        '{"@type": "JobPosting", "title": "Engineer",'
+        ' "hiringOrganization": {"name": "Acme"}}'
+        "</script>"
+    )
+
+    with patch.object(
+        opportunity_cmd.opp_core, "fetch_url", return_value=payload
+    ), patch.object(
+        llm_core, "complete", return_value="this is not json"
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "opportunity",
+                "parse",
+                "https://example.com/x",
+                "--no-editor",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "extraction failed" in result.output.lower()
+    target = ws / "opportunities" / "engineer-at-acme.md"
+    assert target.exists()
+    front, _body = opp_core.parse_markdown(target.read_text(encoding="utf-8"))
+    assert front["company"] == "Acme"
+
+
+def test_cli_opportunity_parse_with_title_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    _write_llm_config(ws, monkeypatch)
+
+    payload = "<p>Anything — the LLM is the only extractor on this path.</p>"
+    llm_response = (
+        '{"title": "Auto Title", "role": "Engineer", "company": "Acme", '
+        '"required_skills": ["Python"]}'
+    )
+
+    with patch.object(
+        opportunity_cmd.opp_core, "fetch_url", return_value=payload
+    ), patch.object(llm_core, "complete", return_value=llm_response):
+        result = runner.invoke(
+            app,
+            [
+                "opportunity",
+                "parse",
+                "https://example.com/x",
+                "--title",
+                "My Custom Title",
+                "--no-editor",
+            ],
+        )
+
+    assert result.exit_code == 0, result.output
+    target = ws / "opportunities" / "my-custom-title.md"
+    assert target.exists()
+    front, _ = opp_core.parse_markdown(target.read_text(encoding="utf-8"))
+    # User-supplied title wins, role is cleared so it doesn't drift.
+    assert front["title"] == "My Custom Title"
+    assert front.get("role", "") == ""
+    # Other LLM-supplied fields still land.
+    assert front["company"] == "Acme"
+    assert front["required_skills"] == ["Python"]
 
 
 def test_cli_opportunity_list_empty(
