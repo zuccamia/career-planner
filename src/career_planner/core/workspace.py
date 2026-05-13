@@ -6,7 +6,10 @@ Never use raw open() for workspace files elsewhere in the codebase.
 
 from __future__ import annotations
 
+import os
+import shlex
 import shutil
+import subprocess
 from importlib import resources
 from pathlib import Path
 from typing import Any
@@ -14,6 +17,7 @@ from typing import Any
 import yaml
 
 WORKSPACE_MARKER = "config.yml"
+DEFAULT_EDITOR = "vim"
 
 # Subdirectories created by `career init`. Order doesn't matter — each is
 # created with mkdir(parents=True). data/coaching is populated from bundled
@@ -78,6 +82,33 @@ def load_config(workspace: Path) -> dict[str, Any]:
         return {}
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return raw if isinstance(raw, dict) else {}
+
+
+def resolve_editor(config: dict[str, Any] | None = None) -> str:
+    """Resolve the editor command from config or environment.
+
+    Order of precedence:
+      1. ``config['editor']`` if set and not the literal ``$EDITOR`` placeholder
+      2. ``$EDITOR`` environment variable
+      3. fallback: ``vim``
+    """
+    raw = (config or {}).get("editor")
+    if isinstance(raw, str):
+        stripped = raw.strip()
+        if stripped and stripped != "$EDITOR":
+            return stripped
+    return os.environ.get("EDITOR") or DEFAULT_EDITOR
+
+
+def open_in_editor(file_path: Path, editor: str) -> int:
+    """Run ``editor file_path`` synchronously and return the exit code.
+
+    Raises ``FileNotFoundError`` if the editor binary can't be located on PATH.
+    """
+    parts = shlex.split(editor)
+    if not parts or shutil.which(parts[0]) is None:
+        raise FileNotFoundError(editor)
+    return subprocess.run([*parts, str(file_path)]).returncode
 
 
 def save_llm_config(workspace: Path, llm: dict[str, Any]) -> None:

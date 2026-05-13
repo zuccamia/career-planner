@@ -1,14 +1,16 @@
-"""Tests for `career init`."""
+"""Tests for `career init` and workspace-level helpers."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 import yaml
 from typer.testing import CliRunner
 
 from career_planner.cli import app
+from career_planner.core import workspace as workspace_core
 from career_planner.core.workspace import (
     WORKSPACE_SUBDIRS,
     WorkspaceExistsError,
@@ -127,3 +129,52 @@ def test_cli_init_language_flag_sets_config(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     config = yaml.safe_load((target / "config.yml").read_text(encoding="utf-8"))
     assert config["language"] == "vi"
+
+
+# --- workspace editor helpers ---
+
+
+def test_resolve_editor_prefers_config_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EDITOR", raising=False)
+    assert workspace_core.resolve_editor({"editor": "nano"}) == "nano"
+
+
+def test_resolve_editor_treats_placeholder_as_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EDITOR", "code --wait")
+    assert workspace_core.resolve_editor({"editor": "$EDITOR"}) == "code --wait"
+
+
+def test_resolve_editor_falls_back_to_vim(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("EDITOR", raising=False)
+    assert workspace_core.resolve_editor({"editor": "$EDITOR"}) == "vim"
+    assert workspace_core.resolve_editor({}) == "vim"
+    assert workspace_core.resolve_editor(None) == "vim"
+
+
+def test_resolve_editor_uses_env_when_no_config_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("EDITOR", "emacs")
+    assert workspace_core.resolve_editor({}) == "emacs"
+
+
+def test_open_in_editor_raises_when_binary_missing() -> None:
+    with pytest.raises(FileNotFoundError):
+        workspace_core.open_in_editor(
+            Path("/tmp/whatever"), "definitely-not-a-real-editor-zzz"
+        )
+
+
+def test_open_in_editor_invokes_subprocess(tmp_path: Path) -> None:
+    target = tmp_path / "file.yml"
+    target.touch()
+    fake = type("R", (), {"returncode": 0})()
+    with patch("career_planner.core.workspace.subprocess.run", return_value=fake) as run:
+        with patch(
+            "career_planner.core.workspace.shutil.which", return_value="/usr/bin/vim"
+        ):
+            rc = workspace_core.open_in_editor(target, "vim")
+    assert rc == 0
+    run.assert_called_once_with(["vim", str(target)])

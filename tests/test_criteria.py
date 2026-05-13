@@ -400,7 +400,7 @@ def test_cli_criteria_edit_with_editor_flag(
         return 0
 
     with patch.object(
-        criteria_cmd.profile_core, "open_in_editor", side_effect=fake_open
+        criteria_cmd, "open_in_editor", side_effect=fake_open
     ):
         result = runner.invoke(app, ["criteria", "edit", "--editor"])
 
@@ -415,7 +415,7 @@ def test_cli_criteria_edit_with_editor_flag_handles_missing_editor(
     monkeypatch.setenv("EDITOR", "stub-editor")
 
     with patch.object(
-        criteria_cmd.profile_core,
+        criteria_cmd,
         "open_in_editor",
         side_effect=FileNotFoundError("missing"),
     ):
@@ -432,7 +432,7 @@ def test_cli_criteria_edit_with_editor_flag_creates_file_when_missing(
     (ws / "criteria.yml").unlink()
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(criteria_cmd.profile_core, "open_in_editor", return_value=0):
+    with patch.object(criteria_cmd, "open_in_editor", return_value=0):
         result = runner.invoke(app, ["criteria", "edit", "--editor"])
 
     assert result.exit_code == 0, result.output

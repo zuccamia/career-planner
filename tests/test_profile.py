@@ -49,52 +49,6 @@ def test_save_and_load_round_trip(tmp_path: Path) -> None:
     assert profile_core.load_profile(ws) == payload
 
 
-def test_resolve_editor_prefers_config_value(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("EDITOR", raising=False)
-    assert profile_core.resolve_editor({"editor": "nano"}) == "nano"
-
-
-def test_resolve_editor_treats_placeholder_as_unset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EDITOR", "code --wait")
-    assert profile_core.resolve_editor({"editor": "$EDITOR"}) == "code --wait"
-
-
-def test_resolve_editor_falls_back_to_vim(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("EDITOR", raising=False)
-    assert profile_core.resolve_editor({"editor": "$EDITOR"}) == "vim"
-    assert profile_core.resolve_editor({}) == "vim"
-    assert profile_core.resolve_editor(None) == "vim"
-
-
-def test_resolve_editor_uses_env_when_no_config_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("EDITOR", "emacs")
-    assert profile_core.resolve_editor({}) == "emacs"
-
-
-def test_open_in_editor_raises_when_binary_missing() -> None:
-    with pytest.raises(FileNotFoundError):
-        profile_core.open_in_editor(
-            Path("/tmp/whatever"), "definitely-not-a-real-editor-zzz"
-        )
-
-
-def test_open_in_editor_invokes_subprocess(tmp_path: Path) -> None:
-    target = tmp_path / "profile.yml"
-    target.touch()
-    fake = type("R", (), {"returncode": 0})()
-    with patch("career_planner.core.profile.subprocess.run", return_value=fake) as run:
-        with patch(
-            "career_planner.core.profile.shutil.which", return_value="/usr/bin/vim"
-        ):
-            rc = profile_core.open_in_editor(target, "vim")
-    assert rc == 0
-    run.assert_called_once_with(["vim", str(target)])
-
-
 # --- workspace.load_config ---
 
 
@@ -212,7 +166,7 @@ def test_cli_profile_edit_editor_invokes_editor_on_profile_file(
         calls.append((file_path, editor))
         return 0
 
-    with patch.object(profile_cmd.profile_core, "open_in_editor", side_effect=fake_open):
+    with patch.object(profile_cmd, "open_in_editor", side_effect=fake_open):
         result = runner.invoke(app, ["profile", "edit", "--editor"])
 
     assert result.exit_code == 0, result.output
@@ -239,7 +193,7 @@ def test_cli_profile_edit_editor_uses_config_editor_when_set(
         captured["editor"] = editor
         return 0
 
-    with patch.object(profile_cmd.profile_core, "open_in_editor", side_effect=fake_open):
+    with patch.object(profile_cmd, "open_in_editor", side_effect=fake_open):
         result = runner.invoke(app, ["profile", "edit", "--editor"])
 
     assert result.exit_code == 0, result.output
@@ -252,7 +206,7 @@ def test_cli_profile_edit_editor_reports_missing_editor(
     _init_workspace(tmp_path, monkeypatch)
 
     with patch.object(
-        profile_cmd.profile_core,
+        profile_cmd,
         "open_in_editor",
         side_effect=FileNotFoundError("missing"),
     ):
@@ -268,7 +222,7 @@ def test_cli_profile_edit_editor_propagates_nonzero_status(
     _init_workspace(tmp_path, monkeypatch)
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(profile_cmd.profile_core, "open_in_editor", return_value=2):
+    with patch.object(profile_cmd, "open_in_editor", return_value=2):
         result = runner.invoke(app, ["profile", "edit", "--editor"])
 
     assert result.exit_code == 2

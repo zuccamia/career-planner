@@ -13,8 +13,12 @@ from rich.table import Table
 from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
-from career_planner.core import profile as profile_core
-from career_planner.core.workspace import load_config, require_workspace
+from career_planner.core.workspace import (
+    load_config,
+    open_in_editor,
+    require_workspace,
+    resolve_editor,
+)
 from career_planner.i18n import _
 
 console = Console()
@@ -38,9 +42,9 @@ def _edit_in_editor(workspace: Path) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.touch()
 
-    editor = profile_core.resolve_editor(load_config(workspace))
+    editor = resolve_editor(load_config(workspace))
     try:
-        rc = profile_core.open_in_editor(target, editor)
+        rc = open_in_editor(target, editor)
     except FileNotFoundError:
         console.print(
             _(

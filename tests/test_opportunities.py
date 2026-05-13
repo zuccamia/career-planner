@@ -1147,7 +1147,7 @@ def test_cli_opportunity_add_opens_editor_by_default(
         return 0
 
     with patch.object(
-        opportunity_cmd.profile_core, "open_in_editor", side_effect=fake_open
+        opportunity_cmd, "open_in_editor", side_effect=fake_open
     ):
         result = runner.invoke(app, ["opportunity", "add", "A Role"])
 
@@ -1163,7 +1163,7 @@ def test_cli_opportunity_add_handles_missing_editor(
     monkeypatch.setenv("EDITOR", "stub-editor")
 
     with patch.object(
-        opportunity_cmd.profile_core,
+        opportunity_cmd,
         "open_in_editor",
         side_effect=FileNotFoundError("missing"),
     ):
