@@ -9,6 +9,7 @@ from career_planner.commands import gap as gap_cmd
 from career_planner.commands import init as init_cmd
 from career_planner.commands import man as man_cmd
 from career_planner.commands import opportunity as opportunity_cmd
+from career_planner.commands import resume as resume_cmd
 from career_planner.commands import skills as skills_cmd
 from career_planner.commands import status as status_cmd
 from career_planner.i18n import setup as setup_i18n
@@ -53,6 +54,9 @@ app.add_typer(opportunity_app, name="opportunity")
 
 criteria_app = typer.Typer(help="Manage your job criteria and dealbreakers.")
 app.add_typer(criteria_app, name="criteria")
+
+resume_app = typer.Typer(help="Edit and render your resume.")
+app.add_typer(resume_app, name="resume")
 
 memory_app = typer.Typer(help="Manage vector search and semantic memory.")
 app.add_typer(memory_app, name="memory")
@@ -155,6 +159,24 @@ def criteria_check(
 ) -> None:
     """Check an opportunity against your job criteria (AI-driven)."""
     criteria_cmd.check(opportunity=opportunity)
+
+
+@resume_app.command("edit")
+def resume_edit() -> None:
+    """Open resume.yml in $EDITOR."""
+    resume_cmd.edit()
+
+
+@resume_app.command("render")
+def resume_render(
+    opportunity: str | None = typer.Option(
+        None,
+        "--for",
+        help="Opportunity to tailor the resume against (AI-driven).",
+    ),
+) -> None:
+    """Render your resume as markdown (with --for, AI-tailored to an opportunity)."""
+    resume_cmd.render(opportunity=opportunity)
 
 
 @skills_app.command("list")

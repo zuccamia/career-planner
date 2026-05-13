@@ -207,9 +207,9 @@ def create_workspace(path: Path, language: str = "en") -> Path:
     """Create a new workspace at `path`.
 
     Creates the directory tree, writes starter templates (config.yml,
-    criteria.yml, skills/inventory.yml) and copies bundled coaching
-    configuration into data/coaching/. Bundled ESCO data files are copied
-    into data/ when available.
+    criteria.yml, resume.yml, skills/inventory.yml) and copies bundled
+    coaching configuration into data/coaching/. Bundled ESCO data files
+    are copied into data/ when available.
 
     Raises WorkspaceExistsError if a config.yml already exists at `path`.
     """
@@ -223,6 +223,7 @@ def create_workspace(path: Path, language: str = "en") -> Path:
 
     _write_config(path / "config.yml", language=language)
     _copy_template("criteria.yml", path / "criteria.yml")
+    _copy_template("resume.yml", path / "resume.yml")
     _copy_template("skills_inventory.yml", path / "skills" / "inventory.yml")
 
     _copy_bundled("coaching/system-prompt.md", path / "data" / "coaching" / "system-prompt.md")
