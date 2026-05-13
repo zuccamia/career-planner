@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from career_planner.core import criteria as criteria_core
+from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
 from career_planner.core import profile as profile_core
 from career_planner.core.workspace import load_config, require_workspace
@@ -400,8 +401,14 @@ def _render_field(value: Any) -> str | None:
 # --- check ---
 
 
-def check(opportunity: str) -> None:
-    """Check an opportunity against the user's criteria."""
+def check(opportunity: str, *, reason: bool = False) -> None:
+    """Check an opportunity against the user's criteria.
+
+    When ``reason`` is True, the structured check is augmented with LLM
+    reasoning via the provider configured in ``config.yml``. Missing
+    config exits with code 3; an API/network failure prints a warning
+    and falls back to the pure-software result.
+    """
     workspace = require_workspace()
 
     data = criteria_core.load_criteria(workspace)
@@ -418,10 +425,53 @@ def check(opportunity: str) -> None:
     opp = _resolve_opportunity(workspace, opportunity)
     result = criteria_core.check_against_opportunity(data, opp)
 
+    if reason:
+        result = _augment_or_warn(workspace, result, data, opp)
+
     _render_check_header(result)
     if result.has_violations:
         _render_violations(result)
     _render_dimensions(result)
+    if result.ai_augmented:
+        _render_ai_summary(result)
+
+
+def _augment_or_warn(
+    workspace: Path,
+    result: criteria_core.CriteriaCheck,
+    data: dict[str, Any],
+    opp: opp_core.Opportunity,
+) -> criteria_core.CriteriaCheck:
+    """Run :func:`criteria_core.augment_with_llm` with friendly errors.
+
+    Missing config is fatal (exit 3, per the man page's exit-code table
+    for AI commands run without configuration). Network and parsing
+    errors fall back to the pure-software result with a printed warning
+    so the user still sees actionable output.
+    """
+    try:
+        config = llm_core.load_config(workspace)
+    except llm_core.LLMConfigError as exc:
+        console.print(
+            _(
+                "--reason needs an LLM provider in config.yml: {err}"
+            ).format(err=exc),
+            style="red",
+        )
+        raise typer.Exit(3) from None
+
+    with console.status(_("Reasoning with {model}…").format(model=config.model)):
+        try:
+            return criteria_core.augment_with_llm(result, data, opp, config)
+        except llm_core.LLMError as exc:
+            console.print(
+                _(
+                    "LLM augmentation failed ({err}); showing pure-software "
+                    "result only."
+                ).format(err=exc),
+                style="yellow",
+            )
+            return result
 
 
 def _resolve_opportunity(
@@ -542,9 +592,19 @@ def _render_dimension_details(result: criteria_core.CriteriaCheck) -> None:
             continue
         lines: list[str] = []
         for match in dim.positives:
-            lines.append(_("+ {p}: {c}").format(p=match.phrase, c=match.context))
+            tag = " [ai]" if match.source == "llm" else ""
+            lines.append(
+                _("+{tag} {p}: {c}").format(
+                    tag=tag, p=match.phrase, c=match.context
+                )
+            )
         for match in dim.negatives:
-            lines.append(_("- {p}: {c}").format(p=match.phrase, c=match.context))
+            tag = " [ai]" if match.source == "llm" else ""
+            lines.append(
+                _("-{tag} {p}: {c}").format(
+                    tag=tag, p=match.phrase, c=match.context
+                )
+            )
         if lines:
             console.print(
                 Panel(
@@ -555,3 +615,28 @@ def _render_dimension_details(result: criteria_core.CriteriaCheck) -> None:
                     border_style="dim",
                 )
             )
+
+
+def _render_ai_summary(result: criteria_core.CriteriaCheck) -> None:
+    """Render the LLM's overall summary and per-dimension reasoning notes."""
+    lines: list[str] = []
+    if result.ai_summary:
+        lines.append(result.ai_summary)
+    dim_lines = [
+        f"• {_dimension_label(d.name)}: {d.ai_note}"
+        for d in result.dimensions
+        if d.ai_note
+    ]
+    if dim_lines:
+        if lines:
+            lines.append("")
+        lines.extend(dim_lines)
+    if not lines:
+        return
+    console.print(
+        Panel(
+            "\n".join(lines),
+            title=_("AI reasoning"),
+            border_style="magenta",
+        )
+    )

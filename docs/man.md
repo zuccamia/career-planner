@@ -120,11 +120,16 @@ The tool supports internationalization (i18n) via Python's `gettext` module. Set
 
 :   Print a formatted summary of the current job criteria to the terminal, highlighting any dimensions that are empty or incomplete.
 
-**career criteria check** *opportunity*
+**career criteria check** *opportunity* [**--reason**]
 
 :   Compare a tracked opportunity against the user's job criteria. Flags any dealbreaker violations and scores alignment across all five dimensions. Pure software — no AI required.
 
     This is distinct from `career gap` (which checks skills). `criteria check` evaluates fit on function, culture, growth, compensation, and location.
+
+    When the opportunity's `salary_min`/`salary_max` or `work_type` frontmatter fields are blank, the check falls back to scanning the description for those signals — common formats like `$150K–$200K`, `€80K-€100K`, `fully remote`, `100% remote`, `hybrid`, and `5 days a week in office` are recognised. Inferred values are surfaced in the output as `salary inferred from description` / `work_type 'X' inferred from description` so it's clear when a check is best-effort rather than authoritative.
+
+    **--reason** *(requires API key)*
+    :   Augment the structured check with LLM reasoning. The pure-software check runs first; its result is then sent to the configured provider (see CONFIGURATION) alongside the criteria and the opportunity. The LLM surfaces violations and matches that literal phrase matching missed (e.g. a description that *implies* "no coding at all" without using that exact phrase) and adds a short per-dimension reasoning summary plus an overall verdict. LLM-surfaced violations are tagged `llm` in the source column; pure-software violations keep their original tags (`dealbreaker`, `salary_floor`, `work_type`). Network or parsing failures fall back to the pure-software result with a printed warning. Exits with code 3 if no LLM provider is configured.
 
 Inspired by Julia Evans' brag documents (https://jvns.ca/blog/brag-documents/) and Google's XYZ accomplishment format ("Accomplished [X] as measured by [Y] by doing [Z]"). This is an achievements log, not a daily journal — record entries whenever you complete a significant project, ship a feature, finish a semester, or hit a milestone. Recommended cadence: at least once per quarter or semester.
 

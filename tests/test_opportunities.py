@@ -415,6 +415,134 @@ def test_extract_job_posting_skips_non_job_jsonld() -> None:
     assert result["title"] == "Some Role at Acme"
 
 
+# --- body-text salary and work_type inference ---
+
+
+def test_extract_salary_from_text_dollar_k_range() -> None:
+    out = opp_core.extract_salary_from_text(
+        "Salary: $150K-$200K + equity"
+    )
+    assert out == {"salary_min": 150_000, "salary_max": 200_000, "salary_currency": "USD"}
+
+
+def test_extract_salary_from_text_comma_full_numbers() -> None:
+    out = opp_core.extract_salary_from_text(
+        "Base salary $150,000-$200,000 per year"
+    )
+    assert out["salary_min"] == 150_000
+    assert out["salary_max"] == 200_000
+    assert out["salary_currency"] == "USD"
+
+
+def test_extract_salary_from_text_shared_k_suffix() -> None:
+    # "$150-200K" — the K applies to both bounds.
+    out = opp_core.extract_salary_from_text("Range: $150-200K")
+    assert out["salary_min"] == 150_000
+    assert out["salary_max"] == 200_000
+
+
+def test_extract_salary_from_text_to_separator() -> None:
+    out = opp_core.extract_salary_from_text("$150K to $200K")
+    assert out["salary_min"] == 150_000
+    assert out["salary_max"] == 200_000
+
+
+def test_extract_salary_from_text_en_dash() -> None:
+    out = opp_core.extract_salary_from_text("$150K–$200K")
+    assert out["salary_min"] == 150_000
+    assert out["salary_max"] == 200_000
+
+
+def test_extract_salary_from_text_postfix_currency() -> None:
+    out = opp_core.extract_salary_from_text("150,000-200,000 USD")
+    assert out == {"salary_min": 150_000, "salary_max": 200_000, "salary_currency": "USD"}
+
+
+def test_extract_salary_from_text_euro() -> None:
+    out = opp_core.extract_salary_from_text("€80K-€100K base")
+    assert out["salary_min"] == 80_000
+    assert out["salary_max"] == 100_000
+    assert out["salary_currency"] == "EUR"
+
+
+def test_extract_salary_from_text_gbp_postfix() -> None:
+    out = opp_core.extract_salary_from_text("70-90K GBP per annum")
+    assert out["salary_min"] == 70_000
+    assert out["salary_max"] == 90_000
+    assert out["salary_currency"] == "GBP"
+
+
+def test_extract_salary_from_text_returns_empty_when_absent() -> None:
+    assert opp_core.extract_salary_from_text("No salary disclosed.") == {}
+    assert opp_core.extract_salary_from_text("") == {}
+
+
+def test_extract_salary_from_text_ignores_unrelated_numbers() -> None:
+    # No currency mark, no postfix currency → skip.
+    assert opp_core.extract_salary_from_text("Team of 5-10 engineers.") == {}
+
+
+def test_extract_salary_from_text_first_match_wins() -> None:
+    # If both a prefix-currency and postfix-currency range appear, the
+    # prefix one is reported (it's the canonical posting format).
+    out = opp_core.extract_salary_from_text(
+        "Base $150K-$200K; previously 100-120K USD."
+    )
+    assert out["salary_min"] == 150_000
+    assert out["salary_max"] == 200_000
+
+
+def test_extract_work_type_fully_remote() -> None:
+    assert opp_core.extract_work_type_from_text("This is a fully remote role.") == "remote"
+    assert opp_core.extract_work_type_from_text("100% remote position") == "remote"
+
+
+def test_extract_work_type_remote_first_or_only() -> None:
+    assert opp_core.extract_work_type_from_text("Remote-first team") == "remote"
+    assert opp_core.extract_work_type_from_text("remote only role") == "remote"
+
+
+def test_extract_work_type_work_from_home() -> None:
+    assert (
+        opp_core.extract_work_type_from_text("You can work from anywhere.")
+        == "remote"
+    )
+
+
+def test_extract_work_type_in_person_five_days() -> None:
+    assert (
+        opp_core.extract_work_type_from_text("5 days a week in office")
+        == "in-person"
+    )
+    assert (
+        opp_core.extract_work_type_from_text("fully in-person team")
+        == "in-person"
+    )
+
+
+def test_extract_work_type_hybrid_explicit() -> None:
+    assert opp_core.extract_work_type_from_text("Hybrid schedule") == "hybrid"
+
+
+def test_extract_work_type_hybrid_from_days() -> None:
+    assert (
+        opp_core.extract_work_type_from_text("3 days per week in office")
+        == "hybrid"
+    )
+
+
+def test_extract_work_type_strong_signal_beats_soft() -> None:
+    # "fully remote" earlier in the text should win over a later "hybrid".
+    text = "This is a fully remote role; some teams are hybrid."
+    assert opp_core.extract_work_type_from_text(text) == "remote"
+
+
+def test_extract_work_type_returns_empty_when_ambiguous() -> None:
+    # Bare "remote" or "remote-friendly" is too ambiguous — skip.
+    assert opp_core.extract_work_type_from_text("Remote-friendly culture.") == ""
+    assert opp_core.extract_work_type_from_text("") == ""
+
+
 def test_extract_job_posting_og_fallback_includes_company_and_description() -> None:
     html_doc = (
         '<html><head>'

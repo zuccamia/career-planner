@@ -186,9 +186,14 @@ def criteria_show() -> None:
 @criteria_app.command("check")
 def criteria_check(
     opportunity: str = typer.Argument(..., help="Opportunity to check against criteria."),
+    reason: bool = typer.Option(
+        False,
+        "--reason",
+        help="Augment the check with LLM reasoning. Requires an API key.",
+    ),
 ) -> None:
     """Check an opportunity against your job criteria."""
-    criteria_cmd.check(opportunity=opportunity)
+    criteria_cmd.check(opportunity=opportunity, reason=reason)
 
 
 @skills_app.command("list")

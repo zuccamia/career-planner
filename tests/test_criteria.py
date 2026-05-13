@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 from career_planner.cli import app
 from career_planner.commands import criteria as criteria_cmd
 from career_planner.core import criteria as criteria_core
+from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
 from career_planner.core.workspace import create_workspace
 
@@ -344,6 +345,112 @@ def test_dimension_status_weak_when_negatives_outweigh(tmp_path: Path) -> None:
     assert culture.status == criteria_core.STATUS_WEAK
     assert len(culture.negatives) == 2
     assert culture.positives == ()
+
+
+# --- body-text inference (salary + work_type) ---
+
+
+def test_check_infers_salary_from_description(tmp_path: Path) -> None:
+    """A posting with no salary frontmatter but a "$150K-$200K" in the body
+    should still trigger the structured floor/target checks."""
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {
+        "compensation": {
+            "base_minimum": 150_000,
+            "base_target": 180_000,
+            "currency": "USD",
+        }
+    }
+    opp = _make_opportunity(
+        ws,
+        body="Compensation: $190K-$220K plus equity and benefits.",
+    )
+    result = criteria_core.check_against_opportunity(criteria, opp)
+    comp = next(d for d in result.dimensions if d.name == "compensation")
+    assert comp.status == criteria_core.STATUS_STRONG
+    assert not comp.violations
+    assert any("inferred from description" in note for note in comp.notes)
+
+
+def test_check_infers_salary_below_floor_is_violation(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {
+        "compensation": {"base_minimum": 150_000, "base_target": 180_000}
+    }
+    opp = _make_opportunity(
+        ws,
+        body="Salary range $80K-$120K depending on experience.",
+    )
+    result = criteria_core.check_against_opportunity(criteria, opp)
+    comp = next(d for d in result.dimensions if d.name == "compensation")
+    assert comp.status == criteria_core.STATUS_VIOLATION
+    assert any(v.source == "salary_floor" for v in comp.violations)
+    assert any("inferred from description" in note for note in comp.notes)
+
+
+def test_check_frontmatter_salary_wins_over_body(tmp_path: Path) -> None:
+    """When the frontmatter has a salary, the body text isn't consulted —
+    so the "inferred" note must not appear."""
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {"compensation": {"base_minimum": 150_000, "base_target": 180_000}}
+    opp = _make_opportunity(
+        ws,
+        body="Earlier the post said $50K-$60K but the offer is higher.",
+        extra={"salary_min": 200_000, "salary_max": 250_000, "salary_currency": "USD"},
+    )
+    result = criteria_core.check_against_opportunity(criteria, opp)
+    comp = next(d for d in result.dimensions if d.name == "compensation")
+    assert comp.status == criteria_core.STATUS_STRONG
+    assert not any("inferred" in note for note in comp.notes)
+
+
+def test_check_infers_work_type_from_description(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {"location": {"work_type": "remote"}}
+    opp = _make_opportunity(
+        ws,
+        body="This is a fully remote role open to candidates in the US.",
+    )
+    result = criteria_core.check_against_opportunity(criteria, opp)
+    loc = next(d for d in result.dimensions if d.name == "location")
+    assert not loc.violations
+    assert any("inferred from description" in note for note in loc.notes)
+    assert any("matches criteria" in note for note in loc.notes)
+
+
+def test_check_infers_in_person_violates_remote_criteria(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {"location": {"work_type": "remote"}}
+    opp = _make_opportunity(
+        ws,
+        body="This is a fully in-person team with 5 days a week in office.",
+    )
+    result = criteria_core.check_against_opportunity(criteria, opp)
+    loc = next(d for d in result.dimensions if d.name == "location")
+    assert loc.status == criteria_core.STATUS_VIOLATION
+    assert any(v.source == "work_type" for v in loc.violations)
+    assert any("inferred from description" in note for note in loc.notes)
+
+
+def test_check_frontmatter_work_type_wins_over_body(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {"location": {"work_type": "remote"}}
+    # Frontmatter says remote — body's "hybrid" should be ignored.
+    opp = _make_opportunity(
+        ws,
+        body="The wider company is hybrid but this role is different.",
+        extra={"work_type": "remote"},
+    )
+    result = criteria_core.check_against_opportunity(criteria, opp)
+    loc = next(d for d in result.dimensions if d.name == "location")
+    assert not loc.violations
+    assert not any("inferred" in note for note in loc.notes)
 
 
 # --- alignment & overall ---
@@ -724,3 +831,252 @@ def test_cli_criteria_check_outside_workspace_exit_2(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(app, ["criteria", "check", "x"])
     assert result.exit_code == 2
+
+
+# --- LLM augmentation (core/criteria.augment_with_llm) ---
+
+
+def _llm_config() -> llm_core.LLMConfig:
+    return llm_core.LLMConfig(
+        provider="anthropic",
+        base_url="https://api.anthropic.com/v1",
+        model="claude-sonnet-4-20250514",
+        api_key="sk-fake",
+    )
+
+
+def test_augment_with_llm_merges_findings(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {
+        "function": {
+            "want": ["backend coding"],
+            "dread": [],
+            "dealbreakers": ["no coding at all"],
+        }
+    }
+    opp = _make_opportunity(
+        ws,
+        body="This role is primarily about people management with little hands-on engineering work.",
+    )
+    base = criteria_core.check_against_opportunity(criteria, opp)
+
+    llm_response = (
+        '{"dimensions": [{"name": "function", "summary": "The role is '
+        'management-heavy with limited coding.", "additional_violations": '
+        '[{"phrase": "minimal coding in this role", "context": "primarily '
+        'about people management with little hands-on engineering"}], '
+        '"additional_positives": [], "additional_negatives": []}], '
+        '"overall_summary": "Likely a poor fit given the user\'s coding '
+        'preference."}'
+    )
+    with patch.object(criteria_core.llm, "complete", return_value=llm_response):
+        augmented = criteria_core.augment_with_llm(
+            base, criteria, opp, _llm_config()
+        )
+
+    function_dim = next(d for d in augmented.dimensions if d.name == "function")
+    assert function_dim.status == criteria_core.STATUS_VIOLATION
+    assert any(v.source == "llm" for v in function_dim.violations)
+    assert function_dim.ai_note == (
+        "The role is management-heavy with limited coding."
+    )
+    assert "poor fit" in augmented.ai_summary
+    assert augmented.ai_augmented
+
+
+def test_augment_with_llm_preserves_existing_violations(tmp_path: Path) -> None:
+    """LLM violations append to literal ones, not replace them."""
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {
+        "function": {
+            "want": [],
+            "dread": [],
+            "dealbreakers": ["no coding at all"],
+        }
+    }
+    opp = _make_opportunity(
+        ws,
+        body="This is no coding at all — pure management. Also: 60-hour weeks.",
+    )
+    base = criteria_core.check_against_opportunity(criteria, opp)
+    assert len(base.violations) == 1  # literal hit on the dealbreaker
+
+    llm_response = (
+        '{"dimensions": [{"name": "function", "summary": "Burnout risk.", '
+        '"additional_violations": [{"phrase": "60-hour weeks", "context": '
+        '"Also: 60-hour weeks"}], "additional_positives": [], '
+        '"additional_negatives": []}]}'
+    )
+    with patch.object(criteria_core.llm, "complete", return_value=llm_response):
+        augmented = criteria_core.augment_with_llm(
+            base, criteria, opp, _llm_config()
+        )
+
+    function_dim = next(d for d in augmented.dimensions if d.name == "function")
+    sources = sorted({v.source for v in function_dim.violations})
+    assert sources == ["dealbreaker", "llm"]
+
+
+def test_augment_with_llm_ignores_unknown_dimensions(tmp_path: Path) -> None:
+    """A bogus dimension name in the LLM response is silently dropped."""
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {"function": {"want": ["coding"], "dread": [], "dealbreakers": []}}
+    opp = _make_opportunity(ws, body="Backend coding role.")
+    base = criteria_core.check_against_opportunity(criteria, opp)
+
+    llm_response = (
+        '{"dimensions": [{"name": "bogus_dimension", "summary": "ignored", '
+        '"additional_violations": [{"phrase": "should not appear", '
+        '"context": ""}]}], "overall_summary": "ok"}'
+    )
+    with patch.object(criteria_core.llm, "complete", return_value=llm_response):
+        augmented = criteria_core.augment_with_llm(
+            base, criteria, opp, _llm_config()
+        )
+
+    assert all(
+        not any(v.source == "llm" for v in d.violations)
+        for d in augmented.dimensions
+    )
+    assert augmented.ai_summary == "ok"
+
+
+def test_augment_with_llm_raises_on_invalid_json(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    opp = _make_opportunity(ws, body="anything")
+    base = criteria_core.check_against_opportunity({}, opp)
+    with patch.object(criteria_core.llm, "complete", return_value="not json at all"):
+        with pytest.raises(llm_core.LLMAPIError, match="invalid JSON"):
+            criteria_core.augment_with_llm(base, {}, opp, _llm_config())
+
+
+def test_augment_with_llm_strips_trailing_fence(tmp_path: Path) -> None:
+    """Sometimes the model adds a stray ```...``` fence — we should tolerate it."""
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    criteria = {"function": {"want": ["coding"], "dread": [], "dealbreakers": []}}
+    opp = _make_opportunity(ws, body="Coding role.")
+    base = criteria_core.check_against_opportunity(criteria, opp)
+
+    llm_response = (
+        '{"dimensions": [], "overall_summary": "looks fine"}\n```'
+    )
+    with patch.object(criteria_core.llm, "complete", return_value=llm_response):
+        augmented = criteria_core.augment_with_llm(
+            base, criteria, opp, _llm_config()
+        )
+    assert augmented.ai_summary == "looks fine"
+
+
+# --- CLI: career criteria check --reason ---
+
+
+def _setup_workspace_with_criteria(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    criteria_core.save_criteria(
+        ws,
+        {
+            "function": {
+                "want": ["coding"],
+                "dread": [],
+                "dealbreakers": ["no coding at all"],
+            }
+        },
+    )
+    runner.invoke(
+        app, ["opportunity", "add", "Engineer at Acme", "--no-editor"]
+    )
+    return ws
+
+
+def test_cli_criteria_check_reason_calls_llm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _setup_workspace_with_criteria(tmp_path, monkeypatch)
+    (ws / "config.yml").write_text(
+        "llm:\n"
+        "  provider: anthropic\n"
+        "  model: claude-sonnet-4-20250514\n"
+        "  api_key_env: CAREER_TEST_KEY\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CAREER_TEST_KEY", "sk-fake")
+
+    llm_response = (
+        '{"dimensions": [{"name": "function", "summary": '
+        '"Role looks suitable for a coder."}], '
+        '"overall_summary": "Solid fit overall."}'
+    )
+    with patch.object(criteria_core.llm, "complete", return_value=llm_response):
+        result = runner.invoke(
+            app, ["criteria", "check", "engineer-at-acme", "--reason"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "AI reasoning" in result.output
+    assert "Solid fit overall" in result.output
+    assert "Role looks suitable for a coder" in result.output
+
+
+def test_cli_criteria_check_reason_missing_config_exits_3(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _setup_workspace_with_criteria(tmp_path, monkeypatch)
+    # config.yml from `career init` has no llm block.
+    result = runner.invoke(
+        app, ["criteria", "check", "engineer-at-acme", "--reason"]
+    )
+    assert result.exit_code == 3
+    assert "--reason" in result.output
+    assert "config.yml" in result.output
+
+
+def test_cli_criteria_check_reason_api_failure_falls_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An API error mid-call shouldn't kill the command — print a warning
+    and emit the pure-software result so the user still has something."""
+    ws = _setup_workspace_with_criteria(tmp_path, monkeypatch)
+    (ws / "config.yml").write_text(
+        "llm:\n"
+        "  provider: anthropic\n"
+        "  model: claude-sonnet-4-20250514\n"
+        "  api_key_env: CAREER_TEST_KEY\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CAREER_TEST_KEY", "sk-fake")
+
+    with patch.object(
+        criteria_core.llm,
+        "complete",
+        side_effect=llm_core.LLMAPIError("HTTP 500"),
+    ):
+        result = runner.invoke(
+            app, ["criteria", "check", "engineer-at-acme", "--reason"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "augmentation failed" in result.output.lower()
+    # The dimension alignment table from the pure-software check is still
+    # rendered, so the user gets actionable output even when AI fails.
+    assert "Dimension alignment" in result.output
+
+
+def test_cli_criteria_check_without_reason_skips_llm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`criteria check` without `--reason` must never call the LLM."""
+    _setup_workspace_with_criteria(tmp_path, monkeypatch)
+    with patch.object(criteria_core.llm, "complete") as mock_complete:
+        result = runner.invoke(
+            app, ["criteria", "check", "engineer-at-acme"]
+        )
+    assert result.exit_code == 0
+    mock_complete.assert_not_called()
+    assert "AI reasoning" not in result.output

@@ -11,6 +11,7 @@ Pure software — no LLM involved.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,6 +19,7 @@ from typing import Any
 
 import yaml
 
+from career_planner.core import llm
 from career_planner.core import opportunities as opp_core
 
 CRITERIA_RELPATH = Path("criteria.yml")
@@ -157,19 +159,29 @@ def _has_value(value: Any) -> bool:
 
 @dataclass(frozen=True)
 class PhraseMatch:
-    """A criteria phrase found verbatim in the opportunity text."""
+    """A criteria phrase found in the opportunity text.
+
+    ``source`` is ``"literal"`` for word-bounded substring hits (the
+    default) and ``"llm"`` when the match was surfaced by ``--reason``.
+    """
 
     phrase: str
     context: str
+    source: str = "literal"
 
 
 @dataclass(frozen=True)
 class Violation:
-    """A criteria dealbreaker (or structured concern) tripped by an opportunity."""
+    """A criteria dealbreaker (or structured concern) tripped by an opportunity.
+
+    ``source`` distinguishes how the violation was discovered:
+    ``"dealbreaker"`` (literal phrase match), ``"salary_floor"`` /
+    ``"work_type"`` (structured checks), or ``"llm"`` (AI augmentation).
+    """
 
     dimension: str
     phrase: str
-    source: str  # "dealbreaker" | "salary_floor" | "work_type" | ...
+    source: str
     context: str = ""
 
 
@@ -183,6 +195,7 @@ class DimensionResult:
     negatives: tuple[PhraseMatch, ...]
     violations: tuple[Violation, ...]
     notes: tuple[str, ...] = ()
+    ai_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -192,6 +205,7 @@ class CriteriaCheck:
     opportunity_slug: str
     opportunity_title: str
     dimensions: tuple[DimensionResult, ...]
+    ai_summary: str = ""
 
     @property
     def violations(self) -> tuple[Violation, ...]:
@@ -210,12 +224,17 @@ class CriteriaCheck:
         good = sum(1 for d in scored if d.status in (STATUS_STRONG, STATUS_OK))
         return good / len(scored)
 
+    @property
+    def ai_augmented(self) -> bool:
+        return bool(self.ai_summary) or any(d.ai_note for d in self.dimensions)
+
 
 def check_against_opportunity(
     criteria: dict[str, Any], opp: opp_core.Opportunity
 ) -> CriteriaCheck:
     """Compare `opp` against `criteria` and return a structured result."""
     scan_text = _opportunity_scan_text(opp)
+    effective_front, inferred = _effective_signals(opp)
 
     results: list[DimensionResult] = []
     for dim in DIMENSIONS:
@@ -240,11 +259,11 @@ def check_against_opportunity(
         notes: list[str] = []
 
         if dim == "compensation":
-            extra, comp_notes = _check_compensation(data, opp.frontmatter)
+            extra, comp_notes = _check_compensation(data, effective_front, inferred)
             violations.extend(extra)
             notes.extend(comp_notes)
         elif dim == "location":
-            extra, loc_notes = _check_location(data, opp.frontmatter)
+            extra, loc_notes = _check_location(data, effective_front, inferred)
             violations.extend(extra)
             notes.extend(loc_notes)
 
@@ -254,7 +273,7 @@ def check_against_opportunity(
             violations=tuple(violations),
             data=data,
             dim=dim,
-            opp_front=opp.frontmatter,
+            opp_front=effective_front,
         )
 
         results.append(
@@ -273,6 +292,48 @@ def check_against_opportunity(
         opportunity_title=opp.title,
         dimensions=tuple(results),
     )
+
+
+def _effective_signals(
+    opp: opp_core.Opportunity,
+) -> tuple[dict[str, Any], set[str]]:
+    """Build an effective frontmatter that fills missing salary / work_type
+    fields from the opportunity's body text.
+
+    Returns ``(merged_frontmatter, inferred_keys)`` so callers can surface
+    the provenance of each value to the user. Existing frontmatter values
+    always win — inference only fires when a field is blank.
+    """
+    front: dict[str, Any] = dict(opp.frontmatter or {})
+    inferred: set[str] = set()
+    body = opp.body or ""
+
+    has_salary = _looks_like_amount(front.get("salary_min")) or _looks_like_amount(
+        front.get("salary_max")
+    )
+    if not has_salary:
+        salary = opp_core.extract_salary_from_text(body)
+        for key, value in salary.items():
+            front[key] = value
+            inferred.add(key)
+
+    if not str(front.get("work_type") or "").strip():
+        wt = opp_core.extract_work_type_from_text(body)
+        if wt:
+            front["work_type"] = wt
+            inferred.add("work_type")
+
+    return front, inferred
+
+
+def _looks_like_amount(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip() not in ("", "0")
+    return False
 
 
 def _opportunity_scan_text(opp: opp_core.Opportunity) -> str:
@@ -372,12 +433,15 @@ def _context_window(text: str, start: int, end: int) -> str:
 
 
 def _check_compensation(
-    data: dict[str, Any], front: dict[str, Any]
+    data: dict[str, Any], front: dict[str, Any], inferred: set[str]
 ) -> tuple[list[Violation], list[str]]:
     """Structured salary check: floor and currency consistency.
 
     Returns ``(violations, notes)``. Notes are informational lines (e.g.
-    "Salary meets target") that get surfaced beneath the dimension.
+    "salary meets target") that get surfaced beneath the dimension. When
+    ``salary_min`` or ``salary_max`` appear in ``inferred``, the values came
+    from the body text rather than the frontmatter — we surface that as a
+    note so the user knows the check is best-effort.
     """
     violations: list[Violation] = []
     notes: list[str] = []
@@ -394,6 +458,13 @@ def _check_compensation(
         if floor or target:
             notes.append("opportunity has no salary listed")
         return violations, notes
+
+    salary_inferred = "salary_min" in inferred or "salary_max" in inferred
+    if salary_inferred:
+        notes.append(
+            f"salary inferred from description: "
+            f"{_format_salary_range(salary_min, salary_max, opp_currency)}"
+        )
 
     top = salary_max if salary_max is not None else salary_min
     bottom = salary_min if salary_min is not None else salary_max
@@ -431,25 +502,37 @@ def _check_compensation(
 
 
 def _check_location(
-    data: dict[str, Any], front: dict[str, Any]
+    data: dict[str, Any], front: dict[str, Any], inferred: set[str]
 ) -> tuple[list[Violation], list[str]]:
-    """Structured location check: work_type compatibility."""
+    """Structured location check: work_type compatibility.
+
+    Surfaces a note when ``work_type`` came from body-text inference rather
+    than the frontmatter, so the user can tell the difference between an
+    authoritative match and a best-effort guess.
+    """
     violations: list[Violation] = []
     notes: list[str] = []
 
     desired = _normalize_work_type(data.get("work_type"))
     opp_work = _normalize_work_type(front.get("work_type"))
 
-    if desired and opp_work and not _work_type_compatible(desired, opp_work):
-        violations.append(
-            Violation(
-                dimension="location",
-                phrase=f"work_type '{opp_work}' does not match criteria '{desired}'",
-                source="work_type",
+    if "work_type" in inferred and opp_work:
+        notes.append(f"work_type '{opp_work}' inferred from description")
+
+    if desired and opp_work:
+        if _work_type_compatible(desired, opp_work):
+            notes.append(f"work_type '{opp_work}' matches criteria '{desired}'")
+        else:
+            violations.append(
+                Violation(
+                    dimension="location",
+                    phrase=(
+                        f"work_type '{opp_work}' does not match criteria "
+                        f"'{desired}'"
+                    ),
+                    source="work_type",
+                )
             )
-        )
-    elif desired and opp_work and _work_type_compatible(desired, opp_work):
-        notes.append(f"work_type '{opp_work}' matches criteria '{desired}'")
     return violations, notes
 
 
@@ -563,3 +646,237 @@ def _format_number(value: float) -> str:
     if value.is_integer():
         return f"{int(value)}"
     return f"{value:g}"
+
+
+# --- LLM augmentation ---
+
+
+_LLM_SYSTEM = """\
+You are an analyst assessing whether a job opportunity matches a person's
+career criteria. The criteria has five dimensions: function, culture,
+growth, compensation, location. Each has positive lists (want / preferred
+/ motivators / other_important), negative lists (dread / avoid /
+stuck_signals), and a dealbreakers list. Compensation also has
+base_minimum, base_target, currency. Location also has work_type and
+willing_to_relocate.
+
+A pure-software check has already done literal phrase matching and
+structured numeric / work_type comparison. Your job is to find what
+literal matching missed: implicit dealbreaker violations, implicit
+positive matches, implicit negative matches that a careful human reader
+would catch but a substring search wouldn't.
+
+Be conservative. Only flag something when you can point to specific text
+in the opportunity that supports it, and quote that text in the
+`context` field. Skip a dimension entirely if you have nothing new to
+add.
+
+Return only JSON in the exact shape requested. Do not add prose outside
+the JSON.\
+"""
+
+
+_LLM_MAX_TOKENS = 2000
+
+
+def augment_with_llm(
+    check: CriteriaCheck,
+    criteria: dict[str, Any],
+    opp: opp_core.Opportunity,
+    config: llm.LLMConfig,
+) -> CriteriaCheck:
+    """Return a new :class:`CriteriaCheck` enriched with LLM analysis.
+
+    Sends the criteria, the opportunity, and the pure-software result to
+    the configured LLM and merges the response into each dimension. Any
+    LLM-surfaced dealbreaker violation forces the dimension status to
+    ``STATUS_VIOLATION``. Network or parsing failures raise
+    :class:`llm.LLMError` — callers decide whether to fall back.
+    """
+    prompt = _build_llm_prompt(criteria, opp, check)
+    raw = llm.complete(
+        config,
+        system=_LLM_SYSTEM,
+        user=prompt,
+        max_tokens=_LLM_MAX_TOKENS,
+        json_prefill=True,
+    )
+    parsed = _parse_llm_response(raw)
+    return _merge_llm_findings(check, parsed)
+
+
+def _build_llm_prompt(
+    criteria: dict[str, Any],
+    opp: opp_core.Opportunity,
+    check: CriteriaCheck,
+) -> str:
+    """Render the user-message payload for :func:`augment_with_llm`."""
+    criteria_yaml = yaml.safe_dump(
+        criteria or {}, sort_keys=False, allow_unicode=True
+    ).strip()
+    frontmatter_yaml = yaml.safe_dump(
+        dict(opp.frontmatter or {}), sort_keys=False, allow_unicode=True
+    ).strip()
+    body = (opp.body or "").strip() or "(no description in body)"
+    existing = _serialize_check_for_llm(check)
+
+    return (
+        "## User criteria\n"
+        f"```yaml\n{criteria_yaml}\n```\n\n"
+        "## Opportunity frontmatter\n"
+        f"```yaml\n{frontmatter_yaml}\n```\n\n"
+        "## Opportunity body\n"
+        f"{body}\n\n"
+        "## What the pure-software check already found\n"
+        f"{existing}\n\n"
+        "## Required response shape\n"
+        "```json\n"
+        "{\n"
+        '  "dimensions": [\n'
+        "    {\n"
+        '      "name": "function|culture|growth|compensation|location",\n'
+        '      "summary": "one short sentence on fit for this dimension",\n'
+        '      "additional_violations": [{"phrase": "...", "context": "<quote from posting>"}],\n'
+        '      "additional_positives": [{"phrase": "...", "context": "<quote from posting>"}],\n'
+        '      "additional_negatives": [{"phrase": "...", "context": "<quote from posting>"}]\n'
+        "    }\n"
+        "  ],\n"
+        '  "overall_summary": "one or two sentences on overall fit"\n'
+        "}\n"
+        "```\n"
+        "Empty lists are fine. Omit a dimension entirely if you have "
+        "nothing to add."
+    )
+
+
+def _serialize_check_for_llm(check: CriteriaCheck) -> str:
+    """One-line-per-dimension summary of the pure-software check."""
+    lines: list[str] = []
+    for dim in check.dimensions:
+        parts = [f"- {dim.name}: status={dim.status}"]
+        if dim.violations:
+            parts.append(
+                "violations=[" + "; ".join(v.phrase for v in dim.violations) + "]"
+            )
+        if dim.positives:
+            parts.append(
+                "matched_positives=["
+                + "; ".join(p.phrase for p in dim.positives)
+                + "]"
+            )
+        if dim.negatives:
+            parts.append(
+                "matched_negatives=["
+                + "; ".join(n.phrase for n in dim.negatives)
+                + "]"
+            )
+        lines.append("  ".join(parts))
+    return "\n".join(lines) if lines else "(nothing surfaced)"
+
+
+def _parse_llm_response(raw: str) -> dict[str, Any]:
+    """Parse the LLM's JSON response, tolerating common stray characters."""
+    text = raw.strip()
+    # The prefill trick can sometimes produce a stray trailing fence or
+    # comment; trim to the outermost JSON object so json.loads succeeds.
+    if "{" in text and "}" in text:
+        text = text[text.index("{") : text.rindex("}") + 1]
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise llm.LLMAPIError(f"LLM returned invalid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise llm.LLMAPIError("LLM response is not a JSON object")
+    return data
+
+
+def _merge_llm_findings(
+    check: CriteriaCheck, parsed: dict[str, Any]
+) -> CriteriaCheck:
+    """Build a new :class:`CriteriaCheck` with LLM additions folded in."""
+    findings_by_name: dict[str, dict[str, Any]] = {}
+    for entry in parsed.get("dimensions") or []:
+        if isinstance(entry, dict):
+            name = str(entry.get("name") or "").strip().lower()
+            if name in DIMENSIONS:
+                findings_by_name[name] = entry
+
+    new_dims: list[DimensionResult] = []
+    for dim in check.dimensions:
+        finding = findings_by_name.get(dim.name) or {}
+        ai_violations = _llm_violations(dim.name, finding.get("additional_violations"))
+        ai_positives = _llm_phrases(finding.get("additional_positives"))
+        ai_negatives = _llm_phrases(finding.get("additional_negatives"))
+        ai_note = str(finding.get("summary") or "").strip()
+
+        merged_violations = dim.violations + ai_violations
+        merged_positives = dim.positives + ai_positives
+        merged_negatives = dim.negatives + ai_negatives
+
+        # If the LLM found a dealbreaker the literal scan missed, the
+        # dimension is now in violation regardless of its prior status.
+        new_status = (
+            STATUS_VIOLATION if ai_violations else dim.status
+        )
+
+        new_dims.append(
+            DimensionResult(
+                name=dim.name,
+                status=new_status,
+                positives=merged_positives,
+                negatives=merged_negatives,
+                violations=merged_violations,
+                notes=dim.notes,
+                ai_note=ai_note,
+            )
+        )
+
+    return CriteriaCheck(
+        opportunity_slug=check.opportunity_slug,
+        opportunity_title=check.opportunity_title,
+        dimensions=tuple(new_dims),
+        ai_summary=str(parsed.get("overall_summary") or "").strip(),
+    )
+
+
+def _llm_violations(
+    dimension: str, raw: Any
+) -> tuple[Violation, ...]:
+    if not isinstance(raw, list):
+        return ()
+    out: list[Violation] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        phrase = str(entry.get("phrase") or "").strip()
+        if not phrase:
+            continue
+        out.append(
+            Violation(
+                dimension=dimension,
+                phrase=phrase,
+                source="llm",
+                context=str(entry.get("context") or "").strip(),
+            )
+        )
+    return tuple(out)
+
+
+def _llm_phrases(raw: Any) -> tuple[PhraseMatch, ...]:
+    if not isinstance(raw, list):
+        return ()
+    out: list[PhraseMatch] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        phrase = str(entry.get("phrase") or "").strip()
+        if not phrase:
+            continue
+        out.append(
+            PhraseMatch(
+                phrase=phrase,
+                context=str(entry.get("context") or "").strip(),
+                source="llm",
+            )
+        )
+    return tuple(out)
