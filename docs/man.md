@@ -74,7 +74,10 @@ The criteria file captures preferences and dealbreakers across five dimensions: 
 
 **career criteria check** *opportunity* *(AI)*
 
-:   Compare a tracked opportunity against the criteria via the configured LLM. The model judges each dimension's fit (`strong` / `ok` / `weak` / `violation` / `unknown`), surfaces dealbreaker violations with quoted context from the posting, and writes a compact summary onto the opportunity's frontmatter so `career status` can show the fit without rerunning.
+:   Compare a tracked opportunity against the criteria via the configured LLM. The model judges each dimension's fit (`strong` / `ok` / `weak` / `violation` / `unknown`), surfaces dealbreaker violations with quoted context from the posting, and writes the results back onto the opportunity file in two places:
+
+    - **Frontmatter** — a compact summary (`alignment`, `dealbreaker_count`, `scored_dimensions`, `criteria_hash`, `checked_at`). `career status` and `career opportunity show` read this without rerunning the LLM.
+    - **Body** — the `## Pros` and `## Cons` sections are fully rewritten with the per-dimension positives (Pros) and negatives + dealbreaker violations (Cons). These sections are auto-managed; anything in them is overwritten on each `criteria check` run. The `## Notes` section is user-only and stays untouched.
 
 ### RESUME
 

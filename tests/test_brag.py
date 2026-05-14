@@ -43,8 +43,8 @@ def test_create_entry_writes_file_with_template(tmp_path: Path) -> None:
 
     text = path.read_text(encoding="utf-8")
     assert "date: 2026-05-01" in text
-    assert "## What (X)" in text
-    assert "## How measured (Y)" in text
+    assert "## Impact (X)" in text
+    assert "## How the impact is measured (Y)" in text
     assert "## How I did it (Z)" in text
 
 
@@ -285,7 +285,9 @@ def test_cli_brag_show_renders_markdown(
     )
     text = path.read_text(encoding="utf-8")
     path.write_text(
-        text.replace("## What (X)\n\n\n", "## What (X)\n\nShipped a new feature.\n"),
+        text.replace(
+            "## Impact (X)\n\n\n", "## Impact (X)\n\nShipped a new feature.\n"
+        ),
         encoding="utf-8",
     )
 

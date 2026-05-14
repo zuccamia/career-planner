@@ -25,6 +25,11 @@ required_skills: []     # ESCO codes or free-text labels
 
 ## Pros
 
+<!-- Managed by `career criteria check` — rewritten on each run. -->
+
 ## Cons
 
+<!-- Managed by `career criteria check` — rewritten on each run. -->
+
 ## Notes
+

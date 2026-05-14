@@ -198,6 +198,45 @@ def _inject_description(body: str, description: str) -> str:
     )
 
 
+def replace_section(body: str, heading: str, content: str) -> str:
+    """Replace a markdown section's body, preserving the heading and siblings.
+
+    `heading` is the exact heading line (e.g. ``"## Pros"``). The section
+    ends at the next H2 heading (``"## …"``) or end of body. `content` is
+    the new section body (without the heading) — it's placed between
+    blank lines under the heading. If `heading` is not present, the new
+    section is appended at the end of `body`.
+
+    This is a "this entire section is auto-managed" primitive: any
+    existing content under the heading is discarded. Use carefully —
+    only on sections the tool has claimed ownership of.
+    """
+    lines = body.split("\n")
+    heading_idx: int | None = None
+    for i, line in enumerate(lines):
+        if line == heading:
+            heading_idx = i
+            break
+
+    if heading_idx is None:
+        return body.rstrip() + f"\n\n{heading}\n\n{content}\n"
+
+    end_idx = len(lines)
+    for i in range(heading_idx + 1, len(lines)):
+        if lines[i].startswith("## "):
+            end_idx = i
+            break
+
+    new_lines = (
+        lines[: heading_idx + 1]
+        + [""]
+        + content.split("\n")
+        + [""]
+        + lines[end_idx:]
+    )
+    return "\n".join(new_lines)
+
+
 def parse_markdown(text: str) -> tuple[dict[str, Any], str]:
     """Split a Markdown file into ``(frontmatter_dict, body)``.
 
