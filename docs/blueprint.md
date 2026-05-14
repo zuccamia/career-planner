@@ -35,8 +35,8 @@ An "Obsidian for your career" — a lightweight tool where all data lives as hum
 │   Pure Software           │   AI Path (when configured)  │
 │                           │  ┌────────────────────────┐  │
 │  - workspace I/O          │  │  LLM Adapter           │  │
-│  - skills + ESCO loader   │  │  (BYOK; openai-     │  │
-│  - gap analysis           │  │   compatible + Anthropic)│ │
+│  - skills + ESCO loader   │  │  (BYOK; Anthropic +    │  │
+│  - gap analysis           │  │   openai-compatible).  │  │
 │  - brag I/O               │  ├────────────────────────┤  │
 │  - resume markdown render │  │  Powers:               │  │
 │  - file scaffolding       │  │  - opportunity parse   │  │
