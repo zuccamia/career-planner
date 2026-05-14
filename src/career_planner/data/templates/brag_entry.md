@@ -4,11 +4,11 @@ project: ""
 tags: {tags}
 ---
 
-## What (X)
+## Impact (X)
 
 
 
-## How measured (Y)
+## How the impact is measured (Y)
 
 
 
