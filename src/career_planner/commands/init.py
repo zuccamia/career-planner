@@ -5,15 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from rich.console import Console
 from rich.panel import Panel
 
+from career_planner.commands._common import console
 from career_planner.core.workspace import WorkspaceExistsError, create_workspace
 from career_planner.i18n import _
 
 SUPPORTED_LANGUAGES = ("en", "vi")
-
-console = Console()
 
 
 def run(directory: str = ".", language: str = "en") -> None:
@@ -50,9 +48,9 @@ def _print_success(workspace: Path) -> None:
         f"  {workspace}",
         "",
         _("Next steps:"),
-        "  career profile edit",
+        "  career config llm",
         "  career criteria edit",
-        "  career skills browse",
+        "  career resume edit",
     ]
     console.print(
         Panel(

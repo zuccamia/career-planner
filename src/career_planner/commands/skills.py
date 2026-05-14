@@ -5,18 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 import typer
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from career_planner.commands._common import console, short_code
 from career_planner.core import skills as skills_core
 from career_planner.core import taxonomy
 from career_planner.core.workspace import require_workspace
 from career_planner.i18n import _
 
 DESCRIPTION_PREVIEW_CHARS = 120
-
-console = Console()
 
 
 def add(
@@ -109,7 +107,7 @@ def list_skills(category: str | None = None) -> None:
             str(entry.get("skill", "")),
             _format_rating(entry.get("rating")),
             str(entry.get("example", "")),
-            _short_code(entry.get("esco_code")),
+            short_code(entry.get("esco_code")),
         )
 
     console.print(table)
@@ -244,15 +242,6 @@ def _format_rating(rating: Any) -> str:
         return ""
     n = max(0, min(5, n))
     return "*" * n + "." * (5 - n)
-
-
-def _short_code(code: Any) -> str:
-    if not code:
-        return ""
-    s = str(code)
-    if "/" in s:
-        return s.rsplit("/", 1)[-1][:12]
-    return s[:12]
 
 
 # --- browse ---

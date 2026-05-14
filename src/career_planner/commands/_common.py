@@ -1,0 +1,85 @@
+"""Shared helpers for ``career_planner.commands`` modules.
+
+Every command module imports ``console`` (stdout) and ``err_console``
+(stderr) from here instead of instantiating its own. Stdout is reserved
+for the command's "data" output — markdown from ``resume render``,
+tables from ``status`` / ``brag list``, etc. — so it pipes cleanly.
+Status messages, prompts, and errors go through ``err_console``.
+
+``fail`` is the standard "print an error, exit non-zero" pattern.
+``disambiguate`` is the standard "resolve a query to one of N matches"
+pattern; ``resolve_opportunity`` wraps it for the common opportunity case.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable, NoReturn, TypeVar
+
+import typer
+from rich.console import Console
+
+from career_planner.core import opportunities as opp_core
+from career_planner.i18n import _
+
+console = Console()
+err_console = Console(stderr=True)
+
+T = TypeVar("T")
+
+
+def fail(message: str, *, code: int = 1, style: str = "red") -> NoReturn:
+    """Print `message` to stderr in `style` and raise ``typer.Exit(code)``."""
+    err_console.print(message, style=style)
+    raise typer.Exit(code)
+
+
+def disambiguate(
+    matches: list[T],
+    *,
+    query: str,
+    describe: Callable[[T], str],
+    not_found: str | None = None,
+    multiple: str | None = None,
+) -> T:
+    """Resolve `query` to a single item from `matches`.
+
+    Exits 1 when there are no matches. Returns the single match when there
+    is exactly one. Prompts the user to pick when there are multiple.
+    The disambiguation UI is written to stderr so commands like
+    ``resume render --for`` can pipe their stdout output safely.
+    """
+    if not matches:
+        fail(not_found or _("No match for '{q}'.").format(q=query))
+    if len(matches) == 1:
+        return matches[0]
+
+    err_console.print(
+        multiple or _("Multiple matches for '{q}':").format(q=query)
+    )
+    for n, item in enumerate(matches, 1):
+        err_console.print(f"  {n}. {describe(item)}")
+    choice = typer.prompt(_("Pick a number (or 0 to cancel)"), type=int)
+    if choice < 1 or choice > len(matches):
+        fail(_("Cancelled."), style="yellow")
+    return matches[choice - 1]
+
+
+def resolve_opportunity(workspace, query: str) -> opp_core.Opportunity:
+    """Resolve `query` to one tracked opportunity. Prompts on ambiguity."""
+    return disambiguate(
+        opp_core.find_opportunity(workspace, query),
+        query=query,
+        describe=lambda o: f"{o.slug} — {o.title}",
+        not_found=_("No opportunity matching '{q}'.").format(q=query),
+        multiple=_("Multiple opportunities match '{q}':").format(q=query),
+    )
+
+
+def short_code(code: Any) -> str:
+    """Render an ESCO URI as a short, table-friendly identifier."""
+    if not code:
+        return ""
+    s = str(code)
+    if "/" in s:
+        return s.rsplit("/", 1)[-1][:12]
+    return s[:12]

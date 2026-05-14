@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import date
 
 import typer
-from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
 
+from career_planner.commands._common import console, disambiguate
 from career_planner.core import brag as brag_core
 from career_planner.core.workspace import (
     load_config,
@@ -17,8 +17,6 @@ from career_planner.core.workspace import (
     resolve_editor,
 )
 from career_planner.i18n import _
-
-console = Console()
 
 
 def add(title: str | None = None, date_str: str | None = None) -> None:
@@ -111,26 +109,13 @@ def list_entries(last: int = 10, tag: str | None = None) -> None:
 def show(entry: str) -> None:
     """Render a brag entry's markdown to the console."""
     workspace = require_workspace()
-    matches = brag_core.find_entries(workspace, entry)
-    if not matches:
-        console.print(
-            _("No brag entry matching '{q}'.").format(q=entry),
-            style="red",
-        )
-        raise typer.Exit(1)
-
-    if len(matches) == 1:
-        target = matches[0]
-    else:
-        console.print(_("Multiple brag entries match '{q}':").format(q=entry))
-        for n, item in enumerate(matches, 1):
-            console.print(f"  {n}. {item.slug}")
-        choice = typer.prompt(_("Pick a number (or 0 to cancel)"), type=int)
-        if choice < 1 or choice > len(matches):
-            console.print(_("Cancelled."), style="yellow")
-            raise typer.Exit(1)
-        target = matches[choice - 1]
-
+    target = disambiguate(
+        brag_core.find_entries(workspace, entry),
+        query=entry,
+        describe=lambda e: e.slug,
+        not_found=_("No brag entry matching '{q}'.").format(q=entry),
+        multiple=_("Multiple brag entries match '{q}':").format(q=entry),
+    )
     text = target.path.read_text(encoding="utf-8")
     console.print(Markdown(text))
 

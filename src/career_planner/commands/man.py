@@ -6,12 +6,10 @@ from importlib import resources
 from pathlib import Path
 
 import typer
-from rich.console import Console
 from rich.markdown import Markdown
 
+from career_planner.commands._common import console
 from career_planner.i18n import _
-
-console = Console()
 
 
 def run(use_pager: bool = True) -> None:

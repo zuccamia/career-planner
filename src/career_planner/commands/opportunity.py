@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
+from career_planner.commands._common import console, resolve_opportunity
 from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
 from career_planner.core.workspace import (
@@ -20,8 +20,6 @@ from career_planner.core.workspace import (
     resolve_editor,
 )
 from career_planner.i18n import _
-
-console = Console()
 
 
 def add(
@@ -129,27 +127,7 @@ def list_opportunities(status: str | None = None) -> None:
 def show(opportunity: str) -> None:
     """Print the full details of a specific opportunity."""
     workspace = require_workspace()
-
-    matches = opp_core.find_opportunity(workspace, opportunity)
-    if not matches:
-        console.print(
-            _("No opportunity matching '{q}'.").format(q=opportunity),
-            style="red",
-        )
-        raise typer.Exit(1)
-
-    if len(matches) == 1:
-        target = matches[0]
-    else:
-        console.print(_("Multiple opportunities match '{q}':").format(q=opportunity))
-        for n, opp in enumerate(matches, 1):
-            console.print(f"  {n}. {opp.slug} — {opp.title}")
-        choice = typer.prompt(_("Pick a number (or 0 to cancel)"), type=int)
-        if choice < 1 or choice > len(matches):
-            console.print(_("Cancelled."), style="yellow")
-            raise typer.Exit(1)
-        target = matches[choice - 1]
-
+    target = resolve_opportunity(workspace, opportunity)
     _render_opportunity(target)
 
 

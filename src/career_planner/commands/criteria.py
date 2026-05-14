@@ -6,13 +6,12 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from career_planner.commands._common import console, resolve_opportunity
 from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
-from career_planner.core import opportunities as opp_core
 from career_planner.core.workspace import (
     load_config,
     open_in_editor,
@@ -20,8 +19,6 @@ from career_planner.core.workspace import (
     resolve_editor,
 )
 from career_planner.i18n import _
-
-console = Console()
 
 
 # --- edit ---
@@ -424,7 +421,7 @@ def check(opportunity: str) -> None:
         )
         raise typer.Exit(1)
 
-    opp = _resolve_opportunity(workspace, opportunity)
+    opp = resolve_opportunity(workspace, opportunity)
 
     try:
         config = llm_core.load_config(workspace)
@@ -453,30 +450,6 @@ def check(opportunity: str) -> None:
     if result.has_violations:
         _render_violations(result)
     _render_dimensions(result)
-
-
-def _resolve_opportunity(
-    workspace: Path, query: str
-) -> opp_core.Opportunity:
-    """Resolve `query` to a single opportunity, prompting on ambiguity."""
-    matches = opp_core.find_opportunity(workspace, query)
-    if not matches:
-        console.print(
-            _("No opportunity matching '{q}'.").format(q=query),
-            style="red",
-        )
-        raise typer.Exit(1)
-    if len(matches) == 1:
-        return matches[0]
-
-    console.print(_("Multiple opportunities match '{q}':").format(q=query))
-    for n, opp in enumerate(matches, 1):
-        console.print(f"  {n}. {opp.slug} — {opp.title}")
-    choice = typer.prompt(_("Pick a number (or 0 to cancel)"), type=int)
-    if choice < 1 or choice > len(matches):
-        console.print(_("Cancelled."), style="yellow")
-        raise typer.Exit(1)
-    return matches[choice - 1]
 
 
 def _render_check_header(result: criteria_core.CriteriaCheck) -> None:

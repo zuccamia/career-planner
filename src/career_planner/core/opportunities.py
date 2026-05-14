@@ -26,19 +26,8 @@ TEMPLATE_NAME = "opportunity.md"
 
 # Status values are free-form strings — users track interview stages and
 # pipeline state however they want (e.g. "applied", "OA", "first interview",
-# "onsite", "offer_negotiation"). The values below are common suggestions and
-# the set that downstream code treats as terminal/closed; everything else is
-# considered "open" for dashboard purposes.
-SUGGESTED_STATUSES: tuple[str, ...] = (
-    "active",
-    "applied",
-    "interviewing",
-    "offered",
-    "rejected",
-    "closed",
-    "withdrawn",
-)
-
+# "onsite", "offer_negotiation"). Only the closed set below has special
+# meaning downstream; everything else is "open" for dashboard purposes.
 CLOSED_STATUSES: frozenset[str] = frozenset({"closed", "rejected", "withdrawn"})
 
 

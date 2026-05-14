@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import typer
-from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
+from career_planner.commands._common import console, resolve_opportunity, short_code
 from career_planner.core import gap as gap_core
 from career_planner.core import opportunities as opp_core
 from career_planner.core import skills as skills_core
 from career_planner.core.workspace import require_workspace
 from career_planner.i18n import _
-
-console = Console()
 
 
 def run(opportunity: str, *, suggest: bool = False) -> None:
@@ -27,7 +25,7 @@ def run(opportunity: str, *, suggest: bool = False) -> None:
     """
     workspace = require_workspace()
 
-    opp = _resolve_opportunity(workspace, opportunity)
+    opp = resolve_opportunity(workspace, opportunity)
     inventory = skills_core.load_inventory(workspace)
     requirements = gap_core.parse_requirements(
         opp.frontmatter.get("required_skills")
@@ -115,7 +113,7 @@ def _render_matched(analysis: gap_core.GapAnalysis) -> None:
             match.requirement.label,
             _format_rating_cell(match.rating, match.requirement.min_rating),
             match.example,
-            _short_code(match.requirement.esco_code),
+            short_code(match.requirement.esco_code),
         )
     console.print(table)
 
@@ -162,7 +160,7 @@ def _render_missing(analysis: gap_core.GapAnalysis) -> None:
         table.add_row(
             req.label,
             f"{req.min_rating}/5" if req.min_rating is not None else "—",
-            _short_code(req.esco_code),
+            short_code(req.esco_code),
         )
     console.print(table)
     console.print(
@@ -267,15 +265,6 @@ def _render_fallback(
     )
 
 
-def _short_code(code: str) -> str:
-    """Trim an ESCO URI to its last segment for table display."""
-    if not code:
-        return ""
-    if "/" in code:
-        return code.rsplit("/", 1)[-1][:12]
-    return code[:12]
-
-
 def _print_suggest_stub() -> None:
     """Placeholder until the AI layer lands.
 
@@ -292,25 +281,3 @@ def _print_suggest_stub() -> None:
     )
 
 
-def _resolve_opportunity(workspace, query: str) -> opp_core.Opportunity:
-    """Resolve `query` to a single opportunity, prompting on ambiguity."""
-    matches = opp_core.find_opportunity(workspace, query)
-    if not matches:
-        console.print(
-            _("No opportunity matching '{q}'.").format(q=query),
-            style="red",
-        )
-        raise typer.Exit(1)
-    if len(matches) == 1:
-        return matches[0]
-
-    console.print(
-        _("Multiple opportunities match '{q}':").format(q=query)
-    )
-    for n, opp in enumerate(matches, 1):
-        console.print(f"  {n}. {opp.slug} — {opp.title}")
-    choice = typer.prompt(_("Pick a number (or 0 to cancel)"), type=int)
-    if choice < 1 or choice > len(matches):
-        console.print(_("Cancelled."), style="yellow")
-        raise typer.Exit(1)
-    return matches[choice - 1]

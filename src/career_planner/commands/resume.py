@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import typer
-from rich.console import Console
 
+from career_planner.commands._common import err_console, resolve_opportunity
 from career_planner.core import llm as llm_core
-from career_planner.core import opportunities as opp_core
 from career_planner.core import resume as resume_core
 from career_planner.core.workspace import (
     load_config,
@@ -15,9 +14,6 @@ from career_planner.core.workspace import (
     resolve_editor,
 )
 from career_planner.i18n import _
-
-console = Console()
-err_console = Console(stderr=True)
 
 
 def edit() -> None:
@@ -69,7 +65,7 @@ def render(opportunity: str | None = None) -> None:
         typer.echo(resume_core.render_markdown(resume), nl=False)
         return
 
-    opp = _resolve_opportunity(workspace, opportunity)
+    opp = resolve_opportunity(workspace, opportunity)
 
     try:
         config = llm_core.load_config(workspace)
@@ -93,25 +89,3 @@ def render(opportunity: str | None = None) -> None:
             raise typer.Exit(1) from None
 
     typer.echo(markdown, nl=False)
-
-
-def _resolve_opportunity(workspace, query: str) -> opp_core.Opportunity:
-    """Resolve `query` to a single opportunity, prompting on ambiguity."""
-    matches = opp_core.find_opportunity(workspace, query)
-    if not matches:
-        err_console.print(
-            _("No opportunity matching '{q}'.").format(q=query),
-            style="red",
-        )
-        raise typer.Exit(1)
-    if len(matches) == 1:
-        return matches[0]
-
-    err_console.print(_("Multiple opportunities match '{q}':").format(q=query))
-    for n, opp in enumerate(matches, 1):
-        err_console.print(f"  {n}. {opp.slug} — {opp.title}")
-    choice = typer.prompt(_("Pick a number (or 0 to cancel)"), type=int)
-    if choice < 1 or choice > len(matches):
-        err_console.print(_("Cancelled."), style="yellow")
-        raise typer.Exit(1)
-    return matches[choice - 1]

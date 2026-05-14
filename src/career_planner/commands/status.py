@@ -4,15 +4,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from career_planner.commands._common import console
 from career_planner.core import status as status_core
 from career_planner.core.workspace import require_workspace
 from career_planner.i18n import _
-
-console = Console()
 
 _BAR_WIDTH = 10
 

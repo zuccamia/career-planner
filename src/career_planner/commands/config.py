@@ -8,15 +8,13 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 
+from career_planner.commands._common import console
 from career_planner.core import llm as llm_core
 from career_planner.core import workspace as workspace_core
 from career_planner.i18n import _
-
-console = Console()
 
 
 @dataclass(frozen=True)
