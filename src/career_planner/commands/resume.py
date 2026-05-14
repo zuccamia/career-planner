@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 import typer
 
 from career_planner.commands._common import err_console, resolve_opportunity
+from career_planner.core import brag as brag_core
 from career_planner.core import llm as llm_core
 from career_planner.core import resume as resume_core
 from career_planner.core.workspace import (
@@ -14,6 +18,12 @@ from career_planner.core.workspace import (
     resolve_editor,
 )
 from career_planner.i18n import _
+
+# Cap on brag entries injected into the AI tailoring prompt. With ~500
+# chars per entry body this stays under ~2.5k tokens even at full cap,
+# while still surfacing the most recent ~year of accomplishments for
+# typical users.
+MAX_BRAG_ENTRIES = 20
 
 
 def edit() -> None:
@@ -78,9 +88,26 @@ def render(opportunity: str | None = None) -> None:
         )
         raise typer.Exit(3) from None
 
+    brag_entries, total_matched = _gather_relevant_brag_entries(workspace, resume)
+    if brag_entries:
+        if total_matched > len(brag_entries):
+            err_console.print(
+                _(
+                    "Including {n} most recent of {total} matching brag entries."
+                ).format(n=len(brag_entries), total=total_matched),
+                style="dim",
+            )
+        else:
+            err_console.print(
+                _("Including {n} matching brag entries.").format(n=len(brag_entries)),
+                style="dim",
+            )
+
     with err_console.status(_("Tailoring with {model}…").format(model=config.model)):
         try:
-            markdown = resume_core.render_tailored(resume, opp, config)
+            markdown = resume_core.render_tailored(
+                resume, opp, config, brag_entries=brag_entries
+            )
         except llm_core.LLMError as exc:
             err_console.print(
                 _("Resume tailoring failed: {err}").format(err=exc),
@@ -89,3 +116,34 @@ def render(opportunity: str | None = None) -> None:
             raise typer.Exit(1) from None
 
     typer.echo(markdown, nl=False)
+
+
+def _gather_relevant_brag_entries(
+    workspace: Path, resume: dict[str, Any]
+) -> tuple[tuple[brag_core.BragEntry, ...], int]:
+    """Return brag entries whose tags overlap any experience entry's tags.
+
+    Returns ``(entries, total_matched)`` where ``entries`` is capped at
+    :data:`MAX_BRAG_ENTRIES` most recent and ``total_matched`` is the
+    pre-cap count (so callers can surface "N of M" hints). Entries without
+    a matching experience tag are dropped — they're not part of any
+    experience's bullet pool.
+    """
+    experience_tags: set[str] = set()
+    for exp in resume.get("experience") or []:
+        if not isinstance(exp, dict):
+            continue
+        for tag in exp.get("tags") or []:
+            if isinstance(tag, str) and tag.strip():
+                experience_tags.add(tag.strip().lower())
+
+    if not experience_tags:
+        return (), 0
+
+    matched = [
+        entry
+        for entry in brag_core.list_entries(workspace)
+        if {t.lower() for t in entry.tags} & experience_tags
+    ]
+    # list_entries already sorts newest-first; take the cap from the top.
+    return tuple(matched[:MAX_BRAG_ENTRIES]), len(matched)

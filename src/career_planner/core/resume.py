@@ -11,10 +11,11 @@ JD-relevant phrasing and reordering bullets.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import yaml
 
+from career_planner.core import brag as brag_core
 from career_planner.core import llm
 from career_planner.core import opportunities as opp_core
 
@@ -199,16 +200,23 @@ def _meta_line(entry: dict[str, Any]) -> str:
 
 _LLM_SYSTEM = """\
 You tailor resumes to specific job postings. The user provides their
-master resume as YAML and a job posting. Produce a tailored resume in
-markdown that emphasizes content relevant to the posting.
+master resume as YAML, the job posting, and optionally a pool of brag
+entries (detailed accomplishments linked to specific experience entries
+by shared tags). Produce a tailored resume in markdown that emphasizes
+content relevant to the posting.
 
 Rules:
-- Use only content the user actually has. Do not invent experience,
-  skills, education, or credentials.
+- Use only content the user actually has — from the master resume or
+  the brag pool. Do not invent experience, skills, education, or
+  credentials.
 - Reorder and rephrase bullets to surface the most JD-relevant work
   first. Mirror the posting's language when accurate.
 - Drop bullets that are clearly irrelevant to keep the resume focused
   (~one page, roughly 400-600 words of content).
+- When a brag entry's tags match an experience entry's tags, you may
+  draw concrete details (numbers, technologies, outcomes) from that
+  brag entry into the matching experience's bullets. Stay within
+  typical resume bullet density — don't list every brag.
 - Keep the standard resume sections: header (name + contact), Objective
   (if present), Experience, Education, then any extras the user has.
 - Output only the tailored resume as markdown. No preamble, no
@@ -223,12 +231,17 @@ def render_tailored(
     resume: dict[str, Any],
     opp: opp_core.Opportunity,
     config: llm.LLMConfig,
+    *,
+    brag_entries: Sequence[brag_core.BragEntry] = (),
 ) -> str:
     """Ask the configured LLM to tailor `resume` for `opp`. Returns markdown.
 
-    Raises :class:`llm.LLMError` on network/API failures.
+    ``brag_entries`` is an optional pool of accomplishments linked to
+    experience entries by tag — the command layer is responsible for
+    selecting and capping these. Raises :class:`llm.LLMError` on
+    network/API failures.
     """
-    prompt = _build_llm_prompt(resume, opp)
+    prompt = _build_llm_prompt(resume, opp, brag_entries)
     raw = llm.complete(
         config,
         system=_LLM_SYSTEM,
@@ -239,7 +252,9 @@ def render_tailored(
 
 
 def _build_llm_prompt(
-    resume: dict[str, Any], opp: opp_core.Opportunity
+    resume: dict[str, Any],
+    opp: opp_core.Opportunity,
+    brag_entries: Sequence[brag_core.BragEntry] = (),
 ) -> str:
     resume_yaml = yaml.safe_dump(
         resume or {}, sort_keys=False, allow_unicode=True
@@ -259,11 +274,36 @@ def _build_llm_prompt(
         "## Opportunity frontmatter\n```yaml\n" + frontmatter_yaml + "\n```"
     )
     sections.append("## Opportunity body\n" + body)
+    if brag_entries:
+        sections.append(_format_brag_pool(brag_entries))
     sections.append(
         "Produce the tailored resume in markdown now. Headers: H1 for the "
         "name, H2 for section titles, H3 for individual roles/degrees."
     )
     return "\n\n".join(sections)
+
+
+def _format_brag_pool(entries: Sequence[brag_core.BragEntry]) -> str:
+    """Render brag entries as an LLM-readable section."""
+    parts = [
+        "## Brag pool (accomplishments linked by tag to experience entries)",
+        "",
+        "Each entry's `tags` link it to one or more experience entries above.",
+        "Draw on these to enrich the matching experience's bullets — particularly",
+        "when the posting emphasizes related work.",
+    ]
+    for entry in entries:
+        date_str = entry.date.isoformat() if entry.date else "(undated)"
+        tag_str = ", ".join(entry.tags) if entry.tags else "(no tags)"
+        header = f"### {date_str} · {tag_str}"
+        if entry.project:
+            header += f" · project: {entry.project}"
+        body = entry.body.strip() or "(empty body)"
+        parts.append("")
+        parts.append(header)
+        parts.append("")
+        parts.append(body)
+    return "\n".join(parts)
 
 
 def _strip_code_fences(text: str) -> str:

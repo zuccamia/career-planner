@@ -10,6 +10,7 @@ from typer.testing import CliRunner
 
 from career_planner.cli import app
 from career_planner.commands import resume as resume_cmd
+from career_planner.core import brag as brag_core
 from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
 from career_planner.core import resume as resume_core
@@ -430,3 +431,229 @@ def test_cli_resume_render_for_llm_failure_exits_1(
         )
     assert result.exit_code == 1
     assert "tailoring failed" in result.output.lower()
+
+
+# --- brag pool gathering (Phase 7) ---
+
+
+def _write_brag_with_tags(
+    workspace: Path, slug: str, *, tags: list[str], body: str = "X"
+) -> None:
+    """Write a brag entry with explicit frontmatter tags."""
+    folder = brag_core.brag_dir(workspace)
+    folder.mkdir(parents=True, exist_ok=True)
+    date_str = slug[:10]  # assumes YYYY-MM-DD- prefix
+    tags_yaml = "[" + ", ".join(tags) + "]"
+    contents = f"---\ndate: {date_str}\ntags: {tags_yaml}\n---\n\n{body}\n"
+    (folder / f"{slug}.md").write_text(contents, encoding="utf-8")
+
+
+def test_gather_returns_empty_when_no_experience_tags(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    _write_brag_with_tags(ws, "2026-05-01-x", tags=["acme"])
+    resume = {"experience": [{"role": "Engineer", "company": "Acme"}]}
+    entries, total = resume_cmd._gather_relevant_brag_entries(ws, resume)
+    assert entries == ()
+    assert total == 0
+
+
+def test_gather_returns_matching_entries(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    _write_brag_with_tags(ws, "2026-05-01-perf", tags=["acme-internship"])
+    _write_brag_with_tags(ws, "2026-04-01-db", tags=["acme-internship", "db"])
+    resume = {
+        "experience": [
+            {"role": "Engineer", "company": "Acme", "tags": ["acme-internship"]}
+        ]
+    }
+    entries, total = resume_cmd._gather_relevant_brag_entries(ws, resume)
+    assert {e.slug for e in entries} == {"2026-05-01-perf", "2026-04-01-db"}
+    assert total == 2
+
+
+def test_gather_drops_unmatched_entries(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    _write_brag_with_tags(ws, "2026-05-01-match", tags=["acme-internship"])
+    _write_brag_with_tags(ws, "2026-04-01-nope", tags=["other-project"])
+    resume = {
+        "experience": [
+            {"role": "Engineer", "company": "Acme", "tags": ["acme-internship"]}
+        ]
+    }
+    entries, total = resume_cmd._gather_relevant_brag_entries(ws, resume)
+    assert {e.slug for e in entries} == {"2026-05-01-match"}
+    assert total == 1
+
+
+def test_gather_is_case_insensitive(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    _write_brag_with_tags(ws, "2026-05-01-x", tags=["Acme-Internship"])
+    resume = {
+        "experience": [
+            {"role": "Engineer", "company": "Acme", "tags": ["acme-internship"]}
+        ]
+    }
+    entries, total = resume_cmd._gather_relevant_brag_entries(ws, resume)
+    assert len(entries) == 1
+    assert total == 1
+
+
+def test_gather_caps_at_max_brag_entries(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    # Write MAX + 5 entries, all matching.
+    total_written = resume_cmd.MAX_BRAG_ENTRIES + 5
+    for i in range(total_written):
+        # Vary the date so list_entries' sort order is deterministic.
+        day = 1 + i
+        _write_brag_with_tags(
+            ws, f"2026-05-{day:02d}-x{i}", tags=["acme-internship"]
+        )
+    resume = {
+        "experience": [
+            {"role": "Engineer", "company": "Acme", "tags": ["acme-internship"]}
+        ]
+    }
+    entries, total = resume_cmd._gather_relevant_brag_entries(ws, resume)
+    assert len(entries) == resume_cmd.MAX_BRAG_ENTRIES
+    assert total == total_written
+    # Newest entries kept (the highest date numbers).
+    kept_slugs = {e.slug for e in entries}
+    assert "2026-05-25-x24" in kept_slugs  # newest
+    assert "2026-05-01-x0" not in kept_slugs  # oldest
+
+
+# --- AI tailoring includes brag pool ---
+
+
+def test_render_tailored_includes_brag_pool_in_prompt(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    _write_brag_with_tags(
+        ws,
+        "2026-05-01-cut-latency",
+        tags=["acme-internship"],
+        body="Cut p99 latency from 850ms to 95ms by adding Redis caching.",
+    )
+    resume = {
+        "header": {"name": "Alex"},
+        "experience": [
+            {"role": "Engineer", "company": "Acme", "tags": ["acme-internship"]}
+        ],
+    }
+    opp = _make_opportunity(ws)
+    brag_entries = brag_core.list_entries(ws)
+
+    captured: list[str] = []
+
+    def fake_complete(config, *, system, user, **kwargs):
+        captured.append(user)
+        return "# Alex"
+
+    with patch.object(resume_core.llm, "complete", side_effect=fake_complete):
+        resume_core.render_tailored(
+            resume, opp, _llm_config(), brag_entries=brag_entries
+        )
+
+    prompt = captured[0]
+    assert "## Brag pool" in prompt
+    assert "Cut p99 latency from 850ms to 95ms" in prompt
+    assert "acme-internship" in prompt
+
+
+def test_render_tailored_omits_brag_section_when_no_entries(tmp_path: Path) -> None:
+    ws = tmp_path / "ws"
+    create_workspace(ws)
+    resume = {"header": {"name": "Alex"}, "experience": [{"role": "Engineer"}]}
+    opp = _make_opportunity(ws)
+
+    captured: list[str] = []
+
+    def fake_complete(config, *, system, user, **kwargs):
+        captured.append(user)
+        return "# Alex"
+
+    with patch.object(resume_core.llm, "complete", side_effect=fake_complete):
+        resume_core.render_tailored(resume, opp, _llm_config())
+
+    prompt = captured[0]
+    assert "## Brag pool" not in prompt
+
+
+# --- CLI end-to-end with brag pool ---
+
+
+def test_cli_resume_render_for_reports_brag_inclusion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    resume_core.save_resume(
+        ws,
+        {
+            "header": {"name": "Alex"},
+            "experience": [
+                {
+                    "role": "Engineer",
+                    "company": "Acme",
+                    "tags": ["acme-internship"],
+                    "bullets": ["Shipped X"],
+                }
+            ],
+        },
+    )
+    _write_brag_with_tags(ws, "2026-05-01-x", tags=["acme-internship"], body="Y")
+    _setup_llm(ws, monkeypatch)
+    runner.invoke(
+        app, ["opportunity", "add", "Engineer at Globex", "--no-editor"]
+    )
+
+    with patch.object(resume_core.llm, "complete", return_value="# Alex"):
+        result = runner.invoke(
+            app, ["resume", "render", "--for", "engineer-at-globex"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert "Including 1 matching brag entries" in result.output
+
+
+def test_cli_resume_render_for_reports_capped_brag_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    resume_core.save_resume(
+        ws,
+        {
+            "header": {"name": "Alex"},
+            "experience": [
+                {
+                    "role": "Engineer",
+                    "company": "Acme",
+                    "tags": ["acme-internship"],
+                    "bullets": ["Shipped X"],
+                }
+            ],
+        },
+    )
+    # MAX + 3 matching entries → cap fires, "N most recent of M" message.
+    for i in range(resume_cmd.MAX_BRAG_ENTRIES + 3):
+        day = 1 + i
+        _write_brag_with_tags(
+            ws, f"2026-05-{day:02d}-x{i}", tags=["acme-internship"]
+        )
+    _setup_llm(ws, monkeypatch)
+    runner.invoke(
+        app, ["opportunity", "add", "Engineer at Globex", "--no-editor"]
+    )
+
+    with patch.object(resume_core.llm, "complete", return_value="# Alex"):
+        result = runner.invoke(
+            app, ["resume", "render", "--for", "engineer-at-globex"]
+        )
+
+    assert result.exit_code == 0, result.output
+    assert f"Including {resume_cmd.MAX_BRAG_ENTRIES} most recent of" in result.output
+    assert f"{resume_cmd.MAX_BRAG_ENTRIES + 3} matching brag entries" in result.output
