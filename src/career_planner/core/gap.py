@@ -28,13 +28,6 @@ STATUS_MATCHED = "matched"
 STATUS_PARTIAL = "partial"
 STATUS_MISSING = "missing"
 
-# Confidence floor for promoting a free-text requirement label into a
-# canonical ESCO skill. The threshold mirrors the auto-accept rule in
-# ``commands/skills.py``: a top score >= 0.85 with a 0.10-point lead over
-# the runner-up wins; anything below is left as free text.
-_REQUIREMENT_AUTO_THRESHOLD = 0.85
-_REQUIREMENT_TIE_BREAK = 0.10
-
 
 @dataclass(frozen=True)
 class Requirement:
@@ -161,19 +154,13 @@ def _from_string(text: str, *, min_rating: int | None) -> Requirement:
             min_rating=min_rating,
         )
 
-    matches = taxonomy.find_skill_matches(text)
-    if matches:
-        top, top_score = matches[0]
-        second = matches[1][1] if len(matches) > 1 else 0.0
-        if top_score >= 0.999 or (
-            top_score >= _REQUIREMENT_AUTO_THRESHOLD
-            and (top_score - second) >= _REQUIREMENT_TIE_BREAK
-        ):
-            return Requirement(
-                label=text,
-                esco_code=top.uri,
-                min_rating=min_rating,
-            )
+    confident = taxonomy.is_confident_match(taxonomy.find_skill_matches(text))
+    if confident is not None:
+        return Requirement(
+            label=text,
+            esco_code=confident.uri,
+            min_rating=min_rating,
+        )
     return Requirement(label=text, esco_code="", min_rating=min_rating)
 
 

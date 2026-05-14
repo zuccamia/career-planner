@@ -152,6 +152,45 @@ def complete(
     raise LLMAPIError(f"unsupported provider '{config.provider}'")
 
 
+def complete_json(
+    config: LLMConfig,
+    *,
+    system: str,
+    user: str,
+    max_tokens: int = 2000,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    """Send a completion expecting a JSON object back, and parse it.
+
+    Wraps :func:`complete` with ``json_prefill=True`` so OpenAI-compatible
+    providers see ``response_format: json_object`` and Anthropic gets the
+    assistant prefill. The response is trimmed to the first ``{`` … last
+    ``}`` substring before parsing — providers occasionally pad the JSON
+    with prose despite the instructions.
+
+    Raises :class:`LLMAPIError` on network/API failure, on non-JSON
+    output, or when the parsed value isn't a JSON object.
+    """
+    raw = complete(
+        config,
+        system=system,
+        user=user,
+        max_tokens=max_tokens,
+        json_prefill=True,
+        timeout=timeout,
+    )
+    text = raw.strip()
+    if "{" in text and "}" in text:
+        text = text[text.index("{") : text.rindex("}") + 1]
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise LLMAPIError(f"LLM returned invalid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LLMAPIError("LLM response is not a JSON object")
+    return data
+
+
 def _post_json(url: str, *, payload: dict[str, Any], headers: dict[str, str], timeout: float) -> dict[str, Any]:
     """Shared HTTP POST → JSON body, with consistent error mapping."""
     try:

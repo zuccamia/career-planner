@@ -9,7 +9,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-import yaml
+from career_planner.core.workspace import load_yaml_dict, save_yaml_dict
 
 INVENTORY_RELPATH = Path("skills") / "inventory.yml"
 
@@ -21,23 +21,13 @@ def inventory_path(workspace: Path) -> Path:
 
 def load_inventory(workspace: Path) -> list[dict[str, Any]]:
     """Read the skill entries from ``skills/inventory.yml``."""
-    path = inventory_path(workspace)
-    if not path.exists():
-        return []
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    skills = raw.get("skills") or []
-    return [dict(entry) for entry in skills]
+    raw = load_yaml_dict(inventory_path(workspace))
+    return [dict(entry) for entry in raw.get("skills") or []]
 
 
 def save_inventory(workspace: Path, skills: list[dict[str, Any]]) -> None:
     """Persist `skills` back to ``skills/inventory.yml``."""
-    path = inventory_path(workspace)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"skills": list(skills)}
-    path.write_text(
-        yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    save_yaml_dict(inventory_path(workspace), {"skills": list(skills)})
 
 
 def make_entry(
@@ -75,22 +65,23 @@ def is_duplicate(
 
 def find_in_inventory(
     inventory: list[dict[str, Any]], query: str
-) -> list[tuple[int, dict[str, Any]]]:
+) -> list[dict[str, Any]]:
     """Return inventory entries that match `query` by name or ESCO code.
 
     Prefers exact matches; falls back to substring matches when nothing is
-    exact. The returned tuples carry the entry's index for safe removal.
+    exact. ``is_duplicate`` keeps the inventory unique by (label, code),
+    so callers can safely remove a returned entry with ``list.remove``.
     """
     q = query.strip().lower()
     if not q:
         return []
-    exact: list[tuple[int, dict[str, Any]]] = []
-    partial: list[tuple[int, dict[str, Any]]] = []
-    for idx, entry in enumerate(inventory):
+    exact: list[dict[str, Any]] = []
+    partial: list[dict[str, Any]] = []
+    for entry in inventory:
         name = (entry.get("skill") or "").lower()
         code = (entry.get("esco_code") or "").lower()
         if q == name or (code and q == code):
-            exact.append((idx, entry))
+            exact.append(entry)
         elif q in name or (code and q in code):
-            partial.append((idx, entry))
+            partial.append(entry)
     return exact or partial

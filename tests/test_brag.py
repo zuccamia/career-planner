@@ -10,7 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from career_planner.cli import app
-from career_planner.commands import brag as brag_cmd
+from career_planner.commands import _common as common_cmd
 from career_planner.core import brag as brag_core
 from career_planner.core.workspace import create_workspace
 
@@ -167,7 +167,7 @@ def test_cli_brag_add_creates_entry_and_opens_editor(
         captured.append(file_path)
         return 0
 
-    with patch.object(brag_cmd, "open_in_editor", side_effect=fake_open):
+    with patch.object(common_cmd, "open_in_editor", side_effect=fake_open):
         result = runner.invoke(
             app,
             ["brag", "add", "Shipped X", "--date", "2026-05-01"],
@@ -186,7 +186,7 @@ def test_cli_brag_add_prompts_for_title_when_omitted(
     ws = _init_workspace(tmp_path, monkeypatch)
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(brag_cmd, "open_in_editor", return_value=0):
+    with patch.object(common_cmd, "open_in_editor", return_value=0):
         result = runner.invoke(
             app,
             ["brag", "add", "--date", "2026-05-01"],
@@ -366,7 +366,7 @@ def test_cli_brag_add_resolves_numbered_tag_pick(
     _write_brag_with_tags(ws, "2026-04-01-prior", tags=["acme-internship"])
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(brag_cmd, "open_in_editor", return_value=0):
+    with patch.object(common_cmd, "open_in_editor", return_value=0):
         result = runner.invoke(
             app,
             ["brag", "add", "Cut Latency", "--date", "2026-05-01"],
@@ -386,7 +386,7 @@ def test_cli_brag_add_accepts_mix_of_number_and_freeform(
     _write_brag_with_tags(ws, "2026-04-01-prior", tags=["acme-internship"])
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(brag_cmd, "open_in_editor", return_value=0):
+    with patch.object(common_cmd, "open_in_editor", return_value=0):
         result = runner.invoke(
             app,
             ["brag", "add", "Migration", "--date", "2026-05-01"],
@@ -407,7 +407,7 @@ def test_cli_brag_add_no_existing_tags_still_prompts(
     ws = _init_workspace(tmp_path, monkeypatch)
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(brag_cmd, "open_in_editor", return_value=0):
+    with patch.object(common_cmd, "open_in_editor", return_value=0):
         result = runner.invoke(
             app,
             ["brag", "add", "First Win", "--date", "2026-05-01"],
@@ -427,7 +427,7 @@ def test_cli_brag_add_dash_skips_tags(
     _write_brag_with_tags(ws, "2026-04-01-prior", tags=["acme-internship"])
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(brag_cmd, "open_in_editor", return_value=0):
+    with patch.object(common_cmd, "open_in_editor", return_value=0):
         result = runner.invoke(
             app,
             ["brag", "add", "Untagged", "--date", "2026-05-01"],
@@ -448,7 +448,7 @@ def test_cli_brag_add_out_of_range_number_becomes_freeform(
     _write_brag_with_tags(ws, "2026-04-01-prior", tags=["acme"])
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(brag_cmd, "open_in_editor", return_value=0):
+    with patch.object(common_cmd, "open_in_editor", return_value=0):
         result = runner.invoke(
             app,
             ["brag", "add", "Weird", "--date", "2026-05-01"],
@@ -469,7 +469,7 @@ def test_cli_brag_add_lists_existing_tags_in_prompt(
     _write_brag_with_tags(ws, "2026-03-01-b", tags=["acme-internship"])
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(brag_cmd, "open_in_editor", return_value=0):
+    with patch.object(common_cmd, "open_in_editor", return_value=0):
         result = runner.invoke(
             app,
             ["brag", "add", "Next", "--date", "2026-05-01"],

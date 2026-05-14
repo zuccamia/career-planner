@@ -17,7 +17,8 @@ import yaml
 
 from career_planner.core import brag as brag_core
 from career_planner.core import llm
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
+from career_planner.core.workspace import load_yaml_dict, save_yaml_dict
 
 RESUME_RELPATH = Path("resume.yml")
 
@@ -32,21 +33,12 @@ def resume_path(workspace: Path) -> Path:
 
 def load_resume(workspace: Path) -> dict[str, Any]:
     """Read the resume dict from ``resume.yml``. Empty dict if missing."""
-    path = resume_path(workspace)
-    if not path.exists():
-        return {}
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return raw if isinstance(raw, dict) else {}
+    return load_yaml_dict(resume_path(workspace))
 
 
 def save_resume(workspace: Path, data: dict[str, Any]) -> None:
     """Persist `data` to ``resume.yml``."""
-    path = resume_path(workspace)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    save_yaml_dict(resume_path(workspace), data)
 
 
 def is_empty(resume: dict[str, Any]) -> bool:

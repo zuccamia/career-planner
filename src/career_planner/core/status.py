@@ -7,7 +7,7 @@ No Rich/IO concerns live here — the command layer renders.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -15,9 +15,16 @@ from typing import Any
 from career_planner.core import brag as brag_core
 from career_planner.core import criteria as criteria_core
 from career_planner.core import gap as gap_core
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core import skills as skills_core
+from career_planner.core.coercion import coerce_date
 from career_planner.i18n import _
+
+# Backward-compat alias. ``status.gather`` returned ``CriteriaFit`` on
+# ``OpportunitySummary.fit`` before the criteria-check cache shape was
+# unified — keep the name pointed at the canonical dataclass so external
+# callers don't break.
+CriteriaFit = criteria_core.CachedCheck
 
 # Freshness thresholds, in days. Tuned to the cadence the man page promises:
 # brag at least once a quarter, skills refreshed every six months,
@@ -26,27 +33,6 @@ STALE_OPPORTUNITY_DAYS = 30
 DEADLINE_HORIZON_DAYS = 30
 STALE_SKILLS_DAYS = 183  # ~6 months
 STALE_BRAG_DAYS = 90  # ~1 quarter
-
-
-@dataclass(frozen=True)
-class CriteriaFit:
-    """Cached criteria-check summary read from an opportunity's frontmatter.
-
-    Written by ``career criteria check``; ``career status`` reads it back
-    so the dashboard does not need to rerun the LLM check on every
-    invocation. ``stale`` flips True when ``criteria.yml`` has changed
-    since the cached check was written.
-    """
-
-    alignment: int  # percent 0–100
-    dealbreaker_count: int
-    scored_dimensions: int
-    checked_at: date | None
-    stale: bool
-
-    @property
-    def has_violations(self) -> bool:
-        return self.dealbreaker_count > 0
 
 
 @dataclass(frozen=True)
@@ -66,7 +52,7 @@ class OpportunitySummary:
     created: date | None
     days_since_created: int | None
     coverage: float | None  # ``None`` when the opp lists no required skills
-    fit: CriteriaFit | None  # ``None`` when criteria.yml is empty
+    fit: criteria_core.CachedCheck | None  # ``None`` when criteria.yml is empty
 
 
 @dataclass(frozen=True)
@@ -195,26 +181,7 @@ def _attach_warnings(report: StatusReport) -> StatusReport:
             )
         )
 
-    return StatusReport(
-        skills_count=report.skills_count,
-        skills_last_updated=report.skills_last_updated,
-        days_since_skills_update=report.days_since_skills_update,
-        brag_count=report.brag_count,
-        last_brag_date=report.last_brag_date,
-        days_since_last_brag=report.days_since_last_brag,
-        active_opportunities=report.active_opportunities,
-        upcoming_deadlines=report.upcoming_deadlines,
-        stale_opportunities=report.stale_opportunities,
-        orphan_resumes=report.orphan_resumes,
-        orphan_files=report.orphan_files,
-        criteria_is_empty=report.criteria_is_empty,
-        warnings=tuple(warnings),
-    )
-
-
-    if isinstance(value, (int, float)):
-        return value != 0
-    return True
+    return replace(report, warnings=tuple(warnings))
 
 
 def _skills_freshness(
@@ -223,7 +190,7 @@ def _skills_freshness(
     latest: date | None = None
     for entry in inventory:
         value = entry.get("added")
-        parsed = _coerce_date(value)
+        parsed = coerce_date(value)
         if parsed is None:
             continue
         if latest is None or parsed > latest:
@@ -244,25 +211,14 @@ def _brag_freshness(
     return len(dated), latest, (today - latest).days
 
 
-def _coerce_date(value: Any) -> date | None:
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value.strip()[:10])
-        except ValueError:
-            return None
-    return None
-
-
 def _summarize_opportunity(
     opp: opp_core.Opportunity,
     inventory: list[dict[str, Any]],
     current_criteria_hash: str,
     today: date,
 ) -> OpportunitySummary:
-    deadline = _coerce_date(opp.frontmatter.get("deadline"))
-    created = _coerce_date(opp.frontmatter.get("created"))
+    deadline = coerce_date(opp.frontmatter.get("deadline"))
+    created = coerce_date(opp.frontmatter.get("created"))
     days_until = (deadline - today).days if deadline else None
     days_since = (today - created).days if created else None
     work_type = str(opp.frontmatter.get("work_type") or "").strip()
@@ -280,40 +236,10 @@ def _summarize_opportunity(
         created=created,
         days_since_created=days_since,
         coverage=_coverage(opp, inventory),
-        fit=_read_cached_fit(opp, current_criteria_hash),
+        fit=criteria_core.read_cached_check(
+            opp, current_criteria_hash=current_criteria_hash
+        ),
     )
-
-
-def _read_cached_fit(
-    opp: opp_core.Opportunity, current_criteria_hash: str
-) -> CriteriaFit | None:
-    """Return the cached fit summary, or ``None`` if nothing is cached."""
-    raw = opp.frontmatter.get("criteria_check")
-    if not isinstance(raw, dict):
-        return None
-    stored_hash = str(raw.get("criteria_hash") or "")
-    return CriteriaFit(
-        alignment=_coerce_int(raw.get("alignment"), default=0),
-        dealbreaker_count=_coerce_int(raw.get("dealbreaker_count"), default=0),
-        scored_dimensions=_coerce_int(raw.get("scored_dimensions"), default=0),
-        checked_at=_coerce_date(raw.get("checked_at")),
-        stale=stored_hash != current_criteria_hash,
-    )
-
-
-def _coerce_int(value: Any, *, default: int) -> int:
-    if isinstance(value, bool):
-        return default
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except ValueError:
-            return default
-    return default
 
 
 def _coverage(

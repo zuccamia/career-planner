@@ -9,10 +9,11 @@ import pytest
 from typer.testing import CliRunner
 
 from career_planner.cli import app
+from career_planner.commands import _common as common_cmd
 from career_planner.commands import resume as resume_cmd
 from career_planner.core import brag as brag_core
 from career_planner.core import llm as llm_core
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core import resume as resume_core
 from career_planner.core.workspace import create_workspace
 
@@ -278,7 +279,7 @@ def test_cli_resume_edit_opens_editor(
         captured.append(file_path)
         return 0
 
-    with patch.object(resume_cmd, "open_in_editor", side_effect=fake_open):
+    with patch.object(common_cmd, "open_in_editor", side_effect=fake_open):
         result = runner.invoke(app, ["resume", "edit"])
 
     assert result.exit_code == 0, result.output
@@ -292,7 +293,7 @@ def test_cli_resume_edit_handles_missing_editor(
     monkeypatch.setenv("EDITOR", "stub-editor")
 
     with patch.object(
-        resume_cmd,
+        common_cmd,
         "open_in_editor",
         side_effect=FileNotFoundError("missing"),
     ):

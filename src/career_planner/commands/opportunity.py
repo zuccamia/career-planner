@@ -10,16 +10,15 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from career_planner.commands._common import console, resolve_opportunity
+from career_planner.commands._common import (
+    console,
+    edit_file_in_editor,
+    resolve_opportunity,
+)
 from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
-from career_planner.core import opportunities as opp_core
-from career_planner.core.workspace import (
-    load_config,
-    open_in_editor,
-    require_workspace,
-    resolve_editor,
-)
+from career_planner.core import opportunity as opp_core
+from career_planner.core.workspace import require_workspace
 from career_planner.i18n import _
 
 
@@ -78,7 +77,7 @@ def add(
     )
 
     if open_editor:
-        _open_in_editor(workspace, target)
+        edit_file_in_editor(workspace, target, exit_on_nonzero=False)
 
 
 def list_opportunities(status: str | None = None) -> None:
@@ -219,30 +218,6 @@ def _llm_extract(workspace: Path, page: str) -> dict[str, Any]:
             )
             return opp_core.extract_job_posting(page)
 
-    for key, value in enrichment.items():
-        if not extracted.get(key):
-            extracted[key] = value
-
-
-def _open_in_editor(workspace: Path, target: Path) -> None:
-    """Open `target` in the user's editor; print a hint on failure."""
-    editor = resolve_editor(load_config(workspace))
-    try:
-        rc = open_in_editor(target, editor)
-    except FileNotFoundError:
-        console.print(
-            _(
-                "Editor not found: '{ed}'. Edit the file manually at:\n{path}"
-            ).format(ed=editor, path=target),
-            style="yellow",
-        )
-        return
-    if rc != 0:
-        console.print(
-            _("Editor exited with status {n}.").format(n=rc),
-            style="yellow",
-        )
-
 
 def _render_opportunity(workspace: Path, opp: opp_core.Opportunity) -> None:
     """Print an opportunity as a header panel plus rendered body."""
@@ -302,7 +277,7 @@ def _render_opportunity(workspace: Path, opp: opp_core.Opportunity) -> None:
             )
         )
 
-    criteria_line = _format_criteria_check(workspace, front.get("criteria_check"))
+    criteria_line = _format_criteria_check(workspace, opp)
     if criteria_line:
         header_lines.append(criteria_line)
 
@@ -319,32 +294,33 @@ def _render_opportunity(workspace: Path, opp: opp_core.Opportunity) -> None:
         console.print(Markdown(body))
 
 
-def _format_criteria_check(workspace: Path, raw: Any) -> str | None:
+def _format_criteria_check(
+    workspace: Path, opp: opp_core.Opportunity
+) -> str | None:
     """Render the cached criteria_check block as a one-line summary.
 
     Returns ``None`` when no check is cached. Appends ``[stale]`` when the
     cached ``criteria_hash`` doesn't match the current ``criteria.yml``,
     so users know the verdict predates recent criteria edits.
     """
-    if not isinstance(raw, dict):
-        return None
-
-    alignment = raw.get("alignment")
-    dealbreaker_count = raw.get("dealbreaker_count") or 0
-    scored = raw.get("scored_dimensions") or 0
-    checked_at = raw.get("checked_at") or "?"
-    stored_hash = str(raw.get("criteria_hash") or "")
-
     current = criteria_core.load_criteria(workspace)
     current_hash = criteria_core.criteria_hash(current) if current else ""
-    stale = bool(stored_hash) and stored_hash != current_hash
+    cached = criteria_core.read_cached_check(opp, current_criteria_hash=current_hash)
+    if cached is None:
+        return None
 
-    pct = f"{alignment}%" if alignment is not None else "—"
+    pct = f"{cached.alignment}%"
+    checked_at = cached.checked_at.isoformat() if cached.checked_at else "?"
     line = _(
         "Criteria fit: {pct} ({n} dealbreakers, {scored} of 5 dimensions scored) "
         "— checked {date}"
-    ).format(pct=pct, n=dealbreaker_count, scored=scored, date=checked_at)
-    if stale:
+    ).format(
+        pct=pct,
+        n=cached.dealbreaker_count,
+        scored=cached.scored_dimensions,
+        date=checked_at,
+    )
+    if cached.stale:
         line += " [yellow](stale)[/yellow]"
     return line
 

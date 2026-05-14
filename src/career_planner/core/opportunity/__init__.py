@@ -2,8 +2,13 @@
 
 Opportunity entries live as Markdown files with a YAML frontmatter block under
 ``opportunities/`` in the workspace. This module owns slug generation, file
-discovery, frontmatter parsing/serialization, and the basic URL fetch + HTML
-title extraction used by ``career opportunity add --url``.
+discovery, frontmatter parsing/serialization, structured (JSON-LD / Open Graph)
+extraction, the optional LLM extraction pass, and the URL fetcher used by
+``career opportunity add --url``.
+
+Body-text inference (salary regex, work-type regex) and the Eightfold ATS
+detour live in :mod:`career_planner.core.opportunity.inference` and
+:mod:`career_planner.core.opportunity.eightfold` respectively.
 """
 
 from __future__ import annotations
@@ -11,14 +16,26 @@ from __future__ import annotations
 import html
 import json
 import re
-import urllib.parse
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date
 from importlib import resources
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+from . import eightfold as eightfold_core
+from .inference import (
+    extract_salary_from_text,
+    extract_work_type_from_text,
+    html_to_text,
+)
+
+# Test-facing re-exports — historic underscore names so external callers
+# (including tests) keep working after the module split.
+_html_to_text = html_to_text
+_eightfold_pid = eightfold_core.eightfold_pid
+_company_from_eightfold_host = eightfold_core.company_from_host
 
 OPPORTUNITIES_RELPATH = Path("opportunities")
 FRONTMATTER_DELIM = "---"
@@ -422,14 +439,13 @@ def llm_extract_posting(
     a dict in the same frontmatter shape as :func:`extract_job_posting`,
     including the special ``description`` key meant for the Markdown body.
 
-    Raises :class:`LLMAPIError` (from the adapter) on network/API failure
-    and :class:`json.JSONDecodeError` when the response is not valid
-    JSON — the command layer is expected to catch both and fall back to
+    Raises :class:`LLMAPIError` on network/API failure or when the response
+    isn't valid JSON. The command layer catches that and falls back to
     :func:`extract_job_posting` so the user still gets a usable file.
     """
     from career_planner.core import llm as llm_core
 
-    body_text = _html_to_text(html_text)
+    body_text = html_to_text(html_text)
     if len(body_text) > max_chars:
         body_text = body_text[:max_chars]
 
@@ -445,16 +461,12 @@ def llm_extract_posting(
         f"<posting>\n{body_text}\n</posting>"
     )
 
-    response = llm_core.complete(
+    data = llm_core.complete_json(
         llm_config,
         system=system,
         user=user,
-        json_prefill=True,
         max_tokens=4000,
     )
-    data = json.loads(response)
-    if not isinstance(data, dict):
-        return {}
     return _coerce_llm_extraction(data)
 
 
@@ -770,190 +782,6 @@ def _extract_meta(html_text: str, name: str) -> str:
     return ""
 
 
-def _html_to_text(html_text: str) -> str:
-    """Convert a fragment of HTML into a readable plain-text Markdown block."""
-    if not html_text:
-        return ""
-    text = html_text
-    text = re.sub(
-        r"<script\b[^>]*>.*?</script\s*>", "", text, flags=re.IGNORECASE | re.DOTALL
-    )
-    text = re.sub(
-        r"<style\b[^>]*>.*?</style\s*>", "", text, flags=re.IGNORECASE | re.DOTALL
-    )
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</p\s*>", "\n\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</div\s*>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<li[^>]*>", "- ", text, flags=re.IGNORECASE)
-    text = re.sub(r"</li\s*>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"<[^>]+>", "", text)
-    text = html.unescape(text)
-    text = re.sub(r"[ \t]+\n", "\n", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-# --- Body-text inference (used when JSON-LD frontmatter is missing) ---
-
-
-# Salary range with a currency mark *before* the lower bound:
-#   $150K-$200K, $150,000-$200,000, $150-200K, USD 150K to 200K, €80K-€100K
-_SALARY_PREFIX_RANGE_RE = re.compile(
-    r"""
-    (?P<cur>\$|US\$|USD|£|GBP|€|EUR)\s*
-    (?P<lo>\d{1,3}(?:,\d{3})+|\d+)
-    \s*(?P<lo_k>[Kk])?
-    \s*(?:-|–|—|\s+to\s+)
-    \s*(?:\$|US\$|USD|£|GBP|€|EUR)?\s*
-    (?P<hi>\d{1,3}(?:,\d{3})+|\d+)
-    \s*(?P<hi_k>[Kk])?
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
-# Salary range with the currency mark *after* the upper bound:
-#   150,000-200,000 USD, 80-100K EUR
-_SALARY_POSTFIX_RANGE_RE = re.compile(
-    r"""
-    \b(?P<lo>\d{1,3}(?:,\d{3})+|\d+)
-    \s*(?P<lo_k>[Kk])?
-    \s*(?:-|–|—|\s+to\s+)
-    \s*(?P<hi>\d{1,3}(?:,\d{3})+|\d+)
-    \s*(?P<hi_k>[Kk])?
-    \s*(?P<cur>USD|EUR|GBP|CAD|AUD)\b
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
-_CURRENCY_NORMALIZE: dict[str, str] = {
-    "$": "USD",
-    "US$": "USD",
-    "USD": "USD",
-    "£": "GBP",
-    "GBP": "GBP",
-    "€": "EUR",
-    "EUR": "EUR",
-    "CAD": "CAD",
-    "AUD": "AUD",
-}
-
-
-def extract_salary_from_text(text: str) -> dict[str, Any]:
-    """Best-effort salary-range extraction from a free-text body.
-
-    Recognises common posting formats — ``$150K-$200K``, ``$150,000-$200,000``,
-    ``$150-200K``, ``150K-200K USD``, ``€80K-€100K`` — and returns the same
-    frontmatter shape produced by :func:`extract_job_posting`
-    (``salary_min``, ``salary_max``, ``salary_currency``). Returns an empty
-    dict when no range can be parsed.
-
-    Used as a fallback by ``career criteria check`` when the opportunity's
-    salary frontmatter fields are blank.
-    """
-    if not text:
-        return {}
-
-    for pattern in (_SALARY_PREFIX_RANGE_RE, _SALARY_POSTFIX_RANGE_RE):
-        match = pattern.search(text)
-        if match is None:
-            continue
-        lo_val = _parse_salary_number(match.group("lo"), match.group("lo_k"))
-        hi_val = _parse_salary_number(match.group("hi"), match.group("hi_k"))
-        if lo_val is None or hi_val is None:
-            continue
-        # Shared-K rule: "$150-200K" — upper has K, lower doesn't, lower is
-        # tiny relative to upper, so the K applies to both bounds.
-        if (
-            match.group("hi_k")
-            and not match.group("lo_k")
-            and lo_val < 1000
-            and hi_val >= 1000
-        ):
-            lo_val *= 1000
-        if lo_val > hi_val:
-            # Out-of-order pair is most likely a phone number or version
-            # string sneaking past — skip rather than emit nonsense.
-            continue
-        cur_raw = (match.group("cur") or "").upper()
-        cur = _CURRENCY_NORMALIZE.get(cur_raw, "")
-        out: dict[str, Any] = {"salary_min": lo_val, "salary_max": hi_val}
-        if cur:
-            out["salary_currency"] = cur
-        return out
-    return {}
-
-
-def _parse_salary_number(num_str: str, k_suffix: str | None) -> int | None:
-    if not num_str:
-        return None
-    try:
-        n = int(num_str.replace(",", ""))
-    except ValueError:
-        return None
-    if k_suffix:
-        n *= 1000
-    return n
-
-
-# Work-type patterns in priority order. Strongest signals first; the first
-# match wins so "fully remote" beats a stray "hybrid" later in the post.
-_WORK_TYPE_PATTERNS: tuple[tuple["re.Pattern[str]", str], ...] = (
-    (
-        re.compile(r"\b(?:fully|100%|completely)\s+remote\b", re.IGNORECASE),
-        "remote",
-    ),
-    (
-        re.compile(r"\bremote[- ](?:first|only|eligible)\b", re.IGNORECASE),
-        "remote",
-    ),
-    (
-        re.compile(r"\bwork\s+from\s+(?:anywhere|home)\b", re.IGNORECASE),
-        "remote",
-    ),
-    (
-        re.compile(
-            r"\bfully\s+(?:in[- ]?office|in[- ]?person|onsite|on[- ]?site)\b",
-            re.IGNORECASE,
-        ),
-        "in-person",
-    ),
-    (
-        re.compile(
-            r"\b(?:5|five)\s+days?(?:\s+(?:a|per)\s+week)?\s+"
-            r"(?:in[- ]?office|onsite|on[- ]?site|in[- ]?person)\b",
-            re.IGNORECASE,
-        ),
-        "in-person",
-    ),
-    (re.compile(r"\bhybrid\b", re.IGNORECASE), "hybrid"),
-    (
-        re.compile(
-            r"\b[1-4]\s+days?(?:\s+(?:a|per)\s+week)?\s+"
-            r"(?:in[- ]?office|onsite|on[- ]?site|in[- ]?person)\b",
-            re.IGNORECASE,
-        ),
-        "hybrid",
-    ),
-)
-
-
-def extract_work_type_from_text(text: str) -> str:
-    """Best-effort work-type inference from a free-text body.
-
-    Returns ``"remote"``, ``"hybrid"``, ``"in-person"``, or ``""`` when no
-    strong signal is found. Patterns are evaluated in priority order so
-    "fully remote" beats a softer "hybrid" mention later in the post.
-
-    Soft mentions like a bare "remote" or "remote-friendly" are deliberately
-    skipped — they're too ambiguous (often "occasional remote work allowed"
-    rather than a true remote role).
-    """
-    if not text:
-        return ""
-    for pattern, work_type in _WORK_TYPE_PATTERNS:
-        if pattern.search(text):
-            return work_type
-    return ""
 
 
 _USER_AGENT = "career-planner/0.1 (+https://github.com/career-planner)"
@@ -965,18 +793,19 @@ def fetch_url(url: str, *, timeout: float = 10.0) -> str:
     For Eightfold-hosted careers pages (Microsoft, ServiceNow, Capital One,
     etc.) the public URL is a JavaScript SPA whose initial HTML carries
     almost no job-specific content; we route those through
-    :func:`_fetch_eightfold`, which calls the underlying positions API and
-    synthesizes an HTML document the regular extractors can consume.
+    :func:`career_planner.core.opportunity.eightfold.fetch_eightfold`, which calls the
+    underlying positions API and synthesizes an HTML document the regular
+    extractors can consume.
 
     Raises whatever ``httpx`` raises on failure — callers convert that into a
     user-friendly error.
     """
     import httpx
 
-    pid = _eightfold_pid(url)
+    pid = eightfold_core.eightfold_pid(url)
     if pid:
         try:
-            return _fetch_eightfold(url, pid, timeout=timeout)
+            return eightfold_core.fetch_eightfold(url, pid, timeout=timeout)
         except (httpx.HTTPError, ValueError, KeyError, json.JSONDecodeError):
             # If the API detour fails for any reason, fall through to the
             # plain HTML fetch so the user still gets *something* usable.
@@ -991,259 +820,3 @@ def fetch_url(url: str, *, timeout: float = 10.0) -> str:
     response.raise_for_status()
     return response.text
 
-
-# --- Eightfold ATS detour -------------------------------------------------
-#
-# Eightfold powers the careers sites for Microsoft, ServiceNow, Capital
-# One, Bristol Myers Squibb, Domino's, and many other large employers.
-# Every page is a thin SPA shell — the job description, salary disclosure,
-# and work-site policy are fetched client-side from a JSON API. A plain
-# httpx.get on the public URL yields only the shell, so JSON-LD and
-# body-text extraction find almost nothing. The detour calls the same API
-# the browser does and re-emits a minimal HTML document with a synthesized
-# Schema.org JobPosting block plus the description HTML, which the rest of
-# the pipeline (JSON-LD parser, body inference, LLM extractor) consumes
-# without further changes.
-
-
-_EIGHTFOLD_HOST_RE = re.compile(
-    r"^(apply\.careers\.[a-z0-9-]+(?:\.[a-z]+)+|[a-z0-9-]+\.eightfold\.ai)$",
-    re.IGNORECASE,
-)
-_EIGHTFOLD_CANONICAL_PATH_RE = re.compile(r"/careers/job/(\d+)")
-_EIGHTFOLD_PID_PARAMS: tuple[str, ...] = ("pid", "jid")
-
-
-def _eightfold_pid(url: str) -> str:
-    """Return the Eightfold position ID if `url` is Eightfold-shaped, else ""."""
-    try:
-        parsed = urllib.parse.urlsplit(url)
-    except ValueError:
-        return ""
-    host = parsed.netloc.lower().split(":", 1)[0]
-    if not _EIGHTFOLD_HOST_RE.match(host):
-        return ""
-    qs = urllib.parse.parse_qs(parsed.query)
-    for key in _EIGHTFOLD_PID_PARAMS:
-        values = qs.get(key)
-        if values and values[0].isdigit():
-            return values[0]
-    match = _EIGHTFOLD_CANONICAL_PATH_RE.search(parsed.path)
-    if match:
-        return match.group(1)
-    return ""
-
-
-def _fetch_eightfold(url: str, pid: str, *, timeout: float) -> str:
-    """Fetch the Eightfold positions API and return a synthesized HTML doc."""
-    import httpx
-
-    parsed = urllib.parse.urlsplit(url)
-    api_url = f"{parsed.scheme}://{parsed.netloc}/api/apply/v2/jobs/{pid}"
-    response = httpx.get(
-        api_url,
-        timeout=timeout,
-        follow_redirects=True,
-        headers={"User-Agent": _USER_AGENT, "Accept": "application/json"},
-    )
-    response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, dict):
-        raise ValueError("Eightfold API returned a non-object payload")
-    return _eightfold_to_synthesized_html(data, url)
-
-
-def _eightfold_to_synthesized_html(
-    data: dict[str, Any], original_url: str
-) -> str:
-    """Build a minimal HTML doc embedding the API result as JSON-LD + body."""
-    role_title = str(data.get("name") or "").strip()
-    description_html = str(data.get("job_description") or "")
-    company = _company_from_eightfold_host(original_url)
-
-    posting: dict[str, Any] = {
-        "@context": "https://schema.org",
-        "@type": "JobPosting",
-    }
-    if role_title:
-        posting["title"] = role_title
-    if company:
-        posting["hiringOrganization"] = {
-            "@type": "Organization",
-            "name": company,
-        }
-
-    location_str = _eightfold_pick_location(data)
-    place = _eightfold_place_from_string(location_str)
-    if place is not None:
-        posting["jobLocation"] = place
-
-    posted = _unix_to_iso(data.get("t_create"))
-    if posted:
-        posting["datePosted"] = posted
-
-    flex = data.get("location_flexibility") or data.get("work_location_option")
-    location_type = _eightfold_location_type(flex)
-    if location_type:
-        posting["jobLocationType"] = location_type
-
-    if description_html:
-        posting["description"] = description_html
-
-    # Two views of the same data: the JSON-LD <script> block is for the
-    # deterministic extractor, and a small visible metadata block at the top
-    # of <body> is for the LLM extractor, which sees only tag-stripped text
-    # (and strips script/style content along the way). Without the body
-    # block, the LLM would miss location/date_posted/etc. that only live in
-    # the API JSON. Salary and work-site policy come back the other way —
-    # they live in the description prose, not the JSON — so we surface
-    # those in the same labeled block too. Otherwise the LLM, anchoring on
-    # the labeled fields it sees, tends to leave salary blank.
-    description_text = _html_to_text(description_html) if description_html else ""
-    inferred_salary = (
-        extract_salary_from_text(description_text) if description_text else {}
-    )
-    inferred_work_type = (
-        extract_work_type_from_text(description_text) if description_text else ""
-    )
-
-    meta_lines: list[str] = []
-    if role_title:
-        meta_lines.append(f"<p>Role: {html.escape(role_title)}</p>")
-    if company:
-        meta_lines.append(f"<p>Company: {html.escape(company)}</p>")
-    if location_str:
-        meta_lines.append(f"<p>Location: {html.escape(location_str)}</p>")
-    if posted:
-        meta_lines.append(f"<p>Date posted: {html.escape(posted)}</p>")
-    salary_line = _format_salary_meta(inferred_salary)
-    if salary_line:
-        meta_lines.append(f"<p>{salary_line}</p>")
-    work_site = _work_site_label(location_type, inferred_work_type)
-    if work_site:
-        meta_lines.append(f"<p>Work site: {work_site}</p>")
-
-    json_ld = json.dumps(posting, ensure_ascii=False)
-    title_text = html.escape(role_title or "Job posting")
-    return (
-        "<!doctype html><html><head>"
-        f"<title>{title_text}</title>"
-        '<script type="application/ld+json">'
-        f"{json_ld}"
-        "</script>"
-        "</head><body>"
-        f"{''.join(meta_lines)}"
-        f"{description_html}"
-        "</body></html>"
-    )
-
-
-def _eightfold_pick_location(data: dict[str, Any]) -> str:
-    """Pick the most informative location string from an Eightfold payload."""
-    primary = data.get("location")
-    if isinstance(primary, str) and primary.strip():
-        return primary.strip()
-    locations = data.get("locations")
-    if isinstance(locations, list):
-        for entry in locations:
-            if isinstance(entry, str) and entry.strip():
-                return entry.strip()
-    return ""
-
-
-def _eightfold_place_from_string(location_str: str) -> dict[str, Any] | None:
-    """Convert an Eightfold "Country, Region, City" string to a Place node.
-
-    Eightfold consistently formats `location` as ``"Country, Region, City"``
-    (e.g. ``"United States, Washington, Redmond"``). Anything that doesn't
-    split cleanly is returned as a bare ``name`` so the downstream
-    formatter still has something to show.
-    """
-    text = location_str.strip()
-    if not text:
-        return None
-    parts = [p.strip() for p in text.split(",") if p.strip()]
-    address: dict[str, Any] = {"@type": "PostalAddress"}
-    if len(parts) >= 3:
-        address["addressCountry"] = parts[0]
-        address["addressRegion"] = parts[1]
-        address["addressLocality"] = parts[-1]
-    elif len(parts) == 2:
-        address["addressCountry"] = parts[0]
-        address["addressLocality"] = parts[1]
-    else:
-        return {"@type": "Place", "name": text}
-    return {"@type": "Place", "address": address}
-
-
-def _eightfold_location_type(value: Any) -> str:
-    """Map Eightfold's flexibility hints onto Schema.org jobLocationType."""
-    if not isinstance(value, str):
-        return ""
-    norm = value.strip().lower()
-    # Eightfold uses things like "remote", "remoteGlobal", "remoteLocal",
-    # "onsite", "hybrid". Only the remote bucket has a Schema.org analogue.
-    if norm.startswith("remote") or norm == "telecommute":
-        return "TELECOMMUTE"
-    return ""
-
-
-def _format_salary_meta(salary: dict[str, Any]) -> str:
-    """Render an inferred salary dict as a labeled line, or "" if empty."""
-    lo = salary.get("salary_min")
-    hi = salary.get("salary_max")
-    currency = salary.get("salary_currency") or ""
-    if lo is None and hi is None:
-        return ""
-    if lo is not None and hi is not None:
-        amount = f"{lo:,} - {hi:,}"
-    else:
-        amount = f"{(lo if lo is not None else hi):,}"
-    return f"Salary: {currency} {amount}".strip()
-
-
-def _work_site_label(location_type: str, inferred_work_type: str) -> str:
-    """Map structured + inferred work-type signals to a display label."""
-    if location_type == "TELECOMMUTE":
-        return "Remote"
-    if inferred_work_type == "remote":
-        return "Remote"
-    if inferred_work_type == "hybrid":
-        return "Hybrid"
-    if inferred_work_type == "in-person":
-        return "In-person"
-    return ""
-
-
-def _company_from_eightfold_host(url: str) -> str:
-    """Derive a hiring-org name from an Eightfold-hosted careers URL.
-
-    ``apply.careers.microsoft.com`` → ``"Microsoft"``.
-    ``acme-corp.eightfold.ai`` → ``"Acme Corp"``.
-    Returns ``""`` when the host doesn't follow either convention.
-    """
-    try:
-        host = urllib.parse.urlsplit(url).netloc.lower().split(":", 1)[0]
-    except ValueError:
-        return ""
-    match = re.match(r"^apply\.careers\.([a-z0-9-]+)\.[a-z]+(?:\.[a-z]+)*$", host)
-    if match:
-        return match.group(1).replace("-", " ").title()
-    match = re.match(r"^([a-z0-9-]+)\.eightfold\.ai$", host)
-    if match and match.group(1) != "apply":
-        return match.group(1).replace("-", " ").title()
-    return ""
-
-
-def _unix_to_iso(value: Any) -> str:
-    """Return ``YYYY-MM-DD`` for a unix-seconds timestamp, else ""."""
-    if isinstance(value, bool):
-        return ""
-    if not isinstance(value, (int, float)):
-        return ""
-    try:
-        return (
-            datetime.fromtimestamp(int(value), tz=timezone.utc).date().isoformat()
-        )
-    except (OverflowError, OSError, ValueError):
-        return ""

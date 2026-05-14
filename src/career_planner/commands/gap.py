@@ -9,7 +9,7 @@ from rich.table import Table
 
 from career_planner.commands._common import console, resolve_opportunity, short_code
 from career_planner.core import gap as gap_core
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core import skills as skills_core
 from career_planner.core.workspace import require_workspace
 from career_planner.i18n import _
