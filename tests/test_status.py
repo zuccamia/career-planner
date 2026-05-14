@@ -546,3 +546,90 @@ def test_status_empty_workspace_renders_without_crashing(
     result = runner.invoke(app, ["status"])
     assert result.exit_code == 0
     assert "Career status" in result.output
+
+
+# --- criteria summary line --------------------------------------------------
+
+
+def test_status_criteria_line_says_unconfigured_when_criteria_empty(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Fresh workspaces have all five dimensions empty — flagged as unconfigured."""
+    workspace = _make_workspace(tmp_path)
+    monkeypatch.chdir(workspace)
+    _pin_today(monkeypatch)
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    assert "Criteria: not yet configured" in result.output
+
+
+def test_status_criteria_line_says_configured_when_no_opportunities(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace = _make_workspace(tmp_path)
+    _write_criteria(workspace, _CRITERIA_WITH_DEALBREAKER)
+    monkeypatch.chdir(workspace)
+    _pin_today(monkeypatch)
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    # No active opportunities yet, criteria is filled in.
+    assert "Criteria: configured" in result.output
+
+
+def test_status_criteria_line_reports_checked_count(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace = _make_workspace(tmp_path)
+    _write_criteria(workspace, _CRITERIA_WITH_DEALBREAKER)
+    _add_opportunity(workspace, title="A", status="active")
+    _add_opportunity(workspace, title="B", status="active")
+    slug_a = "a"
+    _run_criteria_check(workspace, slug_a)
+
+    monkeypatch.chdir(workspace)
+    _pin_today(monkeypatch)
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    # One of two active opps has a cached check, no stale.
+    assert "Criteria check: 1/2 active checked" in result.output
+
+
+def test_status_criteria_line_flags_stale_checks(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace = _make_workspace(tmp_path)
+    _write_criteria(workspace, _CRITERIA_WITH_DEALBREAKER)
+    _add_opportunity(workspace, title="A", status="active")
+    slug_a = "a"
+    _run_criteria_check(workspace, slug_a)
+
+    # Mutate criteria so the cached check becomes stale.
+    _write_criteria(
+        workspace,
+        {**_CRITERIA_WITH_DEALBREAKER, "growth": {"motivators": ["new"]}},
+    )
+
+    monkeypatch.chdir(workspace)
+    _pin_today(monkeypatch)
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    assert "Criteria check: 1/1 active checked, 1 stale" in result.output
+
+
+def test_status_criteria_line_all_caught_up(
+    tmp_path: Path, monkeypatch
+) -> None:
+    workspace = _make_workspace(tmp_path)
+    _write_criteria(workspace, _CRITERIA_WITH_DEALBREAKER)
+    _add_opportunity(workspace, title="A", status="active")
+    _add_opportunity(workspace, title="B", status="active")
+    _run_criteria_check(workspace, "a")
+    _run_criteria_check(workspace, "b")
+
+    monkeypatch.chdir(workspace)
+    _pin_today(monkeypatch)
+    result = runner.invoke(app, ["status"])
+    assert result.exit_code == 0
+    assert "Criteria check: 2/2 active checked" in result.output
+    # No "stale" suffix when nothing is stale.
+    assert "stale" not in result.output.lower()

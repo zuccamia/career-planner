@@ -84,7 +84,20 @@ class StatusReport:
     stale_opportunities: tuple[OpportunitySummary, ...]
     orphan_resumes: tuple[Path, ...]
     orphan_files: tuple[Path, ...]
+    criteria_is_empty: bool = False
     warnings: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def opportunities_unchecked(self) -> int:
+        """Number of active opportunities with no cached criteria check."""
+        return sum(1 for s in self.active_opportunities if s.fit is None)
+
+    @property
+    def opportunities_stale_check(self) -> int:
+        """Number of active opportunities whose cached check is stale."""
+        return sum(
+            1 for s in self.active_opportunities if s.fit is not None and s.fit.stale
+        )
 
     @property
     def skills_stale(self) -> bool:
@@ -142,6 +155,7 @@ def gather(workspace: Path, *, today: date | None = None) -> StatusReport:
         stale_opportunities=stale_opps,
         orphan_resumes=orphan_resumes,
         orphan_files=orphan_files,
+        criteria_is_empty=criteria_core.is_criteria_empty(criteria),
     )
     return _attach_warnings(report)
 
@@ -193,6 +207,7 @@ def _attach_warnings(report: StatusReport) -> StatusReport:
         stale_opportunities=report.stale_opportunities,
         orphan_resumes=report.orphan_resumes,
         orphan_files=report.orphan_files,
+        criteria_is_empty=report.criteria_is_empty,
         warnings=tuple(warnings),
     )
 

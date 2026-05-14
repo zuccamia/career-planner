@@ -124,6 +124,19 @@ def missing_fields(name: str, data: dict[str, Any]) -> tuple[str, ...]:
     )
 
 
+def is_criteria_empty(data: dict[str, Any]) -> bool:
+    """True when every dimension has no completeness-field content.
+
+    A freshly-initialized workspace has all five dimension keys present
+    but empty — that still counts as "empty" by this rule.
+    """
+    if not data:
+        return True
+    return all(
+        is_dimension_empty(dim, dimension_data(data, dim)) for dim in DIMENSIONS
+    )
+
+
 def _has_value(value: Any) -> bool:
     if value is None:
         return False

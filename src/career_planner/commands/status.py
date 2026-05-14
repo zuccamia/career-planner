@@ -53,7 +53,27 @@ def _summary_block(report: status_core.StatusReport) -> str:
                 n=len(report.stale_opportunities)
             )
         )
+    lines.append(_criteria_line(report))
     return "\n".join(lines)
+
+
+def _criteria_line(report: status_core.StatusReport) -> str:
+    if report.criteria_is_empty:
+        return _("Criteria: not yet configured — run `career criteria edit`")
+
+    total = len(report.active_opportunities)
+    if total == 0:
+        return _("Criteria: configured")
+
+    checked = total - report.opportunities_unchecked
+    stale = report.opportunities_stale_check
+    if stale:
+        return _("Criteria check: {n}/{total} active checked, {s} stale").format(
+            n=checked, total=total, s=stale
+        )
+    return _("Criteria check: {n}/{total} active checked").format(
+        n=checked, total=total
+    )
 
 
 def _skills_line(report: status_core.StatusReport) -> str:
