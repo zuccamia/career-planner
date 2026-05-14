@@ -9,15 +9,15 @@ import typer
 from rich.markdown import Markdown
 from rich.table import Table
 
-from career_planner.commands._common import console, disambiguate
+from career_planner.commands._common import (
+    console,
+    disambiguate,
+    edit_file_in_editor,
+)
 from career_planner.core import brag as brag_core
 from career_planner.core import tags as tags_core
-from career_planner.core.workspace import (
-    load_config,
-    open_in_editor,
-    require_workspace,
-    resolve_editor,
-)
+from career_planner.core.coercion import coerce_date
+from career_planner.core.workspace import require_workspace
 from career_planner.i18n import _
 
 
@@ -25,7 +25,7 @@ def add(title: str | None = None, date_str: str | None = None) -> None:
     """Create a brag entry from the template and open it in $EDITOR."""
     workspace = require_workspace()
 
-    entry_date = _parse_date(date_str) if date_str else date.today()
+    entry_date = coerce_date(date_str) if date_str else date.today()
     if entry_date is None:
         console.print(
             _("Invalid date '{d}' (expected YYYY-MM-DD).").format(d=date_str),
@@ -46,25 +46,7 @@ def add(title: str | None = None, date_str: str | None = None) -> None:
         workspace, title=title, entry_date=entry_date, tags=chosen_tags
     )
 
-    editor = resolve_editor(load_config(workspace))
-    try:
-        rc = open_in_editor(path, editor)
-    except FileNotFoundError:
-        console.print(
-            _(
-                "Editor not found: '{ed}'. Created the entry at {path}; edit "
-                "it manually."
-            ).format(ed=editor, path=path),
-            style="yellow",
-        )
-        return
-
-    if rc != 0:
-        console.print(
-            _("Editor exited with status {n}.").format(n=rc),
-            style="yellow",
-        )
-        raise typer.Exit(rc)
+    edit_file_in_editor(workspace, path)
 
     console.print(
         _("Saved brag entry at {path}.").format(path=path),
@@ -178,10 +160,3 @@ def _prompt_for_tags(workspace: Path) -> tuple[str, ...]:
             chosen.append(normalized)
             seen.add(normalized)
     return tuple(chosen)
-
-
-def _parse_date(value: str) -> date | None:
-    try:
-        return date.fromisoformat(value.strip())
-    except ValueError:
-        return None

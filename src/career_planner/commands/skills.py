@@ -8,7 +8,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from career_planner.commands._common import console, short_code
+from career_planner.commands._common import console, disambiguate, short_code
 from career_planner.core import skills as skills_core
 from career_planner.core import taxonomy
 from career_planner.core.workspace import require_workspace
@@ -121,30 +121,20 @@ def remove(skill: str) -> None:
         console.print(_("Your skills inventory is empty."), style="yellow")
         raise typer.Exit(1)
 
-    matches = skills_core.find_in_inventory(inventory, skill)
-    if not matches:
-        console.print(
-            _("No skill matching '{q}' found in your inventory.").format(q=skill),
-            style="red",
-        )
-        raise typer.Exit(1)
+    target = disambiguate(
+        skills_core.find_in_inventory(inventory, skill),
+        query=skill,
+        describe=lambda e: str(e.get("skill", "")),
+        not_found=_("No skill matching '{q}' found in your inventory.").format(
+            q=skill
+        ),
+        multiple=_("Multiple skills match '{q}':").format(q=skill),
+    )
 
-    if len(matches) == 1:
-        target_idx, target_entry = matches[0]
-    else:
-        console.print(_("Multiple skills match '{q}':").format(q=skill))
-        for n, (_idx, entry) in enumerate(matches, 1):
-            console.print(f"  {n}. {entry.get('skill', '')}")
-        choice = typer.prompt(_("Pick a number (or 0 to cancel)"), type=int)
-        if choice < 1 or choice > len(matches):
-            console.print(_("Cancelled."), style="yellow")
-            raise typer.Exit(1)
-        target_idx, target_entry = matches[choice - 1]
-
-    del inventory[target_idx]
+    inventory.remove(target)
     skills_core.save_inventory(workspace, inventory)
     console.print(
-        _("Removed: {name}").format(name=target_entry.get("skill", "")),
+        _("Removed: {name}").format(name=target.get("skill", "")),
         style="green",
     )
 
@@ -168,10 +158,9 @@ def _resolve_taxonomy(query: str) -> tuple[str, str | None] | None:
         )
         return query, None
 
-    top_skill, top_score = matches[0]
-    second_score = matches[1][1] if len(matches) > 1 else 0.0
-    if top_score >= 0.999 or (top_score >= 0.85 and top_score - second_score >= 0.1):
-        return top_skill.preferred_label, top_skill.uri
+    confident = taxonomy.is_confident_match(matches)
+    if confident is not None:
+        return confident.preferred_label, confident.uri
 
     console.print(_("Possible ESCO matches for '{q}':").format(q=query))
     for i, (skill, score) in enumerate(matches, 1):

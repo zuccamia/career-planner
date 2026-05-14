@@ -9,15 +9,14 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
-from career_planner.commands._common import console, resolve_opportunity
+from career_planner.commands._common import (
+    console,
+    edit_file_in_editor,
+    resolve_opportunity,
+)
 from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
-from career_planner.core.workspace import (
-    load_config,
-    open_in_editor,
-    require_workspace,
-    resolve_editor,
-)
+from career_planner.core.workspace import require_workspace
 from career_planner.i18n import _
 
 
@@ -38,26 +37,7 @@ def _edit_in_editor(workspace: Path) -> None:
     if not target.exists():
         target.parent.mkdir(parents=True, exist_ok=True)
         target.touch()
-
-    editor = resolve_editor(load_config(workspace))
-    try:
-        rc = open_in_editor(target, editor)
-    except FileNotFoundError:
-        console.print(
-            _(
-                "Editor not found: '{ed}'. Set $EDITOR or the `editor` field "
-                "in config.yml. Edit the file manually at:\n{path}"
-            ).format(ed=editor, path=target),
-            style="red",
-        )
-        raise typer.Exit(1) from None
-
-    if rc != 0:
-        console.print(
-            _("Editor exited with status {n}.").format(n=rc),
-            style="yellow",
-        )
-        raise typer.Exit(rc)
+    edit_file_in_editor(workspace, target, must_edit=True)
 
 
 def _edit_interactive(workspace: Path) -> None:

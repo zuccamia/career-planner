@@ -19,6 +19,8 @@ import yaml
 
 from career_planner.core import llm
 from career_planner.core import opportunities as opp_core
+from career_planner.core.coercion import coerce_date, coerce_int
+from career_planner.core.workspace import load_yaml_dict, save_yaml_dict
 
 CRITERIA_RELPATH = Path("criteria.yml")
 
@@ -71,21 +73,12 @@ def criteria_path(workspace: Path) -> Path:
 
 def load_criteria(workspace: Path) -> dict[str, Any]:
     """Read the criteria dict from ``criteria.yml``. Empty dict if missing."""
-    path = criteria_path(workspace)
-    if not path.exists():
-        return {}
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return raw if isinstance(raw, dict) else {}
+    return load_yaml_dict(criteria_path(workspace))
 
 
 def save_criteria(workspace: Path, data: dict[str, Any]) -> None:
     """Persist `data` to ``criteria.yml``."""
-    path = criteria_path(workspace)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
+    save_yaml_dict(criteria_path(workspace), data)
 
 
 def criteria_hash(data: dict[str, Any]) -> str:
@@ -253,15 +246,12 @@ def check_against_opportunity(
 
     Raises :class:`llm.LLMError` on network/API/JSON failures.
     """
-    prompt = _build_llm_prompt(criteria, opp)
-    raw = llm.complete(
+    parsed = llm.complete_json(
         config,
         system=_LLM_SYSTEM,
-        user=prompt,
+        user=_build_llm_prompt(criteria, opp),
         max_tokens=_LLM_MAX_TOKENS,
-        json_prefill=True,
     )
-    parsed = _parse_llm_response(raw)
     return _build_check_from_response(opp, parsed)
 
 
@@ -301,20 +291,6 @@ def _build_llm_prompt(
         "```\n"
         "Include all five dimensions. Empty lists are fine."
     )
-
-
-def _parse_llm_response(raw: str) -> dict[str, Any]:
-    """Parse the LLM's JSON response, tolerating common stray characters."""
-    text = raw.strip()
-    if "{" in text and "}" in text:
-        text = text[text.index("{") : text.rindex("}") + 1]
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise llm.LLMAPIError(f"LLM returned invalid JSON: {exc}") from exc
-    if not isinstance(data, dict):
-        raise llm.LLMAPIError("LLM response is not a JSON object")
-    return data
 
 
 def _build_check_from_response(
@@ -392,7 +368,54 @@ def _parse_violations(dimension: str, raw: Any) -> tuple[Violation, ...]:
     return tuple(out)
 
 
-# --- cache write ---
+# --- cache read/write ---
+
+
+@dataclass(frozen=True)
+class CachedCheck:
+    """Compact summary of a previous ``criteria check`` stored on an opportunity.
+
+    Written to the opportunity's ``criteria_check:`` frontmatter block by
+    :func:`save_check_to_opportunity`; read back by ``career status`` and
+    ``career opportunity show`` so neither command has to rerun the LLM
+    check on every invocation.
+
+    ``stale`` flips True when the criteria the check ran against doesn't
+    match the workspace's current ``criteria.yml`` — the cached verdict
+    predates a user's recent criteria edit.
+    """
+
+    alignment: int  # percent 0-100
+    dealbreaker_count: int
+    scored_dimensions: int
+    checked_at: date | None
+    stale: bool
+
+    @property
+    def has_violations(self) -> bool:
+        return self.dealbreaker_count > 0
+
+
+def read_cached_check(
+    opp: opp_core.Opportunity, *, current_criteria_hash: str
+) -> CachedCheck | None:
+    """Parse the cached ``criteria_check`` block off `opp`'s frontmatter.
+
+    Returns ``None`` when no check is cached. ``current_criteria_hash``
+    drives the ``stale`` flag — callers that read many opportunities
+    against one criteria.yml should compute the hash once and pass it in.
+    """
+    raw = opp.frontmatter.get("criteria_check")
+    if not isinstance(raw, dict):
+        return None
+    stored_hash = str(raw.get("criteria_hash") or "")
+    return CachedCheck(
+        alignment=coerce_int(raw.get("alignment"), default=0),
+        dealbreaker_count=coerce_int(raw.get("dealbreaker_count"), default=0),
+        scored_dimensions=coerce_int(raw.get("scored_dimensions"), default=0),
+        checked_at=coerce_date(raw.get("checked_at")),
+        stale=stored_hash != current_criteria_hash,
+    )
 
 
 def save_check_to_opportunity(

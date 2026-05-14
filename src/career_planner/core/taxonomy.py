@@ -134,6 +134,40 @@ def _best_label_score(
     return best, via_preferred
 
 
+# Auto-accept rule shared by every caller that promotes a free-text query
+# to a single ESCO skill (``skills add``, gap-analysis requirement parsing,
+# etc.): a perfect or near-perfect match wins outright, otherwise the top
+# match needs a noticeable lead over the runner-up. Below this bar we
+# treat the query as ambiguous (UI prompts the user; non-UI keeps the raw
+# text). Tuned empirically — too lenient and we promote vague single-word
+# hits, too strict and we miss obvious synonyms.
+CONFIDENT_MATCH_PERFECT = 0.999
+CONFIDENT_MATCH_THRESHOLD = 0.85
+CONFIDENT_MATCH_LEAD = 0.10
+
+
+def is_confident_match(matches: list[tuple[Skill, float]]) -> Skill | None:
+    """Return the top skill if it dominates the ranked `matches`, else ``None``.
+
+    Use this anywhere a free-text query needs to be auto-promoted to a
+    canonical ESCO skill without user disambiguation. Callers that *do*
+    have a UI (``skills add``, ``criteria edit``) should still offer a
+    manual pick when this returns ``None``.
+    """
+    if not matches:
+        return None
+    top, top_score = matches[0]
+    if top_score >= CONFIDENT_MATCH_PERFECT:
+        return top
+    second_score = matches[1][1] if len(matches) > 1 else 0.0
+    if (
+        top_score >= CONFIDENT_MATCH_THRESHOLD
+        and (top_score - second_score) >= CONFIDENT_MATCH_LEAD
+    ):
+        return top
+    return None
+
+
 def find_skill_matches(
     query: str, *, limit: int = 8, threshold: float = 0.55
 ) -> list[tuple[Skill, float]]:

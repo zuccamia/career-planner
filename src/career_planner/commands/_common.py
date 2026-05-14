@@ -13,12 +13,18 @@ pattern; ``resolve_opportunity`` wraps it for the common opportunity case.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Callable, NoReturn, TypeVar
 
 import typer
 from rich.console import Console
 
 from career_planner.core import opportunities as opp_core
+from career_planner.core.workspace import (
+    load_config,
+    open_in_editor,
+    resolve_editor,
+)
 from career_planner.i18n import _
 
 console = Console()
@@ -73,6 +79,64 @@ def resolve_opportunity(workspace, query: str) -> opp_core.Opportunity:
         not_found=_("No opportunity matching '{q}'.").format(q=query),
         multiple=_("Multiple opportunities match '{q}':").format(q=query),
     )
+
+
+def edit_file_in_editor(
+    workspace: Path,
+    target: Path,
+    *,
+    must_edit: bool = False,
+    exit_on_nonzero: bool = True,
+    stderr: bool = False,
+) -> None:
+    """Open `target` in the user's $EDITOR. Used by every `*-edit` command.
+
+    Resolves the editor from config + environment, runs it, and reports
+    failures consistently. The three knobs handle the variations between
+    callers:
+
+    * ``must_edit`` — when True, a missing editor binary raises
+      ``typer.Exit(1)`` with a hint about ``$EDITOR`` and the ``editor``
+      config field. Use for commands whose whole purpose is editing
+      (``criteria edit``, ``resume edit``). When False, missing editor is
+      a warning that returns — used when the file is already on disk and
+      the editor is a convenience (``brag add``, ``opportunity add``).
+    * ``exit_on_nonzero`` — when True (default), a non-zero editor exit
+      code propagates via ``typer.Exit(rc)``. When False, the code is
+      reported as a warning and the command continues.
+    * ``stderr`` — when True, all messages go to stderr so stdout stays
+      clean for piping (used by ``resume edit``, which is paired with
+      ``resume render``).
+    """
+    output = err_console if stderr else console
+    editor = resolve_editor(load_config(workspace))
+    try:
+        rc = open_in_editor(target, editor)
+    except FileNotFoundError:
+        if must_edit:
+            output.print(
+                _(
+                    "Editor not found: '{ed}'. Set $EDITOR or the `editor` "
+                    "field in config.yml. Edit the file manually at:\n{path}"
+                ).format(ed=editor, path=target),
+                style="red",
+            )
+            raise typer.Exit(1) from None
+        output.print(
+            _(
+                "Editor not found: '{ed}'. Edit the file manually at:\n{path}"
+            ).format(ed=editor, path=target),
+            style="yellow",
+        )
+        return
+
+    if rc != 0:
+        output.print(
+            _("Editor exited with status {n}.").format(n=rc),
+            style="yellow",
+        )
+        if exit_on_nonzero:
+            raise typer.Exit(rc)
 
 
 def short_code(code: Any) -> str:

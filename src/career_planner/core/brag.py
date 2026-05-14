@@ -17,11 +17,11 @@ from dataclasses import dataclass
 from datetime import date
 from importlib import resources
 from pathlib import Path
-from typing import Any
 
 import yaml
 
 from career_planner.core import opportunities as opp_core
+from career_planner.core.coercion import coerce_date, coerce_str_tuple
 
 BRAG_RELPATH = Path("brag")
 TEMPLATE_NAME = "brag_entry.md"
@@ -156,13 +156,13 @@ def _read_entry(path: Path) -> BragEntry | None:
     except OSError:
         return None
     front, body = opp_core.parse_markdown(text)
-    parsed_date = _coerce_date(front.get("date")) or _filename_date(path)
+    parsed_date = coerce_date(front.get("date")) or _filename_date(path)
     return BragEntry(
         path=path,
         slug=path.stem,
         date=parsed_date,
         project=str(front.get("project") or "").strip(),
-        tags=_coerce_tags(front.get("tags")),
+        tags=coerce_str_tuple(front.get("tags")),
         body=body,
     )
 
@@ -181,27 +181,6 @@ def _filename_date(path: Path) -> date | None:
     match = _FILENAME_DATE_RE.match(path.name)
     if not match:
         return None
-    return _coerce_date(
+    return coerce_date(
         f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
-    )
-
-
-def _coerce_date(value: Any) -> date | None:
-    if isinstance(value, date):
-        return value
-    if isinstance(value, str):
-        try:
-            return date.fromisoformat(value.strip()[:10])
-        except ValueError:
-            return None
-    return None
-
-
-def _coerce_tags(value: Any) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        return ()
-    return tuple(
-        str(item).strip()
-        for item in value
-        if str(item).strip()
     )

@@ -12,6 +12,7 @@ import pytest
 from typer.testing import CliRunner
 
 from career_planner.cli import app
+from career_planner.commands import _common as common_cmd
 from career_planner.commands import opportunity as opportunity_cmd
 from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
@@ -809,7 +810,7 @@ def test_llm_extract_posting_raises_on_malformed_json() -> None:
         return "not json at all"
 
     with patch.object(llm_core, "complete", side_effect=fake_complete):
-        with pytest.raises(ValueError):
+        with pytest.raises(llm_core.LLMAPIError):
             opp_core.llm_extract_posting("<p>...</p>", _fake_llm_config())
 
 
@@ -1148,7 +1149,7 @@ def test_cli_opportunity_add_opens_editor_by_default(
         return 0
 
     with patch.object(
-        opportunity_cmd, "open_in_editor", side_effect=fake_open
+        common_cmd, "open_in_editor", side_effect=fake_open
     ):
         result = runner.invoke(app, ["opportunity", "add", "A Role"])
 
@@ -1164,7 +1165,7 @@ def test_cli_opportunity_add_handles_missing_editor(
     monkeypatch.setenv("EDITOR", "stub-editor")
 
     with patch.object(
-        opportunity_cmd,
+        common_cmd,
         "open_in_editor",
         side_effect=FileNotFoundError("missing"),
     ):

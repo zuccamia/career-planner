@@ -9,7 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from career_planner.cli import app
-from career_planner.commands import criteria as criteria_cmd
+from career_planner.commands import _common as common_cmd
 from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
@@ -400,7 +400,7 @@ def test_cli_criteria_edit_with_editor_flag(
         return 0
 
     with patch.object(
-        criteria_cmd, "open_in_editor", side_effect=fake_open
+        common_cmd, "open_in_editor", side_effect=fake_open
     ):
         result = runner.invoke(app, ["criteria", "edit", "--editor"])
 
@@ -415,7 +415,7 @@ def test_cli_criteria_edit_with_editor_flag_handles_missing_editor(
     monkeypatch.setenv("EDITOR", "stub-editor")
 
     with patch.object(
-        criteria_cmd,
+        common_cmd,
         "open_in_editor",
         side_effect=FileNotFoundError("missing"),
     ):
@@ -432,7 +432,7 @@ def test_cli_criteria_edit_with_editor_flag_creates_file_when_missing(
     (ws / "criteria.yml").unlink()
     monkeypatch.setenv("EDITOR", "stub-editor")
 
-    with patch.object(criteria_cmd, "open_in_editor", return_value=0):
+    with patch.object(common_cmd, "open_in_editor", return_value=0):
         result = runner.invoke(app, ["criteria", "edit", "--editor"])
 
     assert result.exit_code == 0, result.output

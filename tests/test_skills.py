@@ -65,7 +65,7 @@ def test_find_in_inventory_prefers_exact_over_substring() -> None:
         {"skill": "Python"},
     ]
     matches = skills_core.find_in_inventory(inv, "python")
-    assert [entry["skill"] for _, entry in matches] == ["Python"]
+    assert [entry["skill"] for entry in matches] == ["Python"]
 
 
 def test_find_in_inventory_returns_substring_when_no_exact() -> None:
@@ -75,7 +75,7 @@ def test_find_in_inventory_returns_substring_when_no_exact() -> None:
     ]
     matches = skills_core.find_in_inventory(inv, "python")
     assert len(matches) == 1
-    assert matches[0][1]["skill"] == "Python (computer programming)"
+    assert matches[0]["skill"] == "Python (computer programming)"
 
 
 # --- CLI: career skills add/list/remove ---
