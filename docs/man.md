@@ -250,77 +250,9 @@ i18n via Python `gettext`. English source; Vietnamese (`vi`) ships in v1. Transl
 
 ESCO labels exist in 25 EU languages but not Vietnamese. With `language: vi`, the CLI is in Vietnamese while taxonomy labels remain in the user's chosen ESCO language (default English).
 
-## INSTALLATION
-
-```
-pip install career-planner
-```
-
-Requires Python 3.10+. No optional extras — AI features use the same `httpx` already in the core dependency set.
-
 ## EXIT CODES
 
 **0** Success. **1** General error. **2** Workspace not found. **3** Missing configuration (e.g. an AI command run with no LLM provider).
-
-## EXAMPLES
-
-Initialize a workspace and configure the LLM:
-
-    $ career init my-career
-    $ cd my-career
-    $ career config llm
-    $ export ANTHROPIC_API_KEY=sk-ant-...
-    $ career config llm test
-
-Fill in your job criteria and master resume:
-
-    $ career criteria edit
-    $ career resume edit
-
-Add a skill with an example:
-
-    $ career skills browse "client communication"
-    $ career skills add "Python programming" --rating 4 \
-        --example "Built data pipeline processing 2M records/day"
-    $ career skills list
-
-Track an opportunity (manual entry or AI-parsed from URL):
-
-    $ career opportunity add "Senior Engineer at Acme Corp"
-    $ career opportunity parse https://example.com/jobs/12345
-
-Check fit and skill gaps:
-
-    $ career criteria check senior-engineer-at-acme-corp
-    $ career gap senior-engineer-at-acme-corp
-    $ career gap senior-engineer-at-acme-corp --suggest
-
-Generate a tailored resume:
-
-    $ career resume render --for senior-engineer-at-acme-corp \
-        > resumes/senior-engineer-at-acme-corp.md
-
-Record an achievement:
-
-    $ career brag add "Cut p99 latency by 30%"
-    $ career brag list --last 5
-
-Daily dashboard:
-
-    $ career status
-
-Vietnamese interface:
-
-    $ career init my-career --language vi
-    # or set in config.yml: language: vi
-
-## AUTHORS
-
-Career Planner is an open-source project.
-
-## BUGS
-
-Report issues at the project's GitHub repository.
 
 ## SEE ALSO
 

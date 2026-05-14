@@ -19,8 +19,6 @@ An "Obsidian for your career" — a lightweight tool where all data lives as hum
 5. **International**: Uses ESCO taxonomy as the primary skills framework (EU-native, multilingual), with an O\*NET crosswalk file bundled for U.S. cross-reference.
 6. **Stdout-friendly**: AI-generated artifacts (notably `resume render --for`) print to stdout with status/errors on stderr, so they pipe cleanly into files.
 
-See `~/.claude/projects/-Users-ngochoang-projects-career-planner/memory/feedback_ai_first.md` for the AI-first design rule, including the one documented exception (`gap --suggest`).
-
 ---
 
 ## Architecture Overview
@@ -37,7 +35,7 @@ See `~/.claude/projects/-Users-ngochoang-projects-career-planner/memory/feedback
 │   Pure Software           │   AI Path (when configured)  │
 │                           │  ┌────────────────────────┐  │
 │  - workspace I/O          │  │  LLM Adapter           │  │
-│  - skills + ESCO loader   │  │  (BYO key; openai-     │  │
+│  - skills + ESCO loader   │  │  (BYOK; openai-     │  │
 │  - gap analysis           │  │   compatible + Anthropic)│ │
 │  - brag I/O               │  ├────────────────────────┤  │
 │  - resume markdown render │  │  Powers:               │  │
@@ -53,7 +51,7 @@ See `~/.claude/projects/-Users-ngochoang-projects-career-planner/memory/feedback
 └──────────────────────────────────────────────────────────┘
 ```
 
-Deferred for v2: vector search (LanceDB), MCP server, career-path explorer, AI coaching chat. The stubs for vector search remain in the CLI for now; the others were removed from the command surface entirely.
+Deferred for v2: vector search (LanceDB), MCP server, career-path explorer, AI coaching chat. **Vector search stubs remain** in the CLI (`career memory enable/search`) but are non-functional; the others were removed from the command surface entirely.
 
 ---
 
@@ -220,7 +218,7 @@ All four commands exit **3** if no LLM provider is configured. Network/parse fai
 | PyYAML | Config and data file parsing |
 | httpx | HTTP client for LLM API calls and URL fetching |
 
-No optional extras — everything ships in the core install. (The original plan included `[ai]`, `[memory]`, `[mcp]` extras; AI features now ride on the same `httpx` already in core, and `memory`/`mcp` are deferred.)
+Optional extras are available for future enhancements: `[memory]` (LanceDB for vector search) and `[mcp]` (FastMCP for integrations) are listed in `pyproject.toml` but not required for v1. The core install includes all essential v1 features. AI features use the same `httpx` dependency already in core.
 
 ---
 
@@ -319,7 +317,7 @@ No existing tool combines local-first CLI, skill taxonomies, gap analysis, and A
 2. **`resume.yml` subsumes `profile.yml`.** The identity (`name`), work history, and forward-looking `target_role` content from the original profile collapsed into resume.yml. A new `target:` field at the top of resume.yml holds the planning anchor and is passed to the LLM as context but never rendered onto the resume itself.
 3. **Bullets live inline in resume.yml.** The original design pulled bullets exclusively from brag entries. v1 puts them inline in resume.yml so the tool is useful on day one before any brag entries exist. Each experience entry has an optional `tags:` field that links to brag entries with matching tags — a planned enhancement will let `resume render --for` augment the LLM's bullet pool with matching brag content.
 4. **Resume render writes to stdout.** Both the deterministic and AI-tailored renders print markdown to stdout, with status/errors on stderr. Users redirect (`> resumes/<slug>.md`) when they want to save. Simpler than auto-writing to `resumes/`, and the `resumes/` directory in the workspace becomes a place users curate intentionally.
-5. **No optional install extras.** Original plan had `[ai]`, `[memory]`, `[mcp]` extras. Memory and MCP are deferred; AI rides on the same `httpx` already in core. One install, full v1 surface.
+5. **Optional extras for future features.** Original plan had `[ai]`, `[memory]`, `[mcp]` extras. The `[ai]` placeholder is removed; AI features use `httpx` from core. The `[memory]` (LanceDB) and `[mcp]` (FastMCP) extras remain in `pyproject.toml` for future v2 integrations.
 6. **Project name**: `career-planner`. The existing GitHub repo `sanatladkat/career-planner` is a Streamlit web app — architecturally very different. The name is generic enough to share.
 
 ---
