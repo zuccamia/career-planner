@@ -12,7 +12,7 @@ from career_planner.cli import app
 from career_planner.commands import _common as common_cmd
 from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core.workspace import create_workspace
 
 runner = CliRunner(env={"COLUMNS": "200"})

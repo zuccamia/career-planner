@@ -19,7 +19,7 @@ from typing import Any, Callable, NoReturn, TypeVar
 import typer
 from rich.console import Console
 
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core.workspace import (
     load_config,
     open_in_editor,

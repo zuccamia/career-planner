@@ -16,13 +16,13 @@ from career_planner.commands import _common as common_cmd
 from career_planner.commands import opportunity as opportunity_cmd
 from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core.workspace import create_workspace
 
 runner = CliRunner(env={"COLUMNS": "200"})
 
 
-# --- core/opportunities.py ---
+# --- core/opportunity ---
 
 
 def test_slugify_strips_punctuation_and_lowercases() -> None:

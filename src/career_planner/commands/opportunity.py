@@ -17,7 +17,7 @@ from career_planner.commands._common import (
 )
 from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core.workspace import require_workspace
 from career_planner.i18n import _
 

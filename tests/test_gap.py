@@ -9,7 +9,7 @@ from typer.testing import CliRunner
 
 from career_planner.cli import app
 from career_planner.core import gap as gap_core
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core import skills as skills_core
 from career_planner.core.workspace import create_workspace
 

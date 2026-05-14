@@ -20,7 +20,7 @@ from pathlib import Path
 
 import yaml
 
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core.coercion import coerce_date, coerce_str_tuple
 
 BRAG_RELPATH = Path("brag")

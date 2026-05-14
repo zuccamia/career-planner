@@ -17,7 +17,7 @@ import yaml
 
 from career_planner.core import brag as brag_core
 from career_planner.core import llm
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core.workspace import load_yaml_dict, save_yaml_dict
 
 RESUME_RELPATH = Path("resume.yml")

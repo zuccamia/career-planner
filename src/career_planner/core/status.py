@@ -15,7 +15,7 @@ from typing import Any
 from career_planner.core import brag as brag_core
 from career_planner.core import criteria as criteria_core
 from career_planner.core import gap as gap_core
-from career_planner.core import opportunities as opp_core
+from career_planner.core import opportunity as opp_core
 from career_planner.core import skills as skills_core
 from career_planner.core.coercion import coerce_date
 from career_planner.i18n import _

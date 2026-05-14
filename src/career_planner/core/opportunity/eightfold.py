@@ -23,7 +23,7 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 
-from career_planner.core.posting_inference import (
+from .inference import (
     extract_salary_from_text,
     extract_work_type_from_text,
     html_to_text,

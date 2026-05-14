@@ -7,8 +7,8 @@ extraction, the optional LLM extraction pass, and the URL fetcher used by
 ``career opportunity add --url``.
 
 Body-text inference (salary regex, work-type regex) and the Eightfold ATS
-detour live in :mod:`career_planner.core.posting_inference` and
-:mod:`career_planner.core.eightfold` respectively.
+detour live in :mod:`career_planner.core.opportunity.inference` and
+:mod:`career_planner.core.opportunity.eightfold` respectively.
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ from typing import Any
 
 import yaml
 
-from career_planner.core import eightfold as eightfold_core
-from career_planner.core.posting_inference import (
+from . import eightfold as eightfold_core
+from .inference import (
     extract_salary_from_text,
     extract_work_type_from_text,
     html_to_text,
@@ -793,7 +793,7 @@ def fetch_url(url: str, *, timeout: float = 10.0) -> str:
     For Eightfold-hosted careers pages (Microsoft, ServiceNow, Capital One,
     etc.) the public URL is a JavaScript SPA whose initial HTML carries
     almost no job-specific content; we route those through
-    :func:`career_planner.core.eightfold.fetch_eightfold`, which calls the
+    :func:`career_planner.core.opportunity.eightfold.fetch_eightfold`, which calls the
     underlying positions API and synthesizes an HTML document the regular
     extractors can consume.
 
