@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from career_planner.cli import app
 from career_planner.commands import opportunity as opportunity_cmd
+from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
 from career_planner.core.workspace import create_workspace
@@ -1620,6 +1621,90 @@ def test_cli_opportunity_show_disambiguates_multiple_matches(
     result = runner.invoke(app, ["opportunity", "show", "engineer"], input="1\n")
     assert result.exit_code == 0, result.output
     assert "Multiple opportunities match" in result.output
+
+
+def _write_criteria_check_cache(
+    workspace: Path,
+    slug: str,
+    *,
+    alignment: int,
+    dealbreaker_count: int,
+    scored_dimensions: int,
+    checked_at: str,
+    criteria_hash: str,
+) -> None:
+    """Stamp a synthetic criteria_check block onto an opportunity's frontmatter."""
+    path = workspace / "opportunities" / f"{slug}.md"
+    front, body = opp_core.parse_markdown(path.read_text(encoding="utf-8"))
+    front["criteria_check"] = {
+        "checked_at": checked_at,
+        "alignment": alignment,
+        "dealbreaker_count": dealbreaker_count,
+        "scored_dimensions": scored_dimensions,
+        "criteria_hash": criteria_hash,
+    }
+    path.write_text(opp_core.serialize_markdown(front, body), encoding="utf-8")
+
+
+def test_cli_opportunity_show_renders_criteria_fit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    criteria_core.save_criteria(ws, {"function": {"want": ["coding"]}})
+    runner.invoke(app, ["opportunity", "add", "Engineer at Acme", "--no-editor"])
+
+    current_hash = criteria_core.criteria_hash(criteria_core.load_criteria(ws))
+    _write_criteria_check_cache(
+        ws,
+        "engineer-at-acme",
+        alignment=80,
+        dealbreaker_count=0,
+        scored_dimensions=3,
+        checked_at="2026-05-13",
+        criteria_hash=current_hash,
+    )
+
+    result = runner.invoke(app, ["opportunity", "show", "engineer-at-acme"])
+    assert result.exit_code == 0, result.output
+    assert "Criteria fit: 80%" in result.output
+    assert "0 dealbreakers" in result.output
+    assert "3 of 5 dimensions scored" in result.output
+    assert "2026-05-13" in result.output
+    assert "stale" not in result.output.lower()
+
+
+def test_cli_opportunity_show_flags_stale_criteria_fit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ws = _init_workspace(tmp_path, monkeypatch)
+    criteria_core.save_criteria(ws, {"function": {"want": ["coding"]}})
+    runner.invoke(app, ["opportunity", "add", "Engineer at Acme", "--no-editor"])
+
+    _write_criteria_check_cache(
+        ws,
+        "engineer-at-acme",
+        alignment=80,
+        dealbreaker_count=1,
+        scored_dimensions=4,
+        checked_at="2026-05-13",
+        criteria_hash="stale12345678",  # doesn't match current criteria
+    )
+
+    result = runner.invoke(app, ["opportunity", "show", "engineer-at-acme"])
+    assert result.exit_code == 0, result.output
+    assert "Criteria fit:" in result.output
+    assert "(stale)" in result.output
+
+
+def test_cli_opportunity_show_omits_criteria_fit_when_uncached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _init_workspace(tmp_path, monkeypatch)
+    runner.invoke(app, ["opportunity", "add", "Engineer at Acme", "--no-editor"])
+
+    result = runner.invoke(app, ["opportunity", "show", "engineer-at-acme"])
+    assert result.exit_code == 0, result.output
+    assert "Criteria fit" not in result.output
 
 
 def test_cli_opportunity_commands_outside_workspace_exit_2(

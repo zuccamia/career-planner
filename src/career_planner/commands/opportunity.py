@@ -11,6 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from career_planner.commands._common import console, resolve_opportunity
+from career_planner.core import criteria as criteria_core
 from career_planner.core import llm as llm_core
 from career_planner.core import opportunities as opp_core
 from career_planner.core.workspace import (
@@ -128,7 +129,7 @@ def show(opportunity: str) -> None:
     """Print the full details of a specific opportunity."""
     workspace = require_workspace()
     target = resolve_opportunity(workspace, opportunity)
-    _render_opportunity(target)
+    _render_opportunity(workspace, target)
 
 
 # --- helpers ---
@@ -243,7 +244,7 @@ def _open_in_editor(workspace: Path, target: Path) -> None:
         )
 
 
-def _render_opportunity(opp: opp_core.Opportunity) -> None:
+def _render_opportunity(workspace: Path, opp: opp_core.Opportunity) -> None:
     """Print an opportunity as a header panel plus rendered body."""
     front = opp.frontmatter
 
@@ -301,6 +302,10 @@ def _render_opportunity(opp: opp_core.Opportunity) -> None:
             )
         )
 
+    criteria_line = _format_criteria_check(workspace, front.get("criteria_check"))
+    if criteria_line:
+        header_lines.append(criteria_line)
+
     console.print(
         Panel(
             "\n".join(header_lines),
@@ -312,6 +317,36 @@ def _render_opportunity(opp: opp_core.Opportunity) -> None:
     body = (opp.body or "").strip()
     if body:
         console.print(Markdown(body))
+
+
+def _format_criteria_check(workspace: Path, raw: Any) -> str | None:
+    """Render the cached criteria_check block as a one-line summary.
+
+    Returns ``None`` when no check is cached. Appends ``[stale]`` when the
+    cached ``criteria_hash`` doesn't match the current ``criteria.yml``,
+    so users know the verdict predates recent criteria edits.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    alignment = raw.get("alignment")
+    dealbreaker_count = raw.get("dealbreaker_count") or 0
+    scored = raw.get("scored_dimensions") or 0
+    checked_at = raw.get("checked_at") or "?"
+    stored_hash = str(raw.get("criteria_hash") or "")
+
+    current = criteria_core.load_criteria(workspace)
+    current_hash = criteria_core.criteria_hash(current) if current else ""
+    stale = bool(stored_hash) and stored_hash != current_hash
+
+    pct = f"{alignment}%" if alignment is not None else "—"
+    line = _(
+        "Criteria fit: {pct} ({n} dealbreakers, {scored} of 5 dimensions scored) "
+        "— checked {date}"
+    ).format(pct=pct, n=dealbreaker_count, scored=scored, date=checked_at)
+    if stale:
+        line += " [yellow](stale)[/yellow]"
+    return line
 
 
 def _format_salary(front: dict[str, Any]) -> str:

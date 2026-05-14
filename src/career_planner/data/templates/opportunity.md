@@ -16,6 +16,9 @@ created: {created}
 attachments: []         # filenames under resumes/, e.g. ["resume-v1.pdf", "cover-letter.pdf"]
 required_skills: []     # ESCO codes or free-text labels
 
+# Auto-managed by `career criteria check` — do not edit by hand:
+# criteria_check:
+#   checked_at, alignment, dealbreaker_count, scored_dimensions, criteria_hash
 ---
 
 ## Description
