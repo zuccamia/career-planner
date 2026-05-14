@@ -115,12 +115,14 @@ def create_entry(
     *,
     title: str,
     entry_date: date | None = None,
+    tags: tuple[str, ...] = (),
 ) -> Path:
     """Create a new brag entry from the template and return its path.
 
     The slug is ``YYYY-MM-DD-{slugified title}``. If a file with that name
     already exists, ``-2``, ``-3``, … are appended until a free slot is
-    found.
+    found. ``tags`` is rendered into the frontmatter's ``tags:`` field in
+    flow style.
     """
     folder = brag_dir(workspace)
     folder.mkdir(parents=True, exist_ok=True)
@@ -135,8 +137,11 @@ def create_entry(
         .joinpath("data", "templates", TEMPLATE_NAME)
         .read_text(encoding="utf-8")
     )
+    tags_yaml = yaml.safe_dump(list(tags), default_flow_style=True).strip()
     target.write_text(
-        template.replace("{date}", entry_date.isoformat()),
+        template.replace("{date}", entry_date.isoformat()).replace(
+            "{tags}", tags_yaml
+        ),
         encoding="utf-8",
     )
     return target

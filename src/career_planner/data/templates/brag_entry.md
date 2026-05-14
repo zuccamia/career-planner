@@ -1,7 +1,7 @@
 ---
 date: {date}
 project: ""
-tags: []
+tags: {tags}
 ---
 
 ## What (X)

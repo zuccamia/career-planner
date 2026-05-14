@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import typer
 from rich.markdown import Markdown
@@ -10,6 +11,7 @@ from rich.table import Table
 
 from career_planner.commands._common import console, disambiguate
 from career_planner.core import brag as brag_core
+from career_planner.core import tags as tags_core
 from career_planner.core.workspace import (
     load_config,
     open_in_editor,
@@ -38,7 +40,11 @@ def add(title: str | None = None, date_str: str | None = None) -> None:
         console.print(_("Title cannot be empty."), style="red")
         raise typer.Exit(1)
 
-    path = brag_core.create_entry(workspace, title=title, entry_date=entry_date)
+    chosen_tags = _prompt_for_tags(workspace)
+
+    path = brag_core.create_entry(
+        workspace, title=title, entry_date=entry_date, tags=chosen_tags
+    )
 
     editor = resolve_editor(load_config(workspace))
     try:
@@ -118,6 +124,60 @@ def show(entry: str) -> None:
     )
     text = target.path.read_text(encoding="utf-8")
     console.print(Markdown(text))
+
+
+def _prompt_for_tags(workspace: Path) -> tuple[str, ...]:
+    """Show existing tags as a numbered list and resolve user input.
+
+    The user can enter numbers (referencing existing tags), free-form
+    strings (new tags), or a mix. Empty input or ``-`` skips tagging.
+    All new tags are normalized to lowercase so the canonical form
+    stays consistent with the brag-pool matching.
+    """
+    usages = tags_core.collect_tags(workspace)
+
+    if usages:
+        console.print(_("Existing tags:"))
+        for idx, usage in enumerate(usages, 1):
+            counts = []
+            if usage.brag_count:
+                counts.append(_("{n} brags").format(n=usage.brag_count))
+            if usage.experience_count:
+                counts.append(_("{n} experience").format(n=usage.experience_count))
+            console.print(
+                f"  {idx}. {usage.tag}  [dim]({', '.join(counts)})[/dim]"
+            )
+        prompt_label = _(
+            "Tags for this entry (numbers and/or new strings, comma-separated)"
+        )
+    else:
+        prompt_label = _("Tags for this entry (comma-separated, optional)")
+
+    response = typer.prompt(prompt_label, default="", show_default=False)
+    stripped = response.strip()
+    if not stripped or stripped == "-":
+        return ()
+
+    chosen: list[str] = []
+    seen: set[str] = set()
+    for raw in stripped.split(","):
+        token = raw.strip()
+        if not token:
+            continue
+        if token.isdigit():
+            idx = int(token) - 1
+            if 0 <= idx < len(usages):
+                tag = usages[idx].tag
+                if tag not in seen:
+                    chosen.append(tag)
+                    seen.add(tag)
+                continue
+            # Out-of-range numbers fall through to "treat as a new tag".
+        normalized = tags_core.normalize(token)
+        if normalized and normalized not in seen:
+            chosen.append(normalized)
+            seen.add(normalized)
+    return tuple(chosen)
 
 
 def _parse_date(value: str) -> date | None:
