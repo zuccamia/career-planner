@@ -412,17 +412,37 @@ Engineer at Acme"); never null
 - role: the job title alone (e.g. "Senior Engineer")
 - company: hiring organization name
 - location: "City, Region, Country" or "Remote"; null if not stated
-- work_type: one of "remote" (fully remote), "hybrid" (any in-office \
-expectation alongside remote work), "in-person" (fully onsite), or null
+- work_type: one of "remote", "hybrid", "in-person", or null. If a \
+physical office location is listed with no mention of remote/hybrid \
+flexibility, infer "in-person". Only use null if there is genuinely \
+no signal either way.
 - date_posted: ISO date (YYYY-MM-DD) when the posting was published, or null
 - deadline: ISO date application deadline, or null
 - salary_min: integer expressing the full amount (150000, not 150), or null
 - salary_max: integer expressing the full amount, or null
 - salary_currency: 3-letter ISO currency code (USD, EUR, GBP, ...), or null
-- required_skills: array of short skill phrases the role calls out \
-("Python", "AWS", "distributed systems"); [] if none are stated
-- description: 2–5 short paragraphs of plain text summarizing the role, \
-its responsibilities, and the team — for the Markdown body, not frontmatter
+- required_skills: array of concise ESCO-aligned skill labels explicitly \
+listed as required qualifications. Use short names for programming \
+languages ("Python", not "Python (programming language)"). Normalize \
+vague phrasing to the closest standard term ("cloud computing", not \
+"cloud services"; "agile software development", not "agile"). If the \
+posting says "one or more of X, Y, Z", include all individually but \
+only if they appear under required (not preferred) qualifications. \
+[] if none stated.
+- preferred_skills: array of concise ESCO-aligned skill labels listed \
+as preferred, nice-to-have, or "plus" qualifications, using the same \
+normalization conventions as required_skills. Do not duplicate anything \
+already in required_skills. [] if none stated.
+- description: 2–5 paragraphs of plain text covering four sections: \
+(1) **Team & Product** — what the team or product does, \
+(2) **Responsibilities** — the role's core responsibilities, \
+(3) **Required Qualifications** — years of experience, degree, etc., \
+(4) **Preferred Qualifications** — nice-to-have skills and standout \
+details (tech stack, on-call, travel). Start each section with its \
+bold label (e.g. "**Team & Product**\n"). Use a blank line between \
+sections. Preserve specific requirements like "3+ years experience" \
+or "BS in CS" — do not summarize these away. This goes in the \
+Markdown body, not frontmatter.
 """
 
 
@@ -443,30 +463,53 @@ def llm_extract_posting(
     isn't valid JSON. The command layer catches that and falls back to
     :func:`extract_job_posting` so the user still gets a usable file.
     """
-    from career_planner.core import llm as llm_core
+    from career_planner.core.llm.client import complete_json, complete_json_with_tools
+    from career_planner.core.llm.config import LLMAPIError
 
     body_text = html_to_text(html_text)
     if len(body_text) > max_chars:
         body_text = body_text[:max_chars]
 
     system = (
-        "You extract structured fields from job postings. Respond with a "
-        "single JSON object using exactly the requested keys. Use null "
-        "for any value you cannot determine confidently from the posting. "
-        "Do not invent values."
+        "You extract structured fields from job postings. Respond with ONLY "
+        "a JSON object using exactly the requested keys. Start your response "
+        "with { and end with }. Use null (not empty strings) for any value "
+        "you cannot determine confidently. Use [] for empty arrays. "
+        "Do not invent values. The posting may contain site navigation, "
+        "scripts, or config markup — ignore everything except the job "
+        "description content.\n\n"
+        "When extracting required_skills and preferred_skills, use the "
+        "search_esco_skills tool to look up each skill and use the canonical "
+        "ESCO label from the results. If no match is found, use the original "
+        "skill name from the posting. Extract ALL other fields first, then "
+        "look up skills. Only look up skills you are unsure about — common "
+        "ones like 'Python' or 'SQL' can be used as-is."
     )
+
     user = (
-        f"Extract these fields from the job posting below:\n"
+        "Example extraction:\n"
+        "<posting>\nRequired: 2+ years Python. Preferred: AWS experience, "
+        "familiarity with Terraform.\n</posting>\n"
+        '{"required_skills": ["Python"], '
+        '"preferred_skills": ["AWS", "Terraform"], ...}\n\n'
+        "Now extract these fields from the job posting below:\n"
         f"{_LLM_EXTRACTION_FIELDS}\n"
         f"<posting>\n{body_text}\n</posting>"
     )
 
-    data = llm_core.complete_json(
-        llm_config,
-        system=system,
-        user=user,
-        max_tokens=4000,
-    )
+    try:
+        data = complete_json_with_tools(
+            llm_config, system=system, user=user,
+            max_tokens=8000, max_steps=15,
+        )
+    except LLMAPIError as exc:
+        if exc.is_tool_support_error:
+            data = complete_json(
+                llm_config, system=system, user=user, max_tokens=4000,
+            )
+        else:
+            raise
+
     return _coerce_llm_extraction(data)
 
 
@@ -509,21 +552,17 @@ def _coerce_llm_extraction(data: dict[str, Any]) -> dict[str, Any]:
         if re.fullmatch(r"[A-Z]{3}", code):
             out["salary_currency"] = code
 
-    skills = data.get("required_skills")
-    if isinstance(skills, list):
-        cleaned: list[str] = []
-        seen: set[str] = set()
-        for entry in skills:
-            if not isinstance(entry, str):
-                continue
-            text = entry.strip()
-            key = text.lower()
-            if not text or key in seen:
-                continue
-            seen.add(key)
-            cleaned.append(text)
+    required_skills = data.get("required_skills")
+    if isinstance(required_skills, list):
+        cleaned = {s.strip().lower() for s in required_skills if isinstance(s, str) and s.strip()}
         if cleaned:
-            out["required_skills"] = cleaned
+            out["required_skills"] = sorted(cleaned)  # or list(cleaned)
+
+    preferred_skills = data.get("preferred_skills")
+    if isinstance(preferred_skills, list):
+        cleaned = {s.strip().lower() for s in preferred_skills if isinstance(s, str) and s.strip()}
+        if cleaned:
+            out["preferred_skills"] = sorted(cleaned)
 
     return out
 
