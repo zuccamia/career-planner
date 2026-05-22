@@ -50,7 +50,7 @@ PRESETS: tuple[LLMPreset, ...] = (
         label="Local Ollama (no API key)",
         provider="openai-compatible",
         base_url="http://localhost:11434/v1",
-        model_default="llama3.1:8b",
+        model_default="gemma4:e4b",
         api_key_env_default="",
         needs_api_key=False,
     ),

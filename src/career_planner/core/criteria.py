@@ -17,7 +17,8 @@ from typing import Any
 
 import yaml
 
-from career_planner.core import llm
+from career_planner.core.llm.client import complete_json
+from career_planner.core.llm.config import LLMConfig
 from career_planner.core import opportunity as opp_core
 from career_planner.core.coercion import coerce_date, coerce_int
 from career_planner.core.workspace import load_yaml_dict, save_yaml_dict
@@ -240,13 +241,13 @@ _LLM_MAX_TOKENS = 2500
 def check_against_opportunity(
     criteria: dict[str, Any],
     opp: opp_core.Opportunity,
-    config: llm.LLMConfig,
+    config: LLMConfig,
 ) -> CriteriaCheck:
     """Ask the configured LLM to judge `opp` against `criteria`.
 
-    Raises :class:`llm.LLMError` on network/API/JSON failures.
+    Raises :class:`LLMError` on network/API/JSON failures.
     """
-    parsed = llm.complete_json(
+    parsed = complete_json(
         config,
         system=_LLM_SYSTEM,
         user=_build_llm_prompt(criteria, opp),
