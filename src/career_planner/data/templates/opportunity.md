@@ -15,6 +15,7 @@ applied_at:             # YYYY-MM-DD — auto-set when status transitions to "ap
 created: {created}
 attachments: []         # filenames under resumes/, e.g. ["resume-v1.pdf", "cover-letter.pdf"]
 required_skills: []     # ESCO codes or free-text labels
+preferred_skills: []     # ESCO codes or free-text labels
 
 # Auto-managed by `career criteria check` — do not edit by hand:
 # criteria_check:
