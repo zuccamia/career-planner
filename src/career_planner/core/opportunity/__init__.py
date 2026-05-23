@@ -24,12 +24,17 @@ from typing import Any
 
 import yaml
 
+from rich.console import Console
+
 from . import eightfold as eightfold_core
 from .inference import (
     extract_salary_from_text,
     extract_work_type_from_text,
     html_to_text,
 )
+from .scraping import looks_like_spa_shell, scrape_dynamic_page
+
+console = Console(stderr=True)
 
 # Test-facing re-exports — historic underscore names so external callers
 # (including tests) keep working after the module split.
@@ -412,10 +417,14 @@ Engineer at Acme"); never null
 - role: the job title alone (e.g. "Senior Engineer")
 - company: hiring organization name
 - location: "City, Region, Country" or "Remote"; null if not stated
-- work_type: one of "remote", "hybrid", "in-person", or null. If a \
-physical office location is listed with no mention of remote/hybrid \
-flexibility, infer "in-person". Only use null if there is genuinely \
-no signal either way.
+- work_type: one of "remote", "hybrid", "onsite-optional", "in-person", \
+or null. "remote" means fully remote with no office or in-person \
+requirement. "onsite-optional" means remote by default but an office \
+is available for optional use with no required in-office days. "hybrid" \
+means a mix of remote and in-person with some required in-office days. \
+"in-person" means fully onsite; if a physical office location is listed \
+with no mention of remote/hybrid flexibility, infer "in-person". Only \
+use null if there is genuinely no signal either way.
 - date_posted: ISO date (YYYY-MM-DD) when the posting was published, or null
 - deadline: ISO date application deadline, or null
 - salary_min: integer expressing the full amount (150000, not 150), or null
@@ -527,7 +536,7 @@ def _coerce_llm_extraction(data: dict[str, Any]) -> dict[str, Any]:
     work_type = data.get("work_type")
     if isinstance(work_type, str):
         choice = work_type.strip().lower()
-        if choice in {"remote", "hybrid", "in-person"}:
+        if choice in {"remote", "hybrid", "in-person", "onsite-optional"}:
             out["work_type"] = choice
 
     for key in ("date_posted", "deadline"):
@@ -826,7 +835,7 @@ def _extract_meta(html_text: str, name: str) -> str:
 _USER_AGENT = "career-planner/0.1 (+https://github.com/career-planner)"
 
 
-def fetch_url(url: str, *, timeout: float = 10.0) -> str:
+def fetch_url(url: str, *, timeout: float = 60.0) -> str:
     """Fetch a URL and return its body as text.
 
     For Eightfold-hosted careers pages (Microsoft, ServiceNow, Capital One,
@@ -836,6 +845,11 @@ def fetch_url(url: str, *, timeout: float = 10.0) -> str:
     underlying positions API and synthesizes an HTML document the regular
     extractors can consume.
 
+    For other JS-heavy SPAs (e.g. Handshake) that return an empty shell from
+    a plain HTTP GET, the page is re-fetched through Firecrawl's headless
+    browser and interact workflow so collapsed content is expanded before
+    extraction.
+
     Raises whatever ``httpx`` raises on failure — callers convert that into a
     user-friendly error.
     """
@@ -844,18 +858,40 @@ def fetch_url(url: str, *, timeout: float = 10.0) -> str:
     pid = eightfold_core.eightfold_pid(url)
     if pid:
         try:
-            return eightfold_core.fetch_eightfold(url, pid, timeout=timeout)
+            with console.status("Fetching via Eightfold API…"):
+                return eightfold_core.fetch_eightfold(url, pid, timeout=timeout)
         except (httpx.HTTPError, ValueError, KeyError, json.JSONDecodeError):
             # If the API detour fails for any reason, fall through to the
             # plain HTML fetch so the user still gets *something* usable.
-            pass
+            console.print(
+                "[yellow]Eightfold API failed; falling back to plain fetch[/yellow]",
+            )
 
-    response = httpx.get(
-        url,
-        timeout=timeout,
-        follow_redirects=True,
-        headers={"User-Agent": _USER_AGENT},
-    )
-    response.raise_for_status()
-    return response.text
+    with console.status("Fetching page…"):
+        response = httpx.get(
+            url,
+            timeout=timeout,
+            follow_redirects=True,
+            headers={"User-Agent": _USER_AGENT},
+        )
+        response.raise_for_status()
+        page = response.text
 
+    # If the plain fetch returned a JS shell with almost no readable
+    # content, try re-fetching with a headless browser via Firecrawl.
+    if looks_like_spa_shell(page):
+        console.print(
+            "[dim]Page appears to be a JavaScript SPA — "
+            "re-fetching with headless browser…[/dim]",
+        )
+        try:
+            return scrape_dynamic_page(url)
+        except Exception as exc:
+            # Firecrawl unavailable or failed — return the raw shell so
+            # downstream extractors can still pull meta tags / JSON-LD.
+            console.print(
+                f"[yellow]Headless scrape failed: {exc}; "
+                f"using raw HTML[/yellow]",
+            )
+
+    return page

@@ -28,6 +28,6 @@ compensation:
 location:
   preferred: []
   willing_to_relocate: false
-  work_type: ""         # e.g. "remote", "hybrid", "in-person"
+  work_type: ""         # e.g. "remote", "hybrid", "in-person", "onsite-optional"
   constraints: []
   dealbreakers: []
