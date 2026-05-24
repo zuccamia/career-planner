@@ -19,6 +19,18 @@ import yaml
 WORKSPACE_MARKER = "config.yml"
 DEFAULT_EDITOR = "vim"
 
+ENV_FILE_CONTENT = """
+# AI Assistant Environment Variables
+# Please update these variables based on your personal setup.
+
+ANTHROPIC_API_KEY="your_key_here"
+# OLLAMA_API_KEY="your_key_here"
+# OPENAI_API_KEY="your_key_here"
+# OPENROUTER_API_KEY="your_key_here"
+
+FIRECRAWL_API_KEY="your_key_here"
+"""
+
 # Subdirectories created by `career init`. Order doesn't matter — each is
 # created with mkdir(parents=True). data/coaching is populated from bundled
 # templates; the rest start empty.
@@ -255,6 +267,13 @@ def create_workspace(path: Path, language: str = "en") -> Path:
 
     for filename in BUNDLED_DATA_FILES:
         _copy_bundled_if_exists(filename, path / "data" / filename)
+
+    # Create a sample env var file
+    env_path = path / ".env"
+    env_path.write_text(ENV_FILE_CONTENT.strip())
+
+    print(f"✅ Workspace '{path.name}' created successfully.")
+    print(f"👉 Remember to configure your API keys in {env_path}")
 
     return path
 

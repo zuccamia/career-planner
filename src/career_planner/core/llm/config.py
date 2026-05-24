@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from dotenv import dotenv_values
 from pathlib import Path
 
 from career_planner.core.workspace import load_config as load_workspace_config
 
 SUPPORTED_PROVIDERS: tuple[str, ...] = ("anthropic", "openai-compatible")
 ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
+_PLACEHOLDER_API_KEY = "your_key_here"
 
 
 class LLMError(Exception):
@@ -40,6 +42,10 @@ class LLMConfig:
     base_url: str
     model: str
     api_key: str
+
+
+def _is_placeholder_secret(value: str) -> bool:
+    return value.strip().strip("\"'").lower() == _PLACEHOLDER_API_KEY
 
 
 def load_config(workspace: Path) -> LLMConfig:
@@ -83,13 +89,21 @@ def load_config(workspace: Path) -> LLMConfig:
     if not model:
         raise LLMConfigError("set llm.model in config.yml")
 
+    workspace_env = dotenv_values(workspace / ".env")
+
     api_key_env = str(raw.get("api_key_env") or "").strip()
     api_key = ""
     if api_key_env:
-        api_key = os.environ.get(api_key_env, "").strip()
+        api_key = (
+            workspace_env.get(api_key_env)
+            or os.environ.get(api_key_env, "").strip()
+        )
+        if api_key and _is_placeholder_secret(api_key):
+            api_key = ""
         if not api_key:
             raise LLMConfigError(
                 f"environment variable {api_key_env} is unset; export it "
+                "or update configure your key in .env "
                 "before running AI-enhanced commands"
             )
     elif provider == "anthropic":

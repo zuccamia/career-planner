@@ -81,8 +81,9 @@ def scrape_dynamic_page(url: str) -> str:
     import warnings
     warnings.filterwarnings("ignore", message="Field name.*shadows an attribute")
     from firecrawl import Firecrawl
+    from dotenv import dotenv_values
 
-    api_key = os.environ.get("FIRECRAWL_API_KEY")
+    api_key = dotenv_values(".env").get("FIRECRAWL_API_KEY") or os.environ.get("FIRECRAWL_API_KEY")
     if not api_key:
         raise RuntimeError("FIRECRAWL_API_KEY is not set")
 
