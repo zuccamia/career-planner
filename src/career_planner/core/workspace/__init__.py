@@ -47,15 +47,6 @@ BUNDLED_DATA_FILES: tuple[str, ...] = (
     "crosswalk.csv",
 )
 
-# Stable preferred order for the keys in the rendered ``llm:`` mapping.
-# Anything in ``llm`` that isn't in this tuple is appended after, sorted.
-_LLM_KEY_ORDER: tuple[str, ...] = (
-    "provider",
-    "base_url",
-    "model",
-    "api_key_env",
-)
-
 from .config import save_llm_config
 from .editor import open_in_editor, resolve_editor
 from .setup import WorkspaceExistsError, create_workspace, find_workspace, require_workspace

@@ -5,7 +5,16 @@ from typing import Any
 
 import yaml
 
-from . import WORKSPACE_MARKER, _LLM_KEY_ORDER
+from . import WORKSPACE_MARKER
+
+# Stable preferred order for the keys in the rendered ``llm:`` mapping.
+# Anything in ``llm`` that isn't in this tuple is appended after, sorted.
+_LLM_KEY_ORDER: tuple[str, ...] = (
+    "provider",
+    "base_url",
+    "model",
+    "api_key_env",
+)
 
 
 def save_llm_config(workspace: Path, llm: dict[str, Any]) -> None:
