@@ -4,7 +4,45 @@ import shutil
 from importlib import resources
 from pathlib import Path
 
-from . import BUNDLED_DATA_FILES, ENV_FILE_CONTENT, WORKSPACE_MARKER, WORKSPACE_SUBDIRS
+from . import WORKSPACE_MARKER
+
+ENV_FILE_CONTENT = """
+# AI Assistant Environment Variables
+# Please update these variables based on your personal setup.
+
+ANTHROPIC_API_KEY="your_key_here"
+# OLLAMA_API_KEY="your_key_here"
+# OPENAI_API_KEY="your_key_here"
+# OPENROUTER_API_KEY="your_key_here"
+
+FIRECRAWL_API_KEY="your_key_here"
+"""
+
+# Subdirectories created by `career init`. Order doesn't matter — each is
+# created with mkdir(parents=True). data/coaching is populated from bundled
+# templates; the rest start empty.
+WORKSPACE_SUBDIRS: tuple[str, ...] = (
+    "skills",
+    "brag",
+    "resumes",
+    "opportunities",
+    "assessments",
+    "conversations",
+    "data/coaching",
+    "data/cache",
+    "locale",
+)
+
+# Bundled taxonomy/transition data files. Copied into the workspace's data/
+# directory if present in the package. These ship with the maintainer-prepared
+# release; if a file is missing during early development, it is skipped.
+BUNDLED_DATA_FILES: tuple[str, ...] = (
+    "esco-skills.yml",
+    "esco-occupations.yml",
+    "esco-occupation-skills.yml",
+    "esco-skill-hierarchy.yml",
+    "crosswalk.csv",
+)
 
 
 class WorkspaceExistsError(Exception):

@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from . import DEFAULT_EDITOR
+DEFAULT_EDITOR = "vim"
 
 
 def resolve_editor(config: dict[str, Any] | None = None) -> str:
