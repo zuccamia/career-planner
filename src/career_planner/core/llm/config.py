@@ -48,6 +48,72 @@ def _is_placeholder_secret(value: str) -> bool:
     return value.strip().strip("\"'").lower() == _PLACEHOLDER_API_KEY
 
 
+def _load_llm_block(workspace: Path) -> dict[str, object]:
+    raw = load_workspace_config(workspace).get("llm") or {}
+    if not isinstance(raw, dict):
+        raise LLMConfigError("config.yml `llm:` block is malformed")
+    return raw
+
+
+def _resolve_provider(raw: dict[str, object]) -> str:
+    provider = str(raw.get("provider") or "").strip().lower()
+    if not provider:
+        raise LLMConfigError(
+            "no LLM provider configured — set llm.provider in config.yml"
+        )
+    if provider not in SUPPORTED_PROVIDERS:
+        raise LLMConfigError(
+            f"unsupported LLM provider '{provider}' — supported: "
+            f"{', '.join(SUPPORTED_PROVIDERS)}"
+        )
+    return provider
+
+
+def _resolve_base_url(raw: dict[str, object], provider: str) -> str:
+    base_url_raw = str(raw.get("base_url") or "").strip()
+    if provider == "anthropic":
+        return (base_url_raw or ANTHROPIC_DEFAULT_BASE_URL).rstrip("/")
+    if not base_url_raw:
+        raise LLMConfigError(
+            f"set llm.base_url in config.yml — required for provider "
+            f"'{provider}'"
+        )
+    return base_url_raw.rstrip("/")
+
+
+def _resolve_model(raw: dict[str, object]) -> str:
+    model = str(raw.get("model") or "").strip()
+    if not model:
+        raise LLMConfigError("set llm.model in config.yml")
+    return model
+
+
+def _read_secret(workspace_env: dict[str, str | None], env_name: str) -> str:
+    value = workspace_env.get(env_name) or os.environ.get(env_name, "").strip()
+    if not value:
+        return ""
+    return "" if _is_placeholder_secret(value) else value
+
+
+def _resolve_api_key(raw: dict[str, object], provider: str, workspace: Path) -> str:
+    workspace_env = dotenv_values(workspace / ".env")
+    api_key_env = str(raw.get("api_key_env") or "").strip()
+
+    if not api_key_env:
+        if provider == "anthropic":
+            raise LLMConfigError("set llm.api_key_env in config.yml")
+        return ""
+
+    api_key = _read_secret(workspace_env, api_key_env)
+    if not api_key:
+        raise LLMConfigError(
+            f"environment variable {api_key_env} is unset; export it "
+            "or update configure your key in .env "
+            "before running AI-enhanced commands"
+        )
+    return api_key
+
+
 def load_config(workspace: Path) -> LLMConfig:
     """Build an :class:`LLMConfig` from the workspace's ``config.yml``.
 
@@ -59,55 +125,11 @@ def load_config(workspace: Path) -> LLMConfig:
     entirely (the local Ollama case); the request goes out without an
     ``Authorization`` header.
     """
-    raw = load_workspace_config(workspace).get("llm") or {}
-    if not isinstance(raw, dict):
-        raise LLMConfigError("config.yml `llm:` block is malformed")
-
-    provider = str(raw.get("provider") or "").strip().lower()
-    if not provider:
-        raise LLMConfigError(
-            "no LLM provider configured — set llm.provider in config.yml"
-        )
-    if provider not in SUPPORTED_PROVIDERS:
-        raise LLMConfigError(
-            f"unsupported LLM provider '{provider}' — supported: "
-            f"{', '.join(SUPPORTED_PROVIDERS)}"
-        )
-
-    base_url_raw = str(raw.get("base_url") or "").strip()
-    if provider == "anthropic":
-        base_url = (base_url_raw or ANTHROPIC_DEFAULT_BASE_URL).rstrip("/")
-    else:
-        if not base_url_raw:
-            raise LLMConfigError(
-                f"set llm.base_url in config.yml — required for provider "
-                f"'{provider}'"
-            )
-        base_url = base_url_raw.rstrip("/")
-
-    model = str(raw.get("model") or "").strip()
-    if not model:
-        raise LLMConfigError("set llm.model in config.yml")
-
-    workspace_env = dotenv_values(workspace / ".env")
-
-    api_key_env = str(raw.get("api_key_env") or "").strip()
-    api_key = ""
-    if api_key_env:
-        api_key = (
-            workspace_env.get(api_key_env)
-            or os.environ.get(api_key_env, "").strip()
-        )
-        if api_key and _is_placeholder_secret(api_key):
-            api_key = ""
-        if not api_key:
-            raise LLMConfigError(
-                f"environment variable {api_key_env} is unset; export it "
-                "or update configure your key in .env "
-                "before running AI-enhanced commands"
-            )
-    elif provider == "anthropic":
-        raise LLMConfigError("set llm.api_key_env in config.yml")
+    raw = _load_llm_block(workspace)
+    provider = _resolve_provider(raw)
+    base_url = _resolve_base_url(raw, provider)
+    model = _resolve_model(raw)
+    api_key = _resolve_api_key(raw, provider, workspace)
 
     return LLMConfig(
         provider=provider,
