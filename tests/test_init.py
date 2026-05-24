@@ -171,9 +171,9 @@ def test_open_in_editor_invokes_subprocess(tmp_path: Path) -> None:
     target = tmp_path / "file.yml"
     target.touch()
     fake = type("R", (), {"returncode": 0})()
-    with patch("career_planner.core.workspace.subprocess.run", return_value=fake) as run:
+    with patch("career_planner.core.workspace.editor.subprocess.run", return_value=fake) as run:
         with patch(
-            "career_planner.core.workspace.shutil.which", return_value="/usr/bin/vim"
+            "career_planner.core.workspace.editor.shutil.which", return_value="/usr/bin/vim"
         ):
             rc = workspace_core.open_in_editor(target, "vim")
     assert rc == 0

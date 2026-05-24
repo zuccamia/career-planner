@@ -6,9 +6,6 @@ Never use raw open() for workspace files elsewhere in the codebase.
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-
 WORKSPACE_MARKER = "config.yml"
 DEFAULT_EDITOR = "vim"
 
@@ -80,6 +77,4 @@ __all__ = [
     "resolve_editor",
     "save_llm_config",
     "save_yaml_dict",
-    "shutil",
-    "subprocess",
 ]
