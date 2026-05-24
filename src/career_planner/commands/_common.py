@@ -13,12 +13,15 @@ pattern; ``resolve_opportunity`` wraps it for the common opportunity case.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, NoReturn, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 import typer
 from rich.console import Console
 
+from career_planner.core import llm as llm_core
 from career_planner.core import opportunity as opp_core
 from career_planner.core.workspace import (
     load_config,
@@ -37,6 +40,45 @@ def fail(message: str, *, code: int = 1, style: str = "red") -> NoReturn:
     """Print `message` to stderr in `style` and raise ``typer.Exit(code)``."""
     err_console.print(message, style=style)
     raise typer.Exit(code)
+
+
+def load_llm_config_or_exit(
+    workspace: Path,
+    *,
+    missing_message: str,
+    output: Console | None = None,
+    exit_code: int = 3,
+) -> llm_core.LLMConfig:
+    """Load the workspace LLM config or print a friendly error and exit.
+
+    ``missing_message`` should contain an ``{err}`` placeholder for the
+    underlying :class:`career_planner.core.llm.LLMConfigError` message.
+    """
+    output = output or err_console
+    try:
+        return llm_core.load_config(workspace)
+    except llm_core.LLMConfigError as exc:
+        output.print(missing_message.format(err=exc), style="red")
+        raise typer.Exit(exit_code) from None
+
+
+@contextmanager
+def llm_status_or_exit(
+    *,
+    status_message: str,
+    failure_message: str,
+    output: Console | None = None,
+    exit_code: int = 1,
+    handled_errors: tuple[type[BaseException], ...] = (llm_core.LLMError,),
+) -> Iterator[None]:
+    """Wrap an LLM-backed block with status output and consistent error handling."""
+    output = output or err_console
+    with output.status(status_message):
+        try:
+            yield
+        except handled_errors as exc:
+            output.print(failure_message.format(err=exc), style="red")
+            raise typer.Exit(exit_code) from None
 
 
 def disambiguate(

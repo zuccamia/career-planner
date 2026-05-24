@@ -13,6 +13,7 @@ from rich.table import Table
 from career_planner.commands._common import (
     console,
     edit_file_in_editor,
+    load_llm_config_or_exit,
     resolve_opportunity,
 )
 from career_planner.core import criteria as criteria_core
@@ -194,16 +195,13 @@ def _llm_extract(workspace: Path, page: str) -> dict[str, Any]:
     :func:`opp_core.extract_job_posting` with a yellow warning so the
     file still gets useful content.
     """
-    try:
-        config = llm_core.load_config(workspace)
-    except llm_core.LLMConfigError as exc:
-        console.print(
-            _(
-                "'opportunity parse' needs an LLM provider in config.yml: {err}"
-            ).format(err=exc),
-            style="red",
-        )
-        raise typer.Exit(3) from None
+    config = load_llm_config_or_exit(
+        workspace,
+        missing_message=_(
+            "'opportunity parse' needs an LLM provider in config.yml: {err}"
+        ),
+        output=console,
+    )
 
     with console.status(_("Extracting with {model}…").format(model=config.model)):
         try:

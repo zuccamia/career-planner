@@ -11,7 +11,7 @@ import typer
 from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 
-from career_planner.commands._common import console
+from career_planner.commands._common import console, load_llm_config_or_exit
 from career_planner.core import llm as llm_core
 from career_planner.core import workspace as workspace_core
 from career_planner.i18n import _
@@ -125,14 +125,11 @@ def setup_llm() -> None:
 def test_llm() -> None:
     """Send a minimal prompt to the configured LLM and report the result."""
     workspace = workspace_core.require_workspace()
-    try:
-        config = llm_core.load_config(workspace)
-    except llm_core.LLMConfigError as exc:
-        console.print(
-            _("LLM is not configured: {err}").format(err=exc),
-            style="red",
-        )
-        raise typer.Exit(3) from None
+    config = load_llm_config_or_exit(
+        workspace,
+        missing_message=_("LLM is not configured: {err}"),
+        output=console,
+    )
 
     if not _run_ping(config):
         raise typer.Exit(1)

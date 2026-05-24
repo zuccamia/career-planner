@@ -10,10 +10,11 @@ import typer
 from career_planner.commands._common import (
     edit_file_in_editor,
     err_console,
+    llm_status_or_exit,
+    load_llm_config_or_exit,
     resolve_opportunity,
 )
 from career_planner.core import brag as brag_core
-from career_planner.core import llm as llm_core
 from career_planner.core import resume as resume_core
 from career_planner.core.workspace import require_workspace
 from career_planner.i18n import _
@@ -57,16 +58,13 @@ def render(opportunity: str | None = None) -> None:
 
     opp = resolve_opportunity(workspace, opportunity)
 
-    try:
-        config = llm_core.load_config(workspace)
-    except llm_core.LLMConfigError as exc:
-        err_console.print(
-            _("`resume render --for` needs an LLM provider in config.yml: {err}").format(
-                err=exc
-            ),
-            style="red",
-        )
-        raise typer.Exit(3) from None
+    config = load_llm_config_or_exit(
+        workspace,
+        missing_message=_(
+            "`resume render --for` needs an LLM provider in config.yml: {err}"
+        ),
+        output=err_console,
+    )
 
     brag_entries, total_matched = _gather_relevant_brag_entries(workspace, resume)
     if brag_entries:
@@ -83,17 +81,14 @@ def render(opportunity: str | None = None) -> None:
                 style="dim",
             )
 
-    with err_console.status(_("Tailoring with {model}…").format(model=config.model)):
-        try:
-            markdown = resume_core.render_tailored(
-                resume, opp, config, brag_entries=brag_entries
-            )
-        except llm_core.LLMError as exc:
-            err_console.print(
-                _("Resume tailoring failed: {err}").format(err=exc),
-                style="red",
-            )
-            raise typer.Exit(1) from None
+    with llm_status_or_exit(
+        status_message=_("Tailoring with {model}…").format(model=config.model),
+        failure_message=_("Resume tailoring failed: {err}"),
+        output=err_console,
+    ):
+        markdown = resume_core.render_tailored(
+            resume, opp, config, brag_entries=brag_entries
+        )
 
     typer.echo(markdown, nl=False)
 
