@@ -26,6 +26,7 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", server.home)
+	mux.HandleFunc("GET /companies", server.companiesIndex)
 	mux.HandleFunc("GET /companies/new", server.companyNewForm)
 	mux.HandleFunc("POST /companies/new", server.companyNewSubmit)
 	mux.HandleFunc("POST /companies", server.companyCreate)
@@ -48,6 +49,16 @@ func parseTemplates(names ...string) (*template.Template, error) {
 }
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
+	data := map[string]any{
+		"Title":     "Career Planner",
+		"ActiveNav": "home",
+	}
+	if err := s.render(w, r, "index.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) companiesIndex(w http.ResponseWriter, r *http.Request) {
 	companiesList, err := s.companies.List(r.Context())
 	if err != nil {
 		log.Printf("list companies: %v", err)
@@ -56,20 +67,22 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Title":        "Career Planner",
+		"Title":        "Companies",
+		"ActiveNav":    "companies",
 		"Companies":    companiesList,
 		"HasCompanies": len(companiesList) > 0,
 	}
-	if err := s.render(w, "index.html", data); err != nil {
+	if err := s.render(w, r, "companies_index.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func (s *Server) companyNewForm(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
-		"Title": "Add company",
+		"Title":     "Add company",
+		"ActiveNav": "companies",
 	}
-	if err := s.render(w, "company_new.html", data); err != nil {
+	if err := s.render(w, r, "company_new.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -83,10 +96,11 @@ func (s *Server) companyNewSubmit(w http.ResponseWriter, r *http.Request) {
 	companyName := strings.TrimSpace(r.FormValue("company_name"))
 	if companyName == "" {
 		data := map[string]any{
-			"Title": "Add company",
-			"Error": "Company name is required.",
+			"Title":     "Add company",
+			"ActiveNav": "companies",
+			"Error":     "Company name is required.",
 		}
-		if err := s.render(w, "company_new.html", data); err != nil {
+		if err := s.render(w, r, "company_new.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -101,6 +115,7 @@ func (s *Server) companyNewSubmit(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{
 		"Title":         "Company candidate",
+		"ActiveNav":     "companies",
 		"CompanyName":   companyName,
 		"SubmittedName": companyName,
 		"OfficialName":  candidate.OfficialName,
@@ -111,7 +126,7 @@ func (s *Server) companyNewSubmit(w http.ResponseWriter, r *http.Request) {
 		"Reasoning":     candidate.Reasoning,
 		"Note":          note,
 	}
-	if err := s.render(w, "company_confirm.html", data); err != nil {
+	if err := s.render(w, r, "company_confirm.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -130,15 +145,16 @@ func (s *Server) companyCreate(w http.ResponseWriter, r *http.Request) {
 
 	if submittedName == "" {
 		data := map[string]any{
-			"Title":         "Company candidate",
-			"Error":         "Company name is required.",
+			"Title":         "Confirm company",
+			"ActiveNav":     "companies",
+			"Error":         "Submitted company name is required.",
 			"SubmittedName": submittedName,
 			"OfficialName":  officialName,
 			"Website":       website,
 			"ATSURL":        atsURL,
 			"ATSProvider":   atsProvider,
 		}
-		if err := s.render(w, "company_confirm.html", data); err != nil {
+		if err := s.render(w, r, "company_confirm.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -155,6 +171,7 @@ func (s *Server) companyCreate(w http.ResponseWriter, r *http.Request) {
 		log.Printf("create company: %v", err)
 		data := map[string]any{
 			"Title":         "Company candidate",
+			"ActiveNav":     "companies",
 			"Error":         "Could not save the company. Please review the details and try again.",
 			"SubmittedName": submittedName,
 			"OfficialName":  officialName,
@@ -162,7 +179,7 @@ func (s *Server) companyCreate(w http.ResponseWriter, r *http.Request) {
 			"ATSURL":        atsURL,
 			"ATSProvider":   atsProvider,
 		}
-		if err := s.render(w, "company_confirm.html", data); err != nil {
+		if err := s.render(w, r, "company_confirm.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -199,6 +216,7 @@ func (s *Server) companyShow(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{
 		"Title":          company.OfficialName,
+		"ActiveNav":      "companies",
 		"Company":        company,
 		"HasWebsite":     company.Website != "",
 		"HasATSURL":      company.ATSURL != "",
@@ -214,7 +232,7 @@ func (s *Server) companyShow(w http.ResponseWriter, r *http.Request) {
 		"HasData":        len(latestDossier.MajorTechStacks.Data) > 0,
 		"HasTooling":     len(latestDossier.MajorTechStacks.Tooling) > 0,
 	}
-	if err := s.render(w, "company_show.html", data); err != nil {
+	if err := s.render(w, r, "company_show.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -246,7 +264,21 @@ func (s *Server) companyBuildDossier(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/companies/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
-func (s *Server) render(w http.ResponseWriter, page string, data map[string]any) error {
+func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, data map[string]any) error {
+	if data == nil {
+		data = map[string]any{}
+	}
+
+	if _, ok := data["CompaniesCount"]; !ok && s != nil && s.companies != nil {
+		companiesList, err := s.companies.List(r.Context())
+		if err != nil {
+			log.Printf("list companies for layout: %v", err)
+			data["CompaniesCount"] = 0
+		} else {
+			data["CompaniesCount"] = len(companiesList)
+		}
+	}
+
 	tmpl, err := parseTemplates("base.html", page)
 	if err != nil {
 		log.Printf("parse templates: %v", err)
