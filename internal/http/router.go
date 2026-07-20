@@ -34,6 +34,9 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.HandleFunc("POST /companies/new", server.companyNewSubmit)
 	mux.HandleFunc("POST /companies", server.companyCreate)
 	mux.HandleFunc("GET /companies/{id}", server.companyShow)
+	mux.HandleFunc("GET /companies/{id}/edit", server.companyEditForm)
+	mux.HandleFunc("POST /companies/{id}/edit", server.companyEditSubmit)
+	mux.HandleFunc("POST /companies/{id}/delete", server.companyDelete)
 	mux.HandleFunc("POST /companies/{id}/dossier", server.companyBuildDossier)
 	mux.HandleFunc("GET /people", server.peopleIndex)
 	mux.HandleFunc("GET /people/new", server.personNewForm)
@@ -240,6 +243,7 @@ func (s *Server) companyNewSubmit(w http.ResponseWriter, r *http.Request) {
 		"SubmittedName": companyName,
 		"OfficialName":  candidate.OfficialName,
 		"Website":       candidate.Website,
+		"TechBlogURL":   candidate.TechBlogURL,
 		"ATSURL":        candidate.ATSURL,
 		"ATSProvider":   candidate.ATSProvider,
 		"Confidence":    candidate.Confidence,
@@ -260,6 +264,7 @@ func (s *Server) companyCreate(w http.ResponseWriter, r *http.Request) {
 	submittedName := strings.TrimSpace(r.FormValue("submitted_name"))
 	officialName := strings.TrimSpace(r.FormValue("official_name"))
 	website := strings.TrimSpace(r.FormValue("website"))
+	techBlogURL := strings.TrimSpace(r.FormValue("tech_blog_url"))
 	atsURL := strings.TrimSpace(r.FormValue("ats_url"))
 	atsProvider := strings.TrimSpace(r.FormValue("ats_provider"))
 
@@ -271,6 +276,7 @@ func (s *Server) companyCreate(w http.ResponseWriter, r *http.Request) {
 			"SubmittedName": submittedName,
 			"OfficialName":  officialName,
 			"Website":       website,
+			"TechBlogURL":   techBlogURL,
 			"ATSURL":        atsURL,
 			"ATSProvider":   atsProvider,
 		}
@@ -284,6 +290,7 @@ func (s *Server) companyCreate(w http.ResponseWriter, r *http.Request) {
 		SubmittedName: submittedName,
 		OfficialName:  officialName,
 		Website:       website,
+		TechBlogURL:   techBlogURL,
 		ATSURL:        atsURL,
 		ATSProvider:   atsProvider,
 	})
@@ -296,6 +303,7 @@ func (s *Server) companyCreate(w http.ResponseWriter, r *http.Request) {
 			"SubmittedName": submittedName,
 			"OfficialName":  officialName,
 			"Website":       website,
+			"TechBlogURL":   techBlogURL,
 			"ATSURL":        atsURL,
 			"ATSProvider":   atsProvider,
 		}
@@ -339,12 +347,12 @@ func (s *Server) companyShow(w http.ResponseWriter, r *http.Request) {
 		"ActiveNav":      "companies",
 		"Company":        company,
 		"HasWebsite":     company.Website != "",
+		"HasTechBlogURL": company.TechBlogURL != "",
 		"HasATSURL":      company.ATSURL != "",
 		"HasATSProvider": company.ATSProvider != "",
 		"HasDossier":     hasDossier,
 		"Dossier":        latestDossier,
 		"HasCareersURL":  latestDossier.CareersURL != "",
-		"HasTechBlogURL": latestDossier.TechBlogURL != "",
 		"HasLanguages":   len(latestDossier.MajorTechStacks.Languages) > 0,
 		"HasFrontend":    len(latestDossier.MajorTechStacks.Frontend) > 0,
 		"HasBackend":     len(latestDossier.MajorTechStacks.Backend) > 0,
@@ -353,6 +361,98 @@ func (s *Server) companyShow(w http.ResponseWriter, r *http.Request) {
 		"HasTooling":     len(latestDossier.MajorTechStacks.Tooling) > 0,
 	}
 	if err := s.render(w, r, "company_show.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) companyEditForm(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	company, err := s.companies.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, companies.ErrCompanyNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("get company for edit: %v", err)
+		http.Error(w, "could not load company", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]any{
+		"Title":         "Edit company",
+		"ActiveNav":     "companies",
+		"Company":       company,
+		"OfficialName":  company.OfficialName,
+		"Website":       company.Website,
+		"TechBlogURL":   company.TechBlogURL,
+		"ATSURL":        company.ATSURL,
+		"ATSProvider":   company.ATSProvider,
+		"SubmittedName": company.SubmittedName,
+	}
+	if err := s.render(w, r, "company_edit.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) companyEditSubmit(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	officialName := strings.TrimSpace(r.FormValue("official_name"))
+	website := strings.TrimSpace(r.FormValue("website"))
+	techBlogURL := strings.TrimSpace(r.FormValue("tech_blog_url"))
+	atsURL := strings.TrimSpace(r.FormValue("ats_url"))
+	atsProvider := strings.TrimSpace(r.FormValue("ats_provider"))
+
+	company, err := s.companies.Update(r.Context(), companies.UpdateCompanyInput{
+		ID:           id,
+		OfficialName: officialName,
+		Website:      website,
+		TechBlogURL:  techBlogURL,
+		ATSURL:       atsURL,
+		ATSProvider:  atsProvider,
+	})
+	if err == nil {
+		http.Redirect(w, r, "/companies/"+strconv.FormatInt(company.ID, 10), http.StatusSeeOther)
+		return
+	}
+	if errors.Is(err, companies.ErrCompanyNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+
+	existing, getErr := s.companies.GetByID(r.Context(), id)
+	if getErr != nil {
+		log.Printf("get company for edit error state: %v", getErr)
+		http.Error(w, "could not load company", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]any{
+		"Title":         "Edit company",
+		"ActiveNav":     "companies",
+		"Error":         err.Error(),
+		"Company":       existing,
+		"OfficialName":  officialName,
+		"Website":       website,
+		"TechBlogURL":   techBlogURL,
+		"ATSURL":        atsURL,
+		"ATSProvider":   atsProvider,
+		"SubmittedName": existing.SubmittedName,
+	}
+	if err := s.render(w, r, "company_edit.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -382,6 +482,26 @@ func (s *Server) companyBuildDossier(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/companies/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
+func (s *Server) companyDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := s.companies.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, companies.ErrCompanyNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("delete company: %v", err)
+		http.Error(w, "could not delete company", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/companies", http.StatusSeeOther)
 }
 
 func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, data map[string]any) error {

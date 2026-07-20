@@ -29,7 +29,6 @@ type Dossier struct {
 	CompanyID          int64
 	Status             string
 	CareersURL         string
-	TechBlogURL        string
 	CompanySummary     string
 	WhatTheCompanyDoes string
 	TargetCustomers    []string
@@ -46,7 +45,6 @@ type BuildInput struct {
 
 type llmResult struct {
 	CareersURL         string          `json:"careers_url"`
-	TechBlogURL        string          `json:"tech_blog_url"`
 	CompanySummary     string          `json:"company_summary"`
 	WhatCompanyDoes    string          `json:"what_the_company_does"`
 	TargetCustomers    []string        `json:"target_customers"`
@@ -96,7 +94,6 @@ func (s *Service) Build(ctx context.Context, input BuildInput) (Dossier, error) 
 		CompanyID:          input.Company.ID,
 		Status:             "completed",
 		CareersURL:         result.CareersURL,
-		TechBlogURL:        result.TechBlogURL,
 		CompanySummary:     result.CompanySummary,
 		WhatTheCompanyDoes: result.WhatCompanyDoes,
 		TargetCustomers:    result.TargetCustomers,
@@ -133,7 +130,6 @@ func fallbackResult(company companies.Company) llmResult {
 
 	return llmResult{
 		CareersURL:         deriveCareersURL(company),
-		TechBlogURL:        deriveTechBlogURL(company),
 		CompanySummary:     summary,
 		WhatCompanyDoes:    whatItDoes,
 		TargetCustomers:    targetCustomers,
@@ -152,7 +148,6 @@ func fallbackResult(company companies.Company) llmResult {
 
 func sanitizeResult(result llmResult, company companies.Company) llmResult {
 	result.CareersURL = sanitizeURL(result.CareersURL)
-	result.TechBlogURL = sanitizeURL(result.TechBlogURL)
 	result.CompanySummary = strings.TrimSpace(result.CompanySummary)
 	result.WhatCompanyDoes = strings.TrimSpace(result.WhatCompanyDoes)
 	result.TargetCustomers = sanitizeList(result.TargetCustomers)
@@ -162,9 +157,6 @@ func sanitizeResult(result llmResult, company companies.Company) llmResult {
 
 	if result.CareersURL == "" {
 		result.CareersURL = deriveCareersURL(company)
-	}
-	if result.TechBlogURL == "" {
-		result.TechBlogURL = deriveTechBlogURL(company)
 	}
 	if result.CompanySummary == "" {
 		result.CompanySummary = fallbackResult(company).CompanySummary
@@ -188,9 +180,6 @@ func sanitizeResult(result llmResult, company companies.Company) llmResult {
 func mergeResult(base, override llmResult) llmResult {
 	if override.CareersURL != "" {
 		base.CareersURL = override.CareersURL
-	}
-	if override.TechBlogURL != "" {
-		base.TechBlogURL = override.TechBlogURL
 	}
 	if override.CompanySummary != "" {
 		base.CompanySummary = override.CompanySummary
@@ -278,20 +267,6 @@ func deriveCareersURL(company companies.Company) string {
 	return parsed.String()
 }
 
-func deriveTechBlogURL(company companies.Company) string {
-	if company.Website == "" {
-		return ""
-	}
-	parsed, err := url.Parse(company.Website)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return ""
-	}
-	parsed.Path = "/engineering"
-	parsed.RawQuery = ""
-	parsed.Fragment = ""
-	return parsed.String()
-}
-
 func sanitizeURL(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -320,7 +295,6 @@ Only include technologies explicitly mentioned or strongly evidenced by official
 
 const dossierUserPrompt = `Generate one JSON object with exactly these keys:
 - careers_url
-- tech_blog_url
 - company_summary
 - what_the_company_does
 - target_customers

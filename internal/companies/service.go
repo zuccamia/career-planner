@@ -14,6 +14,7 @@ import (
 type Candidate struct {
 	OfficialName string  `json:"official_name"`
 	Website      string  `json:"website"`
+	TechBlogURL  string  `json:"tech_blog_url"`
 	ATSURL       string  `json:"ats_url"`
 	ATSProvider  string  `json:"ats_provider"`
 	Confidence   float64 `json:"confidence"`
@@ -25,6 +26,7 @@ type Company struct {
 	SubmittedName string
 	OfficialName  string
 	Website       string
+	TechBlogURL   string
 	ATSURL        string
 	ATSProvider   string
 	CreatedAt     time.Time
@@ -35,16 +37,28 @@ type CreateCompanyInput struct {
 	SubmittedName string
 	OfficialName  string
 	Website       string
+	TechBlogURL   string
 	ATSURL        string
 	ATSProvider   string
+}
+
+type UpdateCompanyInput struct {
+	ID           int64
+	OfficialName string
+	Website      string
+	TechBlogURL  string
+	ATSURL       string
+	ATSProvider  string
 }
 
 var ErrCompanyNotFound = errors.New("company not found")
 
 type Repository interface {
 	Create(ctx context.Context, input CreateCompanyInput) (Company, error)
+	Delete(ctx context.Context, id int64) error
 	GetByID(ctx context.Context, id int64) (Company, error)
 	List(ctx context.Context) ([]Company, error)
+	Update(ctx context.Context, input UpdateCompanyInput) (Company, error)
 }
 
 type Service struct {
@@ -86,6 +100,7 @@ func (s *Service) GuessCandidate(ctx context.Context, input string) (Candidate, 
 func sanitizeCandidate(candidate Candidate, fallbackName string) Candidate {
 	candidate.OfficialName = strings.TrimSpace(candidate.OfficialName)
 	candidate.Website = sanitizeURL(candidate.Website)
+	candidate.TechBlogURL = sanitizeURL(candidate.TechBlogURL)
 	candidate.ATSURL = sanitizeURL(candidate.ATSURL)
 	candidate.ATSProvider = strings.TrimSpace(candidate.ATSProvider)
 	candidate.Reasoning = strings.TrimSpace(candidate.Reasoning)
@@ -121,6 +136,7 @@ func (s *Service) Create(ctx context.Context, input CreateCompanyInput) (Company
 	input.SubmittedName = strings.TrimSpace(input.SubmittedName)
 	input.OfficialName = strings.TrimSpace(input.OfficialName)
 	input.Website = sanitizeURL(input.Website)
+	input.TechBlogURL = sanitizeURL(input.TechBlogURL)
 	input.ATSURL = sanitizeURL(input.ATSURL)
 	input.ATSProvider = strings.TrimSpace(input.ATSProvider)
 
@@ -151,6 +167,37 @@ func (s *Service) List(ctx context.Context) ([]Company, error) {
 	return s.repo.List(ctx)
 }
 
+func (s *Service) Delete(ctx context.Context, id int64) error {
+	if s == nil || s.repo == nil {
+		return errors.New("companies repository is not configured")
+	}
+	if id <= 0 {
+		return ErrCompanyNotFound
+	}
+	return s.repo.Delete(ctx, id)
+}
+
+func (s *Service) Update(ctx context.Context, input UpdateCompanyInput) (Company, error) {
+	if s == nil || s.repo == nil {
+		return Company{}, errors.New("companies repository is not configured")
+	}
+	if input.ID <= 0 {
+		return Company{}, ErrCompanyNotFound
+	}
+
+	input.OfficialName = strings.TrimSpace(input.OfficialName)
+	input.Website = sanitizeURL(input.Website)
+	input.TechBlogURL = sanitizeURL(input.TechBlogURL)
+	input.ATSURL = sanitizeURL(input.ATSURL)
+	input.ATSProvider = strings.TrimSpace(input.ATSProvider)
+
+	if input.OfficialName == "" {
+		return Company{}, errors.New("official company name is required")
+	}
+
+	return s.repo.Update(ctx, input)
+}
+
 const companyCandidateSystemPrompt = `You identify one best-effort company candidate from a user-provided company name.
 Return valid JSON only.
 Do not include markdown.
@@ -163,6 +210,7 @@ const companyCandidateUserPrompt = `Company name entered by user: %q
 Return exactly one JSON object with these keys:
 - official_name
 - website
+- tech_blog_url
 - ats_url
 - ats_provider
 - confidence
@@ -171,6 +219,7 @@ Return exactly one JSON object with these keys:
 Rules:
 - confidence must be a number between 0 and 1
 - leave website empty if uncertain
+- leave tech_blog_url empty if uncertain
 - leave ats_url empty if uncertain
 - leave ats_provider empty if uncertain
 - prefer partial accuracy over hallucination`

@@ -27,15 +27,17 @@ func (r *SQLRepository) Create(ctx context.Context, input CreateCompanyInput) (C
 			submitted_name,
 			official_name,
 			website,
+			tech_blog_url,
 			ats_url,
 			ats_provider,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		input.SubmittedName,
 		input.OfficialName,
 		input.Website,
+		input.TechBlogURL,
 		input.ATSURL,
 		input.ATSProvider,
 		now.Format(time.RFC3339Nano),
@@ -53,6 +55,75 @@ func (r *SQLRepository) Create(ctx context.Context, input CreateCompanyInput) (C
 	return r.GetByID(ctx, id)
 }
 
+func (r *SQLRepository) Delete(ctx context.Context, id int64) error {
+	if r == nil || r.db == nil {
+		return errors.New("database is not configured")
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete company transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM dossiers WHERE company_id = ?`, id); err != nil {
+		return fmt.Errorf("delete company dossiers: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE people SET company_id = NULL, updated_at = ? WHERE company_id = ?`, time.Now().UTC().Format(time.RFC3339Nano), id); err != nil {
+		return fmt.Errorf("clear company from people: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM companies WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete company: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("fetch deleted company rows affected: %w", err)
+	}
+	if affected == 0 {
+		return ErrCompanyNotFound
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete company transaction: %w", err)
+	}
+
+	return nil
+}
+
+func (r *SQLRepository) Update(ctx context.Context, input UpdateCompanyInput) (Company, error) {
+	if r == nil || r.db == nil {
+		return Company{}, errors.New("database is not configured")
+	}
+
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE companies
+		SET official_name = ?, website = ?, tech_blog_url = ?, ats_url = ?, ats_provider = ?, updated_at = ?
+		WHERE id = ?
+	`,
+		input.OfficialName,
+		input.Website,
+		input.TechBlogURL,
+		input.ATSURL,
+		input.ATSProvider,
+		time.Now().UTC().Format(time.RFC3339Nano),
+		input.ID,
+	)
+	if err != nil {
+		return Company{}, fmt.Errorf("update company: %w", err)
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return Company{}, fmt.Errorf("fetch updated company rows affected: %w", err)
+	}
+	if affected == 0 {
+		return Company{}, ErrCompanyNotFound
+	}
+
+	return r.GetByID(ctx, input.ID)
+}
+
 func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Company, error) {
 	if r == nil || r.db == nil {
 		return Company{}, errors.New("database is not configured")
@@ -64,6 +135,7 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Company, error) 
 			submitted_name,
 			official_name,
 			website,
+			tech_blog_url,
 			ats_url,
 			ats_provider,
 			created_at,
@@ -80,6 +152,7 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Company, error) 
 		&company.SubmittedName,
 		&company.OfficialName,
 		&company.Website,
+		&company.TechBlogURL,
 		&company.ATSURL,
 		&company.ATSProvider,
 		&createdAt,
@@ -116,6 +189,7 @@ func (r *SQLRepository) List(ctx context.Context) ([]Company, error) {
 			submitted_name,
 			official_name,
 			website,
+			tech_blog_url,
 			ats_url,
 			ats_provider,
 			created_at,
@@ -138,6 +212,7 @@ func (r *SQLRepository) List(ctx context.Context) ([]Company, error) {
 			&company.SubmittedName,
 			&company.OfficialName,
 			&company.Website,
+			&company.TechBlogURL,
 			&company.ATSURL,
 			&company.ATSProvider,
 			&createdAt,

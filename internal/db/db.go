@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS companies (
     submitted_name TEXT NOT NULL,
     official_name TEXT NOT NULL,
     website TEXT NOT NULL DEFAULT '',
+    tech_blog_url TEXT NOT NULL DEFAULT '',
     ats_url TEXT NOT NULL DEFAULT '',
     ats_provider TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
@@ -69,7 +71,6 @@ CREATE TABLE IF NOT EXISTS dossiers (
     company_id INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'completed',
     careers_url TEXT NOT NULL DEFAULT '',
-    tech_blog_url TEXT NOT NULL DEFAULT '',
     company_summary TEXT NOT NULL DEFAULT '',
     what_the_company_does TEXT NOT NULL DEFAULT '',
     target_customers_json TEXT NOT NULL DEFAULT '[]',
@@ -96,6 +97,10 @@ CREATE TABLE IF NOT EXISTS people (
 
 	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("migrate companies table: %w", err)
+	}
+
+	if _, err := db.ExecContext(ctx, `ALTER TABLE companies ADD COLUMN tech_blog_url TEXT NOT NULL DEFAULT ''`); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+		return fmt.Errorf("add companies.tech_blog_url column: %w", err)
 	}
 
 	return nil
