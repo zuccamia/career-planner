@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "build:css": "npx @tailwindcss/cli -i ./web/static/tailwind.css -o ./web/static/app.css --minify",
-    "watch:css": "npx @tailwindcss/cli -i ./web/static/tailwind.css -o ./web/static/app.css --watch"
+    "watch:css": "npx @tailwindcss/cli -i ./web/static/tailwind.css -o ./web/static/app.css --watch",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
   },
   "repository": {
     "type": "git",
@@ -20,6 +22,7 @@
   },
   "homepage": "https://github.com/zuccamia/career-planner#readme",
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@tailwindcss/cli": "^4.3.3",
     "tailwindcss": "^4.3.3"
   }
