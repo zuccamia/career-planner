@@ -11,17 +11,20 @@ import (
 
 	"github.com/ngochoang/career-planner/internal/companies"
 	"github.com/ngochoang/career-planner/internal/dossiers"
+	"github.com/ngochoang/career-planner/internal/people"
 )
 
 type Server struct {
 	companies *companies.Service
 	dossiers  *dossiers.Service
+	people    *people.Service
 }
 
-func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service) http.Handler {
+func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, peopleService *people.Service) http.Handler {
 	server := &Server{
 		companies: companiesService,
 		dossiers:  dossiersService,
+		people:    peopleService,
 	}
 
 	mux := http.NewServeMux()
@@ -32,6 +35,9 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.HandleFunc("POST /companies", server.companyCreate)
 	mux.HandleFunc("GET /companies/{id}", server.companyShow)
 	mux.HandleFunc("POST /companies/{id}/dossier", server.companyBuildDossier)
+	mux.HandleFunc("GET /people", server.peopleIndex)
+	mux.HandleFunc("GET /people/new", server.personNewForm)
+	mux.HandleFunc("POST /people", server.personCreate)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	return logging(mux)
 }
@@ -73,17 +79,17 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Title":                  "Career Planner",
-		"ActiveNav":              "home",
-		"ApplicationsCount":      0,
-		"InterviewsCount":        0,
-		"OffersCount":            0,
-		"RejectionsCount":        0,
-		"TotalCompanies":         len(companiesList),
-		"CompaniesWithDossier":   companiesWithDossier,
+		"Title":                   "Career Planner",
+		"ActiveNav":               "home",
+		"ApplicationsCount":       0,
+		"InterviewsCount":         0,
+		"OffersCount":             0,
+		"RejectionsCount":         0,
+		"TotalCompanies":          len(companiesList),
+		"CompaniesWithDossier":    companiesWithDossier,
 		"CompaniesWithoutDossier": len(companiesList) - companiesWithDossier,
-		"RecentCompanies":        recentCompanies,
-		"HasRecentCompanies":     len(recentCompanies) > 0,
+		"RecentCompanies":         recentCompanies,
+		"HasRecentCompanies":      len(recentCompanies) > 0,
 	}
 	if err := s.render(w, r, "index.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -105,6 +111,88 @@ func (s *Server) companiesIndex(w http.ResponseWriter, r *http.Request) {
 		"HasCompanies": len(companiesList) > 0,
 	}
 	if err := s.render(w, r, "companies_index.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) peopleIndex(w http.ResponseWriter, r *http.Request) {
+	peopleList, err := s.people.List(r.Context())
+	if err != nil {
+		log.Printf("list people: %v", err)
+		http.Error(w, "could not load people", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]any{
+		"Title":     "People",
+		"ActiveNav": "people",
+		"People":    peopleList,
+		"HasPeople": len(peopleList) > 0,
+	}
+	if err := s.render(w, r, "people_index.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) personNewForm(w http.ResponseWriter, r *http.Request) {
+	companiesList, err := s.companies.List(r.Context())
+	if err != nil {
+		log.Printf("list companies for person form: %v", err)
+		http.Error(w, "could not load people form", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]any{
+		"Title":        "Add person",
+		"ActiveNav":    "people",
+		"Companies":    companiesList,
+		"HasCompanies": len(companiesList) > 0,
+	}
+	if err := s.render(w, r, "person_new.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) personCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	companyID, _ := strconv.ParseInt(strings.TrimSpace(r.FormValue("company_id")), 10, 64)
+	person, err := s.people.Create(r.Context(), people.CreatePersonInput{
+		FullName:    r.FormValue("full_name"),
+		Title:       r.FormValue("title"),
+		CompanyID:   companyID,
+		LinkedInURL: r.FormValue("linkedin_url"),
+		Notes:       r.FormValue("notes"),
+	})
+	if err == nil {
+		http.Redirect(w, r, "/people", http.StatusSeeOther)
+		_ = person
+		return
+	}
+
+	companiesList, listErr := s.companies.List(r.Context())
+	if listErr != nil {
+		log.Printf("list companies for person form error state: %v", listErr)
+		http.Error(w, "could not load people form", http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]any{
+		"Title":             "Add person",
+		"ActiveNav":         "people",
+		"Error":             err.Error(),
+		"Companies":         companiesList,
+		"HasCompanies":      len(companiesList) > 0,
+		"FullName":          strings.TrimSpace(r.FormValue("full_name")),
+		"PersonTitle":       strings.TrimSpace(r.FormValue("title")),
+		"SelectedCompanyID": companyID,
+		"LinkedInURL":       strings.TrimSpace(r.FormValue("linkedin_url")),
+		"Notes":             strings.TrimSpace(r.FormValue("notes")),
+	}
+	if err := s.render(w, r, "person_new.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -308,6 +396,16 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 			data["CompaniesCount"] = 0
 		} else {
 			data["CompaniesCount"] = len(companiesList)
+		}
+	}
+
+	if _, ok := data["PeopleCount"]; !ok && s != nil && s.people != nil {
+		peopleList, err := s.people.List(r.Context())
+		if err != nil {
+			log.Printf("list people for layout: %v", err)
+			data["PeopleCount"] = 0
+		} else {
+			data["PeopleCount"] = len(peopleList)
 		}
 	}
 

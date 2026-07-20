@@ -21,6 +21,10 @@
             <span>Companies</span>
             <span class="inline-flex min-w-6 items-center justify-center rounded-full bg-white px-2 py-0.5 text-xs font-semibold {{if eq .ActiveNav "companies"}}text-blue-700{{else}}text-slate-500{{end}}">{{.CompaniesCount}}</span>
           </a>
+          <a class="flex items-center justify-between rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .ActiveNav "people"}}bg-blue-50 text-blue-700{{else}}text-slate-600 hover:bg-slate-100 hover:text-slate-900{{end}}" href="/people">
+            <span>People</span>
+            <span class="inline-flex min-w-6 items-center justify-center rounded-full bg-white px-2 py-0.5 text-xs font-semibold {{if eq .ActiveNav "people"}}text-blue-700{{else}}text-slate-500{{end}}">{{.PeopleCount}}</span>
+          </a>
         </nav>
 
         <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">

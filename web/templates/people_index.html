@@ -1,0 +1,39 @@
+{{define "people_index.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+  <div class="space-y-2">
+    <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">People</p>
+  </div>
+
+  <div>
+    <a class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" href="/people/new">Add person</a>
+  </div>
+</section>
+
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  {{if .HasPeople}}
+  <ul class="space-y-3">
+    {{range .People}}
+    <li class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+      <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <span class="block font-semibold text-slate-900">{{.FullName}}</span>
+          {{if .Title}}<span class="block text-sm text-slate-500">{{.Title}}</span>{{end}}
+        </div>
+        <span class="text-sm text-slate-500">Updated {{.UpdatedAt.Format "2006-01-02"}}</span>
+      </div>
+      {{if .CompanyName}}<p class="mt-3 text-sm text-slate-500">{{.CompanyName}}</p>{{end}}
+      {{if .LinkedInURL}}<p class="mt-2 text-sm"><a class="text-blue-700 hover:text-blue-800" href="{{.LinkedInURL}}" target="_blank" rel="noreferrer">LinkedIn</a></p>{{end}}
+      {{if .Notes}}<p class="mt-2 text-sm text-slate-600">{{.Notes}}</p>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <div class="rounded-2xl bg-slate-50 px-4 py-5 text-slate-500">
+    <p>No people yet.</p>
+    <a class="mt-4 inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700" href="/people/new">Add your first person</a>
+  </div>
+  {{end}}
+</section>
+{{end}}

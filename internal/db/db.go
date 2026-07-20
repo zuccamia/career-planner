@@ -80,6 +80,18 @@ CREATE TABLE IF NOT EXISTS dossiers (
     updated_at TEXT NOT NULL,
     FOREIGN KEY (company_id) REFERENCES companies(id)
 );
+
+CREATE TABLE IF NOT EXISTS people (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    company_id INTEGER,
+    linkedin_url TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (company_id) REFERENCES companies(id)
+);
 `
 
 	if _, err := db.ExecContext(ctx, schema); err != nil {

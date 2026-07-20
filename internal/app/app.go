@@ -11,6 +11,7 @@ import (
 	"github.com/ngochoang/career-planner/internal/dossiers"
 	apphttp "github.com/ngochoang/career-planner/internal/http"
 	"github.com/ngochoang/career-planner/internal/llm"
+	"github.com/ngochoang/career-planner/internal/people"
 )
 
 type App struct {
@@ -31,7 +32,9 @@ func New() App {
 	companyService := companies.NewService(llmClient, companyRepo)
 	dossierRepo := dossiers.NewSQLRepository(database)
 	dossierService := dossiers.NewService(llmClient, dossierRepo)
-	router := apphttp.NewRouter(companyService, dossierService)
+	peopleRepo := people.NewSQLRepository(database)
+	peopleService := people.NewService(peopleRepo)
+	router := apphttp.NewRouter(companyService, dossierService, peopleService)
 	return App{
 		Addr:   ":8080",
 		Router: router,
