@@ -29,7 +29,9 @@ type CreatePersonInput struct {
 }
 
 type Repository interface {
+	Count(ctx context.Context) (int, error)
 	Create(ctx context.Context, input CreatePersonInput) (Person, error)
+	GetByID(ctx context.Context, id int64) (Person, error)
 	List(ctx context.Context) ([]Person, error)
 }
 
@@ -68,13 +70,24 @@ func (s *Service) List(ctx context.Context) ([]Person, error) {
 	return s.repo.List(ctx)
 }
 
+func (s *Service) Count(ctx context.Context) (int, error) {
+	if s == nil || s.repo == nil {
+		return 0, errors.New("people repository is not configured")
+	}
+	return s.repo.Count(ctx)
+}
+
 func sanitizeURL(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return ""
 	}
 	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
 		return ""
 	}
 	return parsed.String()

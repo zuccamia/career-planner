@@ -38,6 +38,7 @@ type CompanyCount struct {
 }
 
 type Repository interface {
+	Count(ctx context.Context) (int, error)
 	Create(ctx context.Context, input CreateInput) (Note, error)
 	Delete(ctx context.Context, id int64) error
 	GetByID(ctx context.Context, id int64) (Note, error)
@@ -89,6 +90,13 @@ func (s *Service) List(ctx context.Context) ([]Note, error) {
 		return nil, errors.New("engineering notes repository is not configured")
 	}
 	return s.repo.List(ctx)
+}
+
+func (s *Service) Count(ctx context.Context) (int, error) {
+	if s == nil || s.repo == nil {
+		return 0, errors.New("engineering notes repository is not configured")
+	}
+	return s.repo.Count(ctx)
 }
 
 func (s *Service) GetByID(ctx context.Context, id int64) (Note, error) {
@@ -147,7 +155,11 @@ func sanitizeURL(raw string) string {
 		return ""
 	}
 	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
 		return ""
 	}
 	return parsed.String()

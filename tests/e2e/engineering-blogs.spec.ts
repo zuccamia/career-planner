@@ -2,9 +2,8 @@ import { expect, test } from '@playwright/test';
 import { createCompany, createEngineeringNote } from './helpers';
 
 test('user can create, edit, delete, and filter engineering blog notes', async ({ page }) => {
-  const uniqueSuffix = Date.now().toString();
-  const cloudflareCompany = `Cloudflare E2E ${uniqueSuffix}, Inc.`;
-  const figmaCompany = `Figma E2E ${uniqueSuffix}, Inc.`;
+  const cloudflareCompany = 'Cloudflare E2E, Inc.';
+  const figmaCompany = 'Figma E2E, Inc.';
 
   await createCompany(page, {
     submittedName: cloudflareCompany,
@@ -58,7 +57,7 @@ test('user can create, edit, delete, and filter engineering blog notes', async (
 });
 
 test('engineering blog forms show validation errors', async ({ page }) => {
-  const githubCompany = `GitHub E2E ${Date.now().toString()}, Inc.`;
+  const githubCompany = 'GitHub E2E, Inc.';
 
   await createCompany(page, {
     submittedName: githubCompany,

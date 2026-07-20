@@ -16,6 +16,19 @@ func NewSQLRepository(db *sql.DB) *SQLRepository {
 	return &SQLRepository{db: db}
 }
 
+func (r *SQLRepository) Count(ctx context.Context) (int, error) {
+	if r == nil || r.db == nil {
+		return 0, errors.New("database is not configured")
+	}
+
+	row := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM people`)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("count people: %w", err)
+	}
+	return count, nil
+}
+
 func (r *SQLRepository) Create(ctx context.Context, input CreatePersonInput) (Person, error) {
 	if r == nil || r.db == nil {
 		return Person{}, errors.New("database is not configured")
@@ -50,17 +63,31 @@ func (r *SQLRepository) Create(ctx context.Context, input CreatePersonInput) (Pe
 		return Person{}, fmt.Errorf("fetch inserted person id: %w", err)
 	}
 
-	people, err := r.List(ctx)
-	if err != nil {
-		return Person{}, err
-	}
-	for _, person := range people {
-		if person.ID == id {
-			return person, nil
-		}
+	return r.GetByID(ctx, id)
+}
+
+func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Person, error) {
+	if r == nil || r.db == nil {
+		return Person{}, errors.New("database is not configured")
 	}
 
-	return Person{}, errors.New("created person could not be loaded")
+	row := r.db.QueryRowContext(ctx, `
+		SELECT
+			p.id,
+			p.full_name,
+			p.title,
+			COALESCE(p.company_id, 0),
+			COALESCE(c.official_name, ''),
+			p.linkedin_url,
+			p.notes,
+			p.created_at,
+			p.updated_at
+		FROM people p
+		LEFT JOIN companies c ON c.id = p.company_id
+		WHERE p.id = ?
+	`, id)
+
+	return scanPerson(row)
 }
 
 func (r *SQLRepository) List(ctx context.Context) ([]Person, error) {
@@ -90,34 +117,10 @@ func (r *SQLRepository) List(ctx context.Context) ([]Person, error) {
 
 	peopleList := make([]Person, 0)
 	for rows.Next() {
-		var person Person
-		var createdAt string
-		var updatedAt string
-		if err := rows.Scan(
-			&person.ID,
-			&person.FullName,
-			&person.Title,
-			&person.CompanyID,
-			&person.CompanyName,
-			&person.LinkedInURL,
-			&person.Notes,
-			&createdAt,
-			&updatedAt,
-		); err != nil {
-			return nil, fmt.Errorf("scan people row: %w", err)
-		}
-
-		parsedCreatedAt, err := time.Parse(time.RFC3339Nano, createdAt)
+		person, err := scanPerson(rows)
 		if err != nil {
-			return nil, fmt.Errorf("parse person created_at: %w", err)
+			return nil, err
 		}
-		parsedUpdatedAt, err := time.Parse(time.RFC3339Nano, updatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("parse person updated_at: %w", err)
-		}
-		person.CreatedAt = parsedCreatedAt
-		person.UpdatedAt = parsedUpdatedAt
-
 		peopleList = append(peopleList, person)
 	}
 
@@ -126,4 +129,43 @@ func (r *SQLRepository) List(ctx context.Context) ([]Person, error) {
 	}
 
 	return peopleList, nil
+}
+
+type personScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanPerson(scanner personScanner) (Person, error) {
+	var person Person
+	var createdAt string
+	var updatedAt string
+	if err := scanner.Scan(
+		&person.ID,
+		&person.FullName,
+		&person.Title,
+		&person.CompanyID,
+		&person.CompanyName,
+		&person.LinkedInURL,
+		&person.Notes,
+		&createdAt,
+		&updatedAt,
+	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Person{}, errors.New("person not found")
+		}
+		return Person{}, fmt.Errorf("scan person row: %w", err)
+	}
+
+	parsedCreatedAt, err := time.Parse(time.RFC3339Nano, createdAt)
+	if err != nil {
+		return Person{}, fmt.Errorf("parse person created_at: %w", err)
+	}
+	parsedUpdatedAt, err := time.Parse(time.RFC3339Nano, updatedAt)
+	if err != nil {
+		return Person{}, fmt.Errorf("parse person updated_at: %w", err)
+	}
+	person.CreatedAt = parsedCreatedAt
+	person.UpdatedAt = parsedUpdatedAt
+
+	return person, nil
 }

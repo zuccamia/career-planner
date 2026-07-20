@@ -16,6 +16,19 @@ func NewSQLRepository(db *sql.DB) *SQLRepository {
 	return &SQLRepository{db: db}
 }
 
+func (r *SQLRepository) Count(ctx context.Context) (int, error) {
+	if r == nil || r.db == nil {
+		return 0, errors.New("database is not configured")
+	}
+
+	row := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM companies`)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("count companies: %w", err)
+	}
+	return count, nil
+}
+
 func (r *SQLRepository) Create(ctx context.Context, input CreateCompanyInput) (Company, error) {
 	if r == nil || r.db == nil {
 		return Company{}, errors.New("database is not configured")

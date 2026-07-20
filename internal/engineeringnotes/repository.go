@@ -19,6 +19,19 @@ func NewSQLRepository(db *sql.DB) *SQLRepository {
 	return &SQLRepository{db: db}
 }
 
+func (r *SQLRepository) Count(ctx context.Context) (int, error) {
+	if r == nil || r.db == nil {
+		return 0, errors.New("database is not configured")
+	}
+
+	row := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM engineering_blog_notes`)
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("count engineering blog notes: %w", err)
+	}
+	return count, nil
+}
+
 func (r *SQLRepository) Create(ctx context.Context, input CreateInput) (Note, error) {
 	if r == nil || r.db == nil {
 		return Note{}, errors.New("database is not configured")
@@ -49,17 +62,7 @@ func (r *SQLRepository) Create(ctx context.Context, input CreateInput) (Note, er
 		return Note{}, fmt.Errorf("fetch inserted engineering blog note id: %w", err)
 	}
 
-	notes, err := r.ListByCompanyID(ctx, input.CompanyID)
-	if err != nil {
-		return Note{}, err
-	}
-	for _, note := range notes {
-		if note.ID == id {
-			return note, nil
-		}
-	}
-
-	return Note{}, errors.New("created engineering blog note could not be loaded")
+	return r.GetByID(ctx, id)
 }
 
 func (r *SQLRepository) List(ctx context.Context) ([]Note, error) {

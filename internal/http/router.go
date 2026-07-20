@@ -6,11 +6,13 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/ngochoang/career-planner/internal/companies"
+	"github.com/ngochoang/career-planner/internal/db"
 	"github.com/ngochoang/career-planner/internal/dossiers"
 	"github.com/ngochoang/career-planner/internal/engineeringnotes"
 	"github.com/ngochoang/career-planner/internal/people"
@@ -21,17 +23,27 @@ type Server struct {
 	dossiers         *dossiers.Service
 	engineeringNotes *engineeringnotes.Service
 	people           *people.Service
+	environment      string
+	databasePath     string
 }
 
-func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, engineeringNotesService *engineeringnotes.Service, peopleService *people.Service) http.Handler {
+type Options struct {
+	Environment  string
+	DatabasePath string
+}
+
+func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, engineeringNotesService *engineeringnotes.Service, peopleService *people.Service, options Options) http.Handler {
 	server := &Server{
 		companies:        companiesService,
 		dossiers:         dossiersService,
 		engineeringNotes: engineeringNotesService,
 		people:           peopleService,
+		environment:      strings.TrimSpace(options.Environment),
+		databasePath:     strings.TrimSpace(options.DatabasePath),
 	}
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("POST /test/reset", server.testReset)
 	mux.HandleFunc("GET /", server.home)
 	mux.HandleFunc("GET /companies", server.companiesIndex)
 	mux.HandleFunc("GET /companies/new", server.companyNewForm)
@@ -53,6 +65,29 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.HandleFunc("POST /people", server.personCreate)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	return logging(mux)
+}
+
+func (s *Server) testReset(w http.ResponseWriter, r *http.Request) {
+	if s.environment != "test" {
+		http.NotFound(w, r)
+		return
+	}
+	if !db.IsSafeTestPath(s.databasePath) {
+		log.Printf("refusing test reset for unsafe db path: %s", s.databasePath)
+		http.Error(w, "unsafe test database path", http.StatusForbidden)
+		return
+	}
+
+	if err := db.Reset(r.Context(), s.databasePath); err != nil {
+		log.Printf("reset test database: %v", err)
+		http.Error(w, "could not reset test database", http.StatusInternalServerError)
+		return
+	}
+
+	if os.Getenv("DATABASE_PATH") != s.databasePath {
+		_ = os.Setenv("DATABASE_PATH", s.databasePath)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func parseTemplates(names ...string) (*template.Template, error) {
@@ -787,32 +822,32 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 	}
 
 	if _, ok := data["CompaniesCount"]; !ok && s != nil && s.companies != nil {
-		companiesList, err := s.companies.List(r.Context())
+		count, err := s.companies.Count(r.Context())
 		if err != nil {
-			log.Printf("list companies for layout: %v", err)
+			log.Printf("count companies for layout: %v", err)
 			data["CompaniesCount"] = 0
 		} else {
-			data["CompaniesCount"] = len(companiesList)
+			data["CompaniesCount"] = count
 		}
 	}
 
 	if _, ok := data["PeopleCount"]; !ok && s != nil && s.people != nil {
-		peopleList, err := s.people.List(r.Context())
+		count, err := s.people.Count(r.Context())
 		if err != nil {
-			log.Printf("list people for layout: %v", err)
+			log.Printf("count people for layout: %v", err)
 			data["PeopleCount"] = 0
 		} else {
-			data["PeopleCount"] = len(peopleList)
+			data["PeopleCount"] = count
 		}
 	}
 
 	if _, ok := data["EngineeringBlogsCount"]; !ok && s != nil && s.engineeringNotes != nil {
-		engineeringNotesList, err := s.engineeringNotes.List(r.Context())
+		count, err := s.engineeringNotes.Count(r.Context())
 		if err != nil {
-			log.Printf("list engineering blog notes for layout: %v", err)
+			log.Printf("count engineering blog notes for layout: %v", err)
 			data["EngineeringBlogsCount"] = 0
 		} else {
-			data["EngineeringBlogsCount"] = len(engineeringNotesList)
+			data["EngineeringBlogsCount"] = count
 		}
 	}
 

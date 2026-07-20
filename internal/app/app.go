@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/ngochoang/career-planner/internal/companies"
 	"github.com/ngochoang/career-planner/internal/db"
@@ -16,17 +17,30 @@ import (
 )
 
 type App struct {
-	Addr   string
-	Router http.Handler
-	DB     *sql.DB
+	Addr        string
+	Router      http.Handler
+	DB          *sql.DB
+	DBPath      string
+	Environment string
 }
 
 func New() App {
 	ctx := context.Background()
-	database, err := db.Open(ctx, os.Getenv("DATABASE_PATH"))
+	databasePath := os.Getenv("DATABASE_PATH")
+	resolvedPath, err := db.ResolvePath(databasePath)
 	if err != nil {
 		panic(err)
 	}
+	database, err := db.Open(ctx, databasePath)
+	if err != nil {
+		panic(err)
+	}
+
+	addr := strings.TrimSpace(os.Getenv("APP_ADDR"))
+	if addr == "" {
+		addr = ":8080"
+	}
+	environment := strings.TrimSpace(os.Getenv("APP_ENV"))
 
 	companyRepo := companies.NewSQLRepository(database)
 	llmClient := newLLMClient()
@@ -37,11 +51,16 @@ func New() App {
 	engineeringNotesService := engineeringnotes.NewService(engineeringNotesRepo)
 	peopleRepo := people.NewSQLRepository(database)
 	peopleService := people.NewService(peopleRepo)
-	router := apphttp.NewRouter(companyService, dossierService, engineeringNotesService, peopleService)
+	router := apphttp.NewRouter(companyService, dossierService, engineeringNotesService, peopleService, apphttp.Options{
+		Environment:  environment,
+		DatabasePath: resolvedPath,
+	})
 	return App{
-		Addr:   ":8080",
-		Router: router,
-		DB:     database,
+		Addr:        addr,
+		Router:      router,
+		DB:          database,
+		DBPath:      resolvedPath,
+		Environment: environment,
 	}
 }
 

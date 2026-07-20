@@ -54,6 +54,7 @@ type UpdateCompanyInput struct {
 var ErrCompanyNotFound = errors.New("company not found")
 
 type Repository interface {
+	Count(ctx context.Context) (int, error)
 	Create(ctx context.Context, input CreateCompanyInput) (Company, error)
 	Delete(ctx context.Context, id int64) error
 	GetByID(ctx context.Context, id int64) (Company, error)
@@ -122,7 +123,11 @@ func sanitizeURL(raw string) string {
 		return ""
 	}
 	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
 		return ""
 	}
 	return parsed.String()
@@ -165,6 +170,13 @@ func (s *Service) List(ctx context.Context) ([]Company, error) {
 		return nil, errors.New("companies repository is not configured")
 	}
 	return s.repo.List(ctx)
+}
+
+func (s *Service) Count(ctx context.Context) (int, error) {
+	if s == nil || s.repo == nil {
+		return 0, errors.New("companies repository is not configured")
+	}
+	return s.repo.Count(ctx)
 }
 
 func (s *Service) Delete(ctx context.Context, id int64) error {
