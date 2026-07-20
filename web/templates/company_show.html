@@ -1,140 +1,168 @@
 {{define "company_show.html"}}{{template "base" .}}{{end}}
 
 {{define "content"}}
-<p><a href="/companies/new">← Add another company</a></p>
+<section class="space-y-2">
+  <p><a class="text-sm text-slate-500 transition hover:text-slate-900" href="/">← Back to home</a></p>
+  <div class="space-y-1">
+    <h1>{{.Company.OfficialName}}</h1>
+    <p class="text-lg text-slate-500">Originally submitted as {{.Company.SubmittedName}}</p>
+  </div>
+</section>
 
-<h1>{{.Company.OfficialName}}</h1>
-<p class="muted">Originally submitted as {{.Company.SubmittedName}}</p>
-
-<section class="card">
-  <h2>Confirmed details</h2>
-  <dl class="details">
-    <div>
-      <dt>Official name</dt>
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="space-y-1">
+    <h2 class="text-xl font-semibold text-slate-900">Confirmed details</h2>
+  </div>
+  <dl class="grid gap-4 sm:grid-cols-2">
+    <div class="grid gap-1">
+      <dt class="text-sm font-semibold text-slate-500">Official name</dt>
       <dd>{{.Company.OfficialName}}</dd>
     </div>
-    <div>
-      <dt>Website</dt>
+    <div class="grid gap-1">
+      <dt class="text-sm font-semibold text-slate-500">Website</dt>
       <dd>
         {{if .HasWebsite}}
         <a href="{{.Company.Website}}" target="_blank" rel="noreferrer">{{.Company.Website}}</a>
         {{else}}
-        <span class="muted">Not provided</span>
+        <span class="text-slate-500">Not provided</span>
         {{end}}
       </dd>
     </div>
-    <div>
-      <dt>ATS URL</dt>
+    <div class="grid gap-1">
+      <dt class="text-sm font-semibold text-slate-500">ATS URL</dt>
       <dd>
         {{if .HasATSURL}}
         <a href="{{.Company.ATSURL}}" target="_blank" rel="noreferrer">{{.Company.ATSURL}}</a>
         {{else}}
-        <span class="muted">Not provided</span>
+        <span class="text-slate-500">Not provided</span>
         {{end}}
       </dd>
     </div>
-    <div>
-      <dt>ATS provider</dt>
+    <div class="grid gap-1">
+      <dt class="text-sm font-semibold text-slate-500">ATS provider</dt>
       <dd>
         {{if .HasATSProvider}}
-        {{.Company.ATSProvider}}
+        <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.Company.ATSProvider}}</span>
         {{else}}
-        <span class="muted">Not provided</span>
+        <span class="text-slate-500">Not provided</span>
         {{end}}
       </dd>
     </div>
   </dl>
 </section>
 
-<section class="card">
-  <h2>Dossier</h2>
-  <form method="post" action="/companies/{{.Company.ID}}/dossier">
-    <button type="submit">Build dossier</button>
-  </form>
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-1">
+      <h2 class="text-xl font-semibold text-slate-900">Dossier</h2>
+      <p class="text-slate-500">Generate and review a first-pass summary for this company.</p>
+    </div>
+    <form method="post" action="/companies/{{.Company.ID}}/dossier">
+      <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Build dossier</button>
+    </form>
+  </div>
+
+  <div class="h-px bg-slate-200"></div>
 
   {{if .HasDossier}}
-  <p class="muted">Last updated {{.Dossier.UpdatedAt.Format "2006-01-02 15:04 MST"}}</p>
+  <p class="text-sm text-slate-500">Last updated {{.Dossier.UpdatedAt.Format "2006-01-02 15:04 MST"}}</p>
 
-  <h3>Summary</h3>
-  <p>{{.Dossier.CompanySummary}}</p>
+  <div class="space-y-6">
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">Summary</h3>
+      <p>{{.Dossier.CompanySummary}}</p>
+    </section>
 
-  <h3>What the company does</h3>
-  <p>{{.Dossier.WhatTheCompanyDoes}}</p>
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">What the company does</h3>
+      <p>{{.Dossier.WhatTheCompanyDoes}}</p>
+    </section>
 
-  <h3>Discovered sources</h3>
-  <dl class="details">
-    <div>
-      <dt>Careers URL</dt>
-      <dd>
-        {{if .HasCareersURL}}
-        <a href="{{.Dossier.CareersURL}}" target="_blank" rel="noreferrer">{{.Dossier.CareersURL}}</a>
-        {{else}}
-        <span class="muted">Not found yet</span>
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">Discovered sources</h3>
+      <dl class="grid gap-4 sm:grid-cols-2">
+        <div class="grid gap-1">
+          <dt class="text-sm font-semibold text-slate-500">Careers URL</dt>
+          <dd>
+            {{if .HasCareersURL}}
+            <a href="{{.Dossier.CareersURL}}" target="_blank" rel="noreferrer">{{.Dossier.CareersURL}}</a>
+            {{else}}
+            <span class="text-slate-500">Not found yet</span>
+            {{end}}
+          </dd>
+        </div>
+        <div class="grid gap-1">
+          <dt class="text-sm font-semibold text-slate-500">Tech blog URL</dt>
+          <dd>
+            {{if .HasTechBlogURL}}
+            <a href="{{.Dossier.TechBlogURL}}" target="_blank" rel="noreferrer">{{.Dossier.TechBlogURL}}</a>
+            {{else}}
+            <span class="text-slate-500">Not found yet</span>
+            {{end}}
+          </dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">Target customers</h3>
+      <ul class="grid gap-2 pl-5">
+        {{range .Dossier.TargetCustomers}}
+        <li>{{.}}</li>
         {{end}}
-      </dd>
-    </div>
-    <div>
-      <dt>Tech blog URL</dt>
-      <dd>
-        {{if .HasTechBlogURL}}
-        <a href="{{.Dossier.TechBlogURL}}" target="_blank" rel="noreferrer">{{.Dossier.TechBlogURL}}</a>
-        {{else}}
-        <span class="muted">Not found yet</span>
+      </ul>
+    </section>
+
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">Product areas</h3>
+      <ul class="grid gap-2 pl-5">
+        {{range .Dossier.ProductAreas}}
+        <li>{{.}}</li>
         {{end}}
-      </dd>
-    </div>
-  </dl>
+      </ul>
+    </section>
 
-  <h3>Target customers</h3>
-  <ul>
-    {{range .Dossier.TargetCustomers}}
-    <li>{{.}}</li>
-    {{end}}
-  </ul>
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">Business model clues</h3>
+      <ul class="grid gap-2 pl-5">
+        {{range .Dossier.BusinessModelClues}}
+        <li>{{.}}</li>
+        {{end}}
+      </ul>
+    </section>
 
-  <h3>Product areas</h3>
-  <ul>
-    {{range .Dossier.ProductAreas}}
-    <li>{{.}}</li>
-    {{end}}
-  </ul>
-
-  <h3>Business model clues</h3>
-  <ul>
-    {{range .Dossier.BusinessModelClues}}
-    <li>{{.}}</li>
-    {{end}}
-  </ul>
-
-  <h3>Major tech stacks</h3>
-  <dl class="details">
-    <div>
-      <dt>Languages</dt>
-      <dd>{{if .HasLanguages}}{{range $i, $v := .Dossier.MajorTechStacks.Languages}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
-    </div>
-    <div>
-      <dt>Frontend</dt>
-      <dd>{{if .HasFrontend}}{{range $i, $v := .Dossier.MajorTechStacks.Frontend}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
-    </div>
-    <div>
-      <dt>Backend</dt>
-      <dd>{{if .HasBackend}}{{range $i, $v := .Dossier.MajorTechStacks.Backend}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
-    </div>
-    <div>
-      <dt>Infrastructure</dt>
-      <dd>{{if .HasInfra}}{{range $i, $v := .Dossier.MajorTechStacks.Infrastructure}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
-    </div>
-    <div>
-      <dt>Data</dt>
-      <dd>{{if .HasData}}{{range $i, $v := .Dossier.MajorTechStacks.Data}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
-    </div>
-    <div>
-      <dt>Tooling</dt>
-      <dd>{{if .HasTooling}}{{range $i, $v := .Dossier.MajorTechStacks.Tooling}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
-    </div>
-  </dl>
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">Major tech stacks</h3>
+      <dl class="grid gap-4 sm:grid-cols-2">
+        <div class="grid gap-1">
+          <dt class="text-sm font-semibold text-slate-500">Languages</dt>
+          <dd>{{if .HasLanguages}}{{range .Dossier.MajorTechStacks.Languages}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.}}</span>{{end}}{{else}}<span class="text-slate-500">Not identified</span>{{end}}</dd>
+        </div>
+        <div class="grid gap-1">
+          <dt class="text-sm font-semibold text-slate-500">Frontend</dt>
+          <dd>{{if .HasFrontend}}{{range .Dossier.MajorTechStacks.Frontend}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.}}</span>{{end}}{{else}}<span class="text-slate-500">Not identified</span>{{end}}</dd>
+        </div>
+        <div class="grid gap-1">
+          <dt class="text-sm font-semibold text-slate-500">Backend</dt>
+          <dd>{{if .HasBackend}}{{range .Dossier.MajorTechStacks.Backend}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.}}</span>{{end}}{{else}}<span class="text-slate-500">Not identified</span>{{end}}</dd>
+        </div>
+        <div class="grid gap-1">
+          <dt class="text-sm font-semibold text-slate-500">Infrastructure</dt>
+          <dd>{{if .HasInfra}}{{range .Dossier.MajorTechStacks.Infrastructure}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.}}</span>{{end}}{{else}}<span class="text-slate-500">Not identified</span>{{end}}</dd>
+        </div>
+        <div class="grid gap-1">
+          <dt class="text-sm font-semibold text-slate-500">Data</dt>
+          <dd>{{if .HasData}}{{range .Dossier.MajorTechStacks.Data}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.}}</span>{{end}}{{else}}<span class="text-slate-500">Not identified</span>{{end}}</dd>
+        </div>
+        <div class="grid gap-1">
+          <dt class="text-sm font-semibold text-slate-500">Tooling</dt>
+          <dd>{{if .HasTooling}}{{range .Dossier.MajorTechStacks.Tooling}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.}}</span>{{end}}{{else}}<span class="text-slate-500">Not identified</span>{{end}}</dd>
+        </div>
+      </dl>
+    </section>
+  </div>
   {{else}}
-  <p>No dossier yet. Build one to generate a first-pass company summary and source links.</p>
+  <p class="rounded-2xl bg-slate-50 px-4 py-4 text-slate-500">No dossier yet. Build one to generate a first-pass company summary and source links.</p>
   {{end}}
 </section>
 {{end}}

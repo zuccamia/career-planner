@@ -34,6 +34,13 @@ func main() {
 	build.Dir = root
 	build.Stdout = os.Stdout
 	build.Stderr = os.Stderr
+	cssBuild := exec.Command("npm", "run", "build:css")
+	cssBuild.Dir = root
+	cssBuild.Stdout = os.Stdout
+	cssBuild.Stderr = os.Stderr
+	if err := cssBuild.Run(); err != nil {
+		log.Fatal(err)
+	}
 	if err := build.Run(); err != nil {
 		log.Fatal(err)
 	}

@@ -1,0 +1,26 @@
+{
+  "name": "career-planner",
+  "version": "1.0.0",
+  "description": "Blank-canvas Go webapp scaffold for a company dossier and job tracking MVP.",
+  "main": "index.js",
+  "scripts": {
+    "build:css": "npx @tailwindcss/cli -i ./web/static/tailwind.css -o ./web/static/app.css --minify",
+    "watch:css": "npx @tailwindcss/cli -i ./web/static/tailwind.css -o ./web/static/app.css --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zuccamia/career-planner.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/zuccamia/career-planner/issues"
+  },
+  "homepage": "https://github.com/zuccamia/career-planner#readme",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  }
+}
