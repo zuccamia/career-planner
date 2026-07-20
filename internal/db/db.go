@@ -136,6 +136,8 @@ CREATE TABLE IF NOT EXISTS dossiers (
     FOREIGN KEY (company_id) REFERENCES companies(id)
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_dossiers_company_id ON dossiers(company_id);
+
 CREATE TABLE IF NOT EXISTS people (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name TEXT NOT NULL,

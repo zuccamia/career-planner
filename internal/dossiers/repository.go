@@ -24,7 +24,7 @@ func NewSQLRepository(db *sql.DB) *SQLRepository {
 	return &SQLRepository{db: db}
 }
 
-// Create inserts a completed dossier and returns the stored record.
+// Create stores a completed dossier, overwriting any existing dossier for the company.
 func (r *SQLRepository) Create(ctx context.Context, dossier Dossier) (Dossier, error) {
 	targetCustomersJSON, err := json.Marshal(dossier.TargetCustomers)
 	if err != nil {
@@ -51,28 +51,12 @@ func (r *SQLRepository) Create(ctx context.Context, dossier Dossier) (Dossier, e
 		return Dossier{}, fmt.Errorf("marshal company culture notes: %w", err)
 	}
 
-	now := time.Now().UTC()
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 	result, err := r.db.ExecContext(ctx, `
-		INSERT INTO dossiers (
-			company_id,
-			status,
-			careers_url,
-			company_summary,
-			what_the_company_does,
-			target_customers_json,
-			product_areas_json,
-			business_model_clues_json,
-			recent_product_launches_json,
-			company_culture_notes_json,
-			has_internships,
-			internship_seasons_json,
-			internship_summary,
-			major_tech_stacks_json,
-			created_at,
-			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		UPDATE dossiers
+		SET status = ?, careers_url = ?, company_summary = ?, what_the_company_does = ?, target_customers_json = ?, product_areas_json = ?, business_model_clues_json = ?, recent_product_launches_json = ?, company_culture_notes_json = ?, has_internships = ?, internship_seasons_json = ?, internship_summary = ?, major_tech_stacks_json = ?, updated_at = ?
+		WHERE company_id = ?
 	`,
-		dossier.CompanyID,
 		dossier.Status,
 		dossier.CareersURL,
 		dossier.CompanySummary,
@@ -86,19 +70,68 @@ func (r *SQLRepository) Create(ctx context.Context, dossier Dossier) (Dossier, e
 		marshalJSON(dossier.InternshipSeasons),
 		dossier.InternshipSummary,
 		string(majorTechStacksJSON),
-		now.Format(time.RFC3339Nano),
-		now.Format(time.RFC3339Nano),
+		now,
+		dossier.CompanyID,
 	)
 	if err != nil {
-		return Dossier{}, fmt.Errorf("insert dossier: %w", err)
+		return Dossier{}, fmt.Errorf("update dossier: %w", err)
 	}
 
-	id, err := result.LastInsertId()
+	affected, err := result.RowsAffected()
 	if err != nil {
-		return Dossier{}, fmt.Errorf("fetch inserted dossier id: %w", err)
+		return Dossier{}, fmt.Errorf("fetch updated dossier rows affected: %w", err)
+	}
+	if affected == 0 {
+		result, err = r.db.ExecContext(ctx, `
+			INSERT INTO dossiers (
+				company_id,
+				status,
+				careers_url,
+				company_summary,
+				what_the_company_does,
+				target_customers_json,
+				product_areas_json,
+				business_model_clues_json,
+				recent_product_launches_json,
+				company_culture_notes_json,
+				has_internships,
+				internship_seasons_json,
+				internship_summary,
+				major_tech_stacks_json,
+				created_at,
+				updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`,
+			dossier.CompanyID,
+			dossier.Status,
+			dossier.CareersURL,
+			dossier.CompanySummary,
+			dossier.WhatTheCompanyDoes,
+			string(targetCustomersJSON),
+			string(productAreasJSON),
+			string(businessModelCluesJSON),
+			string(recentProductLaunchesJSON),
+			string(companyCultureNotesJSON),
+			dossier.HasInternships,
+			marshalJSON(dossier.InternshipSeasons),
+			dossier.InternshipSummary,
+			string(majorTechStacksJSON),
+			now,
+			now,
+		)
+		if err != nil {
+			return Dossier{}, fmt.Errorf("insert dossier: %w", err)
+		}
+
+		id, err := result.LastInsertId()
+		if err != nil {
+			return Dossier{}, fmt.Errorf("fetch inserted dossier id: %w", err)
+		}
+
+		return r.GetByID(ctx, id)
 	}
 
-	return r.GetByID(ctx, id)
+	return r.GetLatestByCompanyID(ctx, dossier.CompanyID)
 }
 
 // GetLatestByCompanyID returns the most recently created dossier for a company.
