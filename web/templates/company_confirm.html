@@ -1,0 +1,30 @@
+{{define "company_confirm.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<h1>Confirm company</h1>
+<p>Review the company details before the app digs deeper.</p>
+
+{{if .Note}}
+<p>{{.Note}}</p>
+{{end}}
+
+{{if .Reasoning}}
+<p><strong>Why this guess:</strong> {{.Reasoning}}</p>
+{{end}}
+
+<form method="post" action="#">
+  <label for="official_name">Official name</label>
+  <input id="official_name" name="official_name" type="text" value="{{.OfficialName}}">
+
+  <label for="website">Website</label>
+  <input id="website" name="website" type="url" value="{{.Website}}" placeholder="https://example.com">
+
+  <label for="ats_url">ATS URL</label>
+  <input id="ats_url" name="ats_url" type="url" value="{{.ATSURL}}" placeholder="https://jobs.example.com">
+
+  <label for="ats_provider">ATS provider</label>
+  <input id="ats_provider" name="ats_provider" type="text" value="{{.ATSProvider}}" placeholder="Greenhouse">
+
+  <button type="submit">Confirm</button>
+</form>
+{{end}}

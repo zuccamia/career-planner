@@ -1,0 +1,12 @@
+{{define "index.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<h1>Start with a company</h1>
+<p>Enter a company name, confirm the official details, then build the dossier.</p>
+
+<form method="post" action="/companies/new">
+  <label for="company_name">Company name</label>
+  <input id="company_name" name="company_name" type="text" placeholder="e.g. Stripe" required>
+  <button type="submit">Continue</button>
+</form>
+{{end}}
