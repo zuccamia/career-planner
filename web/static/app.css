@@ -11,6 +11,10 @@ body {
   padding: 0 1rem;
 }
 
+a {
+  color: #2563eb;
+}
+
 form {
   display: grid;
   gap: 0.75rem;
@@ -21,7 +25,57 @@ input, button {
   padding: 0.75rem;
 }
 
+input:disabled {
+  background: #e5e7eb;
+  color: #4b5563;
+}
+
 button {
   width: fit-content;
   cursor: pointer;
+}
+
+.error {
+  color: #b91c1c;
+}
+
+.muted {
+  color: #6b7280;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.75rem;
+  padding: 1rem 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.details {
+  display: grid;
+  gap: 1rem;
+}
+
+.details div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.details dt {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.details dd {
+  margin: 0;
+}
+
+.company-list {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.company-list li + li {
+  margin-top: 0.5rem;
 }

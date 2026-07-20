@@ -9,4 +9,19 @@
   <input id="company_name" name="company_name" type="text" placeholder="e.g. Stripe" required>
   <button type="submit">Continue</button>
 </form>
+
+<section class="card">
+  <h2>Saved companies</h2>
+  {{if .HasCompanies}}
+  <ul class="company-list">
+    {{range .Companies}}
+    <li>
+      <a href="/companies/{{.ID}}">{{.OfficialName}}</a>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="muted">No saved companies yet.</p>
+  {{end}}
+</section>
 {{end}}

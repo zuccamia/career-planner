@@ -2,9 +2,11 @@ package companies
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/ngochoang/career-planner/internal/llm"
 )
@@ -18,12 +20,40 @@ type Candidate struct {
 	Reasoning    string  `json:"reasoning"`
 }
 
-type Service struct {
-	client llm.Client
+type Company struct {
+	ID            int64
+	SubmittedName string
+	OfficialName  string
+	Website       string
+	ATSURL        string
+	ATSProvider   string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
-func NewService(client llm.Client) *Service {
-	return &Service{client: client}
+type CreateCompanyInput struct {
+	SubmittedName string
+	OfficialName  string
+	Website       string
+	ATSURL        string
+	ATSProvider   string
+}
+
+var ErrCompanyNotFound = errors.New("company not found")
+
+type Repository interface {
+	Create(ctx context.Context, input CreateCompanyInput) (Company, error)
+	GetByID(ctx context.Context, id int64) (Company, error)
+	List(ctx context.Context) ([]Company, error)
+}
+
+type Service struct {
+	client llm.Client
+	repo   Repository
+}
+
+func NewService(client llm.Client, repo Repository) *Service {
+	return &Service{client: client, repo: repo}
 }
 
 func (s *Service) GuessCandidate(ctx context.Context, input string) (Candidate, error) {
@@ -81,6 +111,44 @@ func sanitizeURL(raw string) string {
 		return ""
 	}
 	return parsed.String()
+}
+
+func (s *Service) Create(ctx context.Context, input CreateCompanyInput) (Company, error) {
+	if s == nil || s.repo == nil {
+		return Company{}, errors.New("companies repository is not configured")
+	}
+
+	input.SubmittedName = strings.TrimSpace(input.SubmittedName)
+	input.OfficialName = strings.TrimSpace(input.OfficialName)
+	input.Website = sanitizeURL(input.Website)
+	input.ATSURL = sanitizeURL(input.ATSURL)
+	input.ATSProvider = strings.TrimSpace(input.ATSProvider)
+
+	if input.SubmittedName == "" {
+		return Company{}, errors.New("submitted company name is required")
+	}
+	if input.OfficialName == "" {
+		input.OfficialName = input.SubmittedName
+	}
+
+	return s.repo.Create(ctx, input)
+}
+
+func (s *Service) GetByID(ctx context.Context, id int64) (Company, error) {
+	if s == nil || s.repo == nil {
+		return Company{}, errors.New("companies repository is not configured")
+	}
+	if id <= 0 {
+		return Company{}, ErrCompanyNotFound
+	}
+	return s.repo.GetByID(ctx, id)
+}
+
+func (s *Service) List(ctx context.Context) ([]Company, error) {
+	if s == nil || s.repo == nil {
+		return nil, errors.New("companies repository is not configured")
+	}
+	return s.repo.List(ctx)
 }
 
 const companyCandidateSystemPrompt = `You identify one best-effort company candidate from a user-provided company name.

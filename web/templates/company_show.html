@@ -1,0 +1,140 @@
+{{define "company_show.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<p><a href="/companies/new">← Add another company</a></p>
+
+<h1>{{.Company.OfficialName}}</h1>
+<p class="muted">Originally submitted as {{.Company.SubmittedName}}</p>
+
+<section class="card">
+  <h2>Confirmed details</h2>
+  <dl class="details">
+    <div>
+      <dt>Official name</dt>
+      <dd>{{.Company.OfficialName}}</dd>
+    </div>
+    <div>
+      <dt>Website</dt>
+      <dd>
+        {{if .HasWebsite}}
+        <a href="{{.Company.Website}}" target="_blank" rel="noreferrer">{{.Company.Website}}</a>
+        {{else}}
+        <span class="muted">Not provided</span>
+        {{end}}
+      </dd>
+    </div>
+    <div>
+      <dt>ATS URL</dt>
+      <dd>
+        {{if .HasATSURL}}
+        <a href="{{.Company.ATSURL}}" target="_blank" rel="noreferrer">{{.Company.ATSURL}}</a>
+        {{else}}
+        <span class="muted">Not provided</span>
+        {{end}}
+      </dd>
+    </div>
+    <div>
+      <dt>ATS provider</dt>
+      <dd>
+        {{if .HasATSProvider}}
+        {{.Company.ATSProvider}}
+        {{else}}
+        <span class="muted">Not provided</span>
+        {{end}}
+      </dd>
+    </div>
+  </dl>
+</section>
+
+<section class="card">
+  <h2>Dossier</h2>
+  <form method="post" action="/companies/{{.Company.ID}}/dossier">
+    <button type="submit">Build dossier</button>
+  </form>
+
+  {{if .HasDossier}}
+  <p class="muted">Last updated {{.Dossier.UpdatedAt.Format "2006-01-02 15:04 MST"}}</p>
+
+  <h3>Summary</h3>
+  <p>{{.Dossier.CompanySummary}}</p>
+
+  <h3>What the company does</h3>
+  <p>{{.Dossier.WhatTheCompanyDoes}}</p>
+
+  <h3>Discovered sources</h3>
+  <dl class="details">
+    <div>
+      <dt>Careers URL</dt>
+      <dd>
+        {{if .HasCareersURL}}
+        <a href="{{.Dossier.CareersURL}}" target="_blank" rel="noreferrer">{{.Dossier.CareersURL}}</a>
+        {{else}}
+        <span class="muted">Not found yet</span>
+        {{end}}
+      </dd>
+    </div>
+    <div>
+      <dt>Tech blog URL</dt>
+      <dd>
+        {{if .HasTechBlogURL}}
+        <a href="{{.Dossier.TechBlogURL}}" target="_blank" rel="noreferrer">{{.Dossier.TechBlogURL}}</a>
+        {{else}}
+        <span class="muted">Not found yet</span>
+        {{end}}
+      </dd>
+    </div>
+  </dl>
+
+  <h3>Target customers</h3>
+  <ul>
+    {{range .Dossier.TargetCustomers}}
+    <li>{{.}}</li>
+    {{end}}
+  </ul>
+
+  <h3>Product areas</h3>
+  <ul>
+    {{range .Dossier.ProductAreas}}
+    <li>{{.}}</li>
+    {{end}}
+  </ul>
+
+  <h3>Business model clues</h3>
+  <ul>
+    {{range .Dossier.BusinessModelClues}}
+    <li>{{.}}</li>
+    {{end}}
+  </ul>
+
+  <h3>Major tech stacks</h3>
+  <dl class="details">
+    <div>
+      <dt>Languages</dt>
+      <dd>{{if .HasLanguages}}{{range $i, $v := .Dossier.MajorTechStacks.Languages}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
+    </div>
+    <div>
+      <dt>Frontend</dt>
+      <dd>{{if .HasFrontend}}{{range $i, $v := .Dossier.MajorTechStacks.Frontend}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
+    </div>
+    <div>
+      <dt>Backend</dt>
+      <dd>{{if .HasBackend}}{{range $i, $v := .Dossier.MajorTechStacks.Backend}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
+    </div>
+    <div>
+      <dt>Infrastructure</dt>
+      <dd>{{if .HasInfra}}{{range $i, $v := .Dossier.MajorTechStacks.Infrastructure}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
+    </div>
+    <div>
+      <dt>Data</dt>
+      <dd>{{if .HasData}}{{range $i, $v := .Dossier.MajorTechStacks.Data}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
+    </div>
+    <div>
+      <dt>Tooling</dt>
+      <dd>{{if .HasTooling}}{{range $i, $v := .Dossier.MajorTechStacks.Tooling}}{{if $i}}, {{end}}{{$v}}{{end}}{{else}}<span class="muted">Not identified</span>{{end}}</dd>
+    </div>
+  </dl>
+  {{else}}
+  <p>No dossier yet. Build one to generate a first-pass company summary and source links.</p>
+  {{end}}
+</section>
+{{end}}

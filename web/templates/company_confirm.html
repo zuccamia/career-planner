@@ -4,6 +4,10 @@
 <h1>Confirm company</h1>
 <p>Review the company details before the app digs deeper.</p>
 
+{{if .Error}}
+<p class="error">{{.Error}}</p>
+{{end}}
+
 {{if .Note}}
 <p>{{.Note}}</p>
 {{end}}
@@ -12,7 +16,12 @@
 <p><strong>Why this guess:</strong> {{.Reasoning}}</p>
 {{end}}
 
-<form method="post" action="#">
+<form method="post" action="/companies">
+  <input name="submitted_name" type="hidden" value="{{.SubmittedName}}">
+
+  <label for="submitted_name_display">Submitted name</label>
+  <input id="submitted_name_display" type="text" value="{{.SubmittedName}}" disabled>
+
   <label for="official_name">Official name</label>
   <input id="official_name" name="official_name" type="text" value="{{.OfficialName}}">
 
