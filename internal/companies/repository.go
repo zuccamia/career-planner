@@ -69,6 +69,9 @@ func (r *SQLRepository) Delete(ctx context.Context, id int64) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM dossiers WHERE company_id = ?`, id); err != nil {
 		return fmt.Errorf("delete company dossiers: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM engineering_blog_notes WHERE company_id = ?`, id); err != nil {
+		return fmt.Errorf("delete company engineering blog notes: %w", err)
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE people SET company_id = NULL, updated_at = ? WHERE company_id = ?`, time.Now().UTC().Format(time.RFC3339Nano), id); err != nil {
 		return fmt.Errorf("clear company from people: %w", err)
 	}

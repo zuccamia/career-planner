@@ -8,19 +8,26 @@
       <h1>{{.Company.OfficialName}}</h1>
     </div>
     <div class="flex items-center gap-3">
+      <form method="post" action="/companies/{{.Company.ID}}/dossier">
+        <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Build dossier</button>
+      </form>
       <a class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" href="/companies/{{.Company.ID}}/edit">Edit</a>
       <form method="post" action="/companies/{{.Company.ID}}/delete" onsubmit="return confirm('Delete this company? This will remove its dossier and detach linked people.');">
         <button class="inline-flex items-center justify-center rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-50" type="submit" aria-label="Delete company">
-          <svg class="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M3 6h18"></path>
-            <path d="M8 6V4h8v2"></path>
-            <path d="M19 6l-1 14H6L5 6"></path>
-            <path d="M10 11v6"></path>
-            <path d="M14 11v6"></path>
-          </svg>
           Delete
         </button>
       </form>
+    </div>
+  </div>
+</section>
+
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <div class="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <h2 class="text-lg font-semibold text-slate-900">Engineering blog notes</h2>
+    </div>
+    <div>
+      <a class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" href="/companies/{{.Company.ID}}/engineering-blogs">View engineering blog collection <span class="ml-2 inline-flex items-center rounded-full bg-blue-500 px-2 py-0.5 text-xs font-semibold text-white">{{.EngineeringNoteCount}}</span></a>
     </div>
   </div>
 </section>
@@ -75,15 +82,6 @@
 </section>
 
 <section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div></div>
-    <form method="post" action="/companies/{{.Company.ID}}/dossier">
-      <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Build dossier</button>
-    </form>
-  </div>
-
-  <div class="h-px bg-slate-200"></div>
-
   {{if .HasDossier}}
   <p class="text-sm text-slate-500">Last updated {{.Dossier.UpdatedAt.Format "2006-01-02 15:04 MST"}}</p>
 
@@ -111,6 +109,50 @@
     <section class="space-y-2">
       <h3 class="text-base font-semibold text-slate-900">Business model clues</h3>
       <p class="flex flex-wrap gap-2">{{range .Dossier.BusinessModelClues}}<span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">{{.}}</span>{{end}}</p>
+    </section>
+
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">Recent product launches</h3>
+      {{if .HasRecentProductLaunches}}
+      <ul class="list-disc space-y-2 pl-5 text-slate-700">
+        {{range .Dossier.RecentProductLaunches}}
+        <li>{{.}}</li>
+        {{end}}
+      </ul>
+      {{else}}
+      <p class="text-slate-500">No dated product launch entries captured yet.</p>
+      {{end}}
+    </section>
+
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">Company culture</h3>
+      {{if .HasCompanyCultureNotes}}
+      <ul class="list-disc space-y-2 pl-5 text-slate-700">
+        {{range .Dossier.CompanyCultureNotes}}
+        <li>{{.}}</li>
+        {{end}}
+      </ul>
+      {{else}}
+      <p class="text-slate-500">No company culture notes captured yet.</p>
+      {{end}}
+    </section>
+
+    <section class="space-y-2">
+      <h3 class="text-base font-semibold text-slate-900">Internships</h3>
+      {{if .Dossier.HasInternships}}
+      <p><span class="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">Internship program identified</span></p>
+      {{if .HasInternshipSeasons}}
+      <p class="flex flex-wrap gap-2">{{range .Dossier.InternshipSeasons}}<span class="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-sm text-emerald-700">{{.}}</span>{{end}}</p>
+      {{end}}
+      {{if .HasInternshipSummary}}
+      <p class="text-slate-700">{{.Dossier.InternshipSummary}}</p>
+      {{end}}
+      {{else}}
+      <p class="text-slate-500">No internship program identified yet.</p>
+      {{if .HasInternshipSummary}}
+      <p class="text-slate-700">{{.Dossier.InternshipSummary}}</p>
+      {{end}}
+      {{end}}
     </section>
 
     <section class="space-y-2">

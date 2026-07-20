@@ -38,6 +38,14 @@ func (r *SQLRepository) Create(ctx context.Context, dossier Dossier) (Dossier, e
 	if err != nil {
 		return Dossier{}, fmt.Errorf("marshal major tech stacks: %w", err)
 	}
+	recentProductLaunchesJSON, err := json.Marshal(dossier.RecentProductLaunches)
+	if err != nil {
+		return Dossier{}, fmt.Errorf("marshal recent product launches: %w", err)
+	}
+	companyCultureNotesJSON, err := json.Marshal(dossier.CompanyCultureNotes)
+	if err != nil {
+		return Dossier{}, fmt.Errorf("marshal company culture notes: %w", err)
+	}
 
 	now := time.Now().UTC()
 	result, err := r.db.ExecContext(ctx, `
@@ -50,10 +58,15 @@ func (r *SQLRepository) Create(ctx context.Context, dossier Dossier) (Dossier, e
 			target_customers_json,
 			product_areas_json,
 			business_model_clues_json,
+			recent_product_launches_json,
+			company_culture_notes_json,
+			has_internships,
+			internship_seasons_json,
+			internship_summary,
 			major_tech_stacks_json,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		dossier.CompanyID,
 		dossier.Status,
@@ -63,6 +76,11 @@ func (r *SQLRepository) Create(ctx context.Context, dossier Dossier) (Dossier, e
 		string(targetCustomersJSON),
 		string(productAreasJSON),
 		string(businessModelCluesJSON),
+		string(recentProductLaunchesJSON),
+		string(companyCultureNotesJSON),
+		dossier.HasInternships,
+		marshalJSON(dossier.InternshipSeasons),
+		dossier.InternshipSummary,
 		string(majorTechStacksJSON),
 		now.Format(time.RFC3339Nano),
 		now.Format(time.RFC3339Nano),
@@ -95,6 +113,11 @@ func (r *SQLRepository) GetLatestByCompanyID(ctx context.Context, companyID int6
 			target_customers_json,
 			product_areas_json,
 			business_model_clues_json,
+			recent_product_launches_json,
+			company_culture_notes_json,
+			has_internships,
+			internship_seasons_json,
+			internship_summary,
 			major_tech_stacks_json,
 			created_at,
 			updated_at
@@ -119,6 +142,11 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Dossier, error) 
 			target_customers_json,
 			product_areas_json,
 			business_model_clues_json,
+			recent_product_launches_json,
+			company_culture_notes_json,
+			has_internships,
+			internship_seasons_json,
+			internship_summary,
 			major_tech_stacks_json,
 			created_at,
 			updated_at
@@ -138,6 +166,10 @@ func scanDossier(row scanner) (Dossier, error) {
 	var targetCustomersJSON string
 	var productAreasJSON string
 	var businessModelCluesJSON string
+	var recentProductLaunchesJSON string
+	var companyCultureNotesJSON string
+	var internshipSeasonsJSON string
+	var internshipSummary string
 	var majorTechStacksJSON string
 	var createdAt string
 	var updatedAt string
@@ -152,6 +184,11 @@ func scanDossier(row scanner) (Dossier, error) {
 		&targetCustomersJSON,
 		&productAreasJSON,
 		&businessModelCluesJSON,
+		&recentProductLaunchesJSON,
+		&companyCultureNotesJSON,
+		&dossier.HasInternships,
+		&internshipSeasonsJSON,
+		&internshipSummary,
 		&majorTechStacksJSON,
 		&createdAt,
 		&updatedAt,
@@ -171,9 +208,19 @@ func scanDossier(row scanner) (Dossier, error) {
 	if err := json.Unmarshal([]byte(businessModelCluesJSON), &dossier.BusinessModelClues); err != nil {
 		return Dossier{}, fmt.Errorf("decode dossier business_model_clues_json: %w", err)
 	}
+	if err := json.Unmarshal([]byte(recentProductLaunchesJSON), &dossier.RecentProductLaunches); err != nil {
+		return Dossier{}, fmt.Errorf("decode dossier recent_product_launches_json: %w", err)
+	}
+	if err := json.Unmarshal([]byte(companyCultureNotesJSON), &dossier.CompanyCultureNotes); err != nil {
+		return Dossier{}, fmt.Errorf("decode dossier company_culture_notes_json: %w", err)
+	}
+	if err := json.Unmarshal([]byte(internshipSeasonsJSON), &dossier.InternshipSeasons); err != nil {
+		return Dossier{}, fmt.Errorf("decode dossier internship_seasons_json: %w", err)
+	}
 	if err := json.Unmarshal([]byte(majorTechStacksJSON), &dossier.MajorTechStacks); err != nil {
 		return Dossier{}, fmt.Errorf("decode dossier major_tech_stacks_json: %w", err)
 	}
+	dossier.InternshipSummary = internshipSummary
 
 	parsedCreatedAt, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {

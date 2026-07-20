@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"html/template"
 	"log"
@@ -11,20 +12,23 @@ import (
 
 	"github.com/ngochoang/career-planner/internal/companies"
 	"github.com/ngochoang/career-planner/internal/dossiers"
+	"github.com/ngochoang/career-planner/internal/engineeringnotes"
 	"github.com/ngochoang/career-planner/internal/people"
 )
 
 type Server struct {
-	companies *companies.Service
-	dossiers  *dossiers.Service
-	people    *people.Service
+	companies        *companies.Service
+	dossiers         *dossiers.Service
+	engineeringNotes *engineeringnotes.Service
+	people           *people.Service
 }
 
-func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, peopleService *people.Service) http.Handler {
+func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, engineeringNotesService *engineeringnotes.Service, peopleService *people.Service) http.Handler {
 	server := &Server{
-		companies: companiesService,
-		dossiers:  dossiersService,
-		people:    peopleService,
+		companies:        companiesService,
+		dossiers:         dossiersService,
+		engineeringNotes: engineeringNotesService,
+		people:           peopleService,
 	}
 
 	mux := http.NewServeMux()
@@ -34,10 +38,16 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.HandleFunc("POST /companies/new", server.companyNewSubmit)
 	mux.HandleFunc("POST /companies", server.companyCreate)
 	mux.HandleFunc("GET /companies/{id}", server.companyShow)
+	mux.HandleFunc("GET /companies/{id}/engineering-blogs", server.companyEngineeringBlogs)
+	mux.HandleFunc("GET /engineering-blogs/{noteID}/edit", server.engineeringBlogEditForm)
 	mux.HandleFunc("GET /companies/{id}/edit", server.companyEditForm)
 	mux.HandleFunc("POST /companies/{id}/edit", server.companyEditSubmit)
 	mux.HandleFunc("POST /companies/{id}/delete", server.companyDelete)
 	mux.HandleFunc("POST /companies/{id}/dossier", server.companyBuildDossier)
+	mux.HandleFunc("POST /companies/{id}/engineering-notes", server.companyCreateEngineeringNote)
+	mux.HandleFunc("POST /engineering-blogs/{noteID}/edit", server.engineeringBlogEditSubmit)
+	mux.HandleFunc("POST /engineering-blogs/{noteID}/delete", server.engineeringBlogDelete)
+	mux.HandleFunc("GET /engineering-blogs", server.engineeringBlogsIndex)
 	mux.HandleFunc("GET /people", server.peopleIndex)
 	mux.HandleFunc("GET /people/new", server.personNewForm)
 	mux.HandleFunc("POST /people", server.personCreate)
@@ -91,6 +101,7 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		"TotalCompanies":          len(companiesList),
 		"CompaniesWithDossier":    companiesWithDossier,
 		"CompaniesWithoutDossier": len(companiesList) - companiesWithDossier,
+		"CompaniesCount":          len(companiesList),
 		"RecentCompanies":         recentCompanies,
 		"HasRecentCompanies":      len(recentCompanies) > 0,
 	}
@@ -107,10 +118,31 @@ func (s *Server) companiesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	companyCounts, err := s.engineeringNotes.ListCompanyCounts(r.Context())
+	if err != nil {
+		log.Printf("list engineering blog company counts: %v", err)
+		http.Error(w, "could not load companies", http.StatusInternalServerError)
+		return
+	}
+	countByCompanyID := make(map[int64]int64, len(companyCounts))
+	for _, count := range companyCounts {
+		countByCompanyID[count.CompanyID] = count.NoteCount
+	}
+	companyCards := make([]map[string]any, 0, len(companiesList))
+	for _, company := range companiesList {
+		companyCards = append(companyCards, map[string]any{
+			"ID":            company.ID,
+			"OfficialName":  company.OfficialName,
+			"SubmittedName": company.SubmittedName,
+			"Website":       company.Website,
+			"UpdatedAt":     company.UpdatedAt,
+			"NoteCount":     countByCompanyID[company.ID],
+		})
+	}
 	data := map[string]any{
 		"Title":        "Companies",
 		"ActiveNav":    "companies",
-		"Companies":    companiesList,
+		"Companies":    companyCards,
 		"HasCompanies": len(companiesList) > 0,
 	}
 	if err := s.render(w, r, "companies_index.html", data); err != nil {
@@ -343,26 +375,271 @@ func (s *Server) companyShow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := map[string]any{
-		"Title":          company.OfficialName,
-		"ActiveNav":      "companies",
-		"Company":        company,
-		"HasWebsite":     company.Website != "",
-		"HasTechBlogURL": company.TechBlogURL != "",
-		"HasATSURL":      company.ATSURL != "",
-		"HasATSProvider": company.ATSProvider != "",
-		"HasDossier":     hasDossier,
-		"Dossier":        latestDossier,
-		"HasCareersURL":  latestDossier.CareersURL != "",
-		"HasLanguages":   len(latestDossier.MajorTechStacks.Languages) > 0,
-		"HasFrontend":    len(latestDossier.MajorTechStacks.Frontend) > 0,
-		"HasBackend":     len(latestDossier.MajorTechStacks.Backend) > 0,
-		"HasInfra":       len(latestDossier.MajorTechStacks.Infrastructure) > 0,
-		"HasData":        len(latestDossier.MajorTechStacks.Data) > 0,
-		"HasTooling":     len(latestDossier.MajorTechStacks.Tooling) > 0,
+		"Title":                    company.OfficialName,
+		"ActiveNav":                "companies",
+		"Company":                  company,
+		"HasWebsite":               company.Website != "",
+		"HasTechBlogURL":           company.TechBlogURL != "",
+		"EngineeringNoteCount":     int64(len(notesOrEmpty(s, r.Context(), id))),
+		"HasATSURL":                company.ATSURL != "",
+		"HasATSProvider":           company.ATSProvider != "",
+		"HasDossier":               hasDossier,
+		"Dossier":                  latestDossier,
+		"HasCareersURL":            latestDossier.CareersURL != "",
+		"HasRecentProductLaunches": len(latestDossier.RecentProductLaunches) > 0,
+		"HasCompanyCultureNotes":   len(latestDossier.CompanyCultureNotes) > 0,
+		"HasInternshipSeasons":     len(latestDossier.InternshipSeasons) > 0,
+		"HasInternshipSummary":     latestDossier.InternshipSummary != "",
+		"HasLanguages":             len(latestDossier.MajorTechStacks.Languages) > 0,
+		"HasFrontend":              len(latestDossier.MajorTechStacks.Frontend) > 0,
+		"HasBackend":               len(latestDossier.MajorTechStacks.Backend) > 0,
+		"HasInfra":                 len(latestDossier.MajorTechStacks.Infrastructure) > 0,
+		"HasData":                  len(latestDossier.MajorTechStacks.Data) > 0,
+		"HasTooling":               len(latestDossier.MajorTechStacks.Tooling) > 0,
 	}
 	if err := s.render(w, r, "company_show.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (s *Server) engineeringBlogsIndex(w http.ResponseWriter, r *http.Request) {
+	companyCounts, err := s.engineeringNotes.ListCompanyCounts(r.Context())
+	if err != nil {
+		log.Printf("list engineering blog company counts: %v", err)
+		http.Error(w, "could not load engineering blog notes", http.StatusInternalServerError)
+		return
+	}
+	selectedCompanyID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("company_id")), 10, 64)
+	var notes []engineeringnotes.Note
+	if selectedCompanyID > 0 {
+		notes, err = s.engineeringNotes.ListByCompanyID(r.Context(), selectedCompanyID)
+	} else {
+		notes, err = s.engineeringNotes.List(r.Context())
+	}
+	if err != nil {
+		log.Printf("list engineering blog notes: %v", err)
+		http.Error(w, "could not load engineering blog notes", http.StatusInternalServerError)
+		return
+	}
+	data := map[string]any{
+		"Title":               "Engineering blogs",
+		"ActiveNav":           "engineering-blogs",
+		"EngineeringNotes":    notes,
+		"CompanyCounts":       companyCounts,
+		"HasEngineeringNotes": len(notes) > 0,
+		"SelectedCompanyID":   selectedCompanyID,
+	}
+	if err := s.render(w, r, "engineering_blogs_index.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) companyEngineeringBlogs(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	company, err := s.companies.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, companies.ErrCompanyNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("get company for engineering blogs: %v", err)
+		http.Error(w, "could not load company", http.StatusInternalServerError)
+		return
+	}
+	notes, err := s.engineeringNotes.ListByCompanyID(r.Context(), id)
+	if err != nil {
+		log.Printf("list company engineering blog notes: %v", err)
+		http.Error(w, "could not load engineering blog notes", http.StatusInternalServerError)
+		return
+	}
+	data := map[string]any{
+		"Title":                company.OfficialName + " engineering blogs",
+		"ActiveNav":            "engineering-blogs",
+		"Company":              company,
+		"EngineeringNotes":     notes,
+		"HasEngineeringNotes":  len(notes) > 0,
+		"EngineeringNoteCount": len(notes),
+	}
+	if err := s.render(w, r, "company_engineering_blogs.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) companyCreateEngineeringNote(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	_, err = s.engineeringNotes.Create(r.Context(), engineeringnotes.CreateInput{
+		CompanyID: id,
+		URL:       r.FormValue("url"),
+		Notes:     r.FormValue("notes"),
+	})
+	if err == nil {
+		http.Redirect(w, r, "/companies/"+strconv.FormatInt(id, 10)+"/engineering-blogs", http.StatusSeeOther)
+		return
+	}
+
+	company, getErr := s.companies.GetByID(r.Context(), id)
+	if getErr != nil {
+		if errors.Is(getErr, companies.ErrCompanyNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("get company for engineering note error state: %v", getErr)
+		http.Error(w, "could not load company", http.StatusInternalServerError)
+		return
+	}
+	notes, listErr := s.engineeringNotes.ListByCompanyID(r.Context(), id)
+	if listErr != nil {
+		log.Printf("list engineering notes for error state: %v", listErr)
+		http.Error(w, "could not load engineering blog notes", http.StatusInternalServerError)
+		return
+	}
+	data := map[string]any{
+		"Title":                company.OfficialName + " engineering blogs",
+		"ActiveNav":            "engineering-blogs",
+		"Company":              company,
+		"EngineeringNotes":     notes,
+		"HasEngineeringNotes":  len(notes) > 0,
+		"EngineeringNoteCount": len(notes),
+		"EngineeringNoteError": err.Error(),
+		"EngineeringNoteURL":   strings.TrimSpace(r.FormValue("url")),
+		"EngineeringNoteNotes": strings.TrimSpace(r.FormValue("notes")),
+	}
+	if renderErr := s.render(w, r, "company_engineering_blogs.html", data); renderErr != nil {
+		http.Error(w, renderErr.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) engineeringBlogEditForm(w http.ResponseWriter, r *http.Request) {
+	noteID, err := strconv.ParseInt(r.PathValue("noteID"), 10, 64)
+	if err != nil || noteID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	note, err := s.engineeringNotes.GetByID(r.Context(), noteID)
+	if err != nil {
+		if errors.Is(err, engineeringnotes.ErrNoteNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("get engineering note for edit: %v", err)
+		http.Error(w, "could not load engineering note", http.StatusInternalServerError)
+		return
+	}
+	company, err := s.companies.GetByID(r.Context(), note.CompanyID)
+	if err != nil {
+		log.Printf("get company for engineering note edit: %v", err)
+		http.Error(w, "could not load company", http.StatusInternalServerError)
+		return
+	}
+	data := map[string]any{
+		"Title":                "Edit engineering note",
+		"ActiveNav":            "engineering-blogs",
+		"Company":              company,
+		"Note":                 note,
+		"EngineeringNoteURL":   note.URL,
+		"EngineeringNoteNotes": note.Notes,
+	}
+	if err := s.render(w, r, "engineering_blog_edit.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) engineeringBlogEditSubmit(w http.ResponseWriter, r *http.Request) {
+	noteID, err := strconv.ParseInt(r.PathValue("noteID"), 10, 64)
+	if err != nil || noteID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	note, err := s.engineeringNotes.GetByID(r.Context(), noteID)
+	if err != nil {
+		if errors.Is(err, engineeringnotes.ErrNoteNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("get engineering note for update: %v", err)
+		http.Error(w, "could not load engineering note", http.StatusInternalServerError)
+		return
+	}
+	updated, err := s.engineeringNotes.Update(r.Context(), engineeringnotes.UpdateInput{
+		ID:        noteID,
+		CompanyID: note.CompanyID,
+		URL:       r.FormValue("url"),
+		Notes:     r.FormValue("notes"),
+	})
+	if err == nil {
+		http.Redirect(w, r, "/companies/"+strconv.FormatInt(updated.CompanyID, 10)+"/engineering-blogs", http.StatusSeeOther)
+		return
+	}
+	company, companyErr := s.companies.GetByID(r.Context(), note.CompanyID)
+	if companyErr != nil {
+		log.Printf("get company for engineering note update error state: %v", companyErr)
+		http.Error(w, "could not load company", http.StatusInternalServerError)
+		return
+	}
+	data := map[string]any{
+		"Title":                "Edit engineering note",
+		"ActiveNav":            "engineering-blogs",
+		"Company":              company,
+		"Note":                 note,
+		"EngineeringNoteError": err.Error(),
+		"EngineeringNoteURL":   strings.TrimSpace(r.FormValue("url")),
+		"EngineeringNoteNotes": strings.TrimSpace(r.FormValue("notes")),
+	}
+	if renderErr := s.render(w, r, "engineering_blog_edit.html", data); renderErr != nil {
+		http.Error(w, renderErr.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (s *Server) engineeringBlogDelete(w http.ResponseWriter, r *http.Request) {
+	noteID, err := strconv.ParseInt(r.PathValue("noteID"), 10, 64)
+	if err != nil || noteID <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	note, err := s.engineeringNotes.GetByID(r.Context(), noteID)
+	if err != nil {
+		if errors.Is(err, engineeringnotes.ErrNoteNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("get engineering note for delete: %v", err)
+		http.Error(w, "could not load engineering note", http.StatusInternalServerError)
+		return
+	}
+	if err := s.engineeringNotes.Delete(r.Context(), noteID); err != nil {
+		if errors.Is(err, engineeringnotes.ErrNoteNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("delete engineering note: %v", err)
+		http.Error(w, "could not delete engineering note", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/companies/"+strconv.FormatInt(note.CompanyID, 10)+"/engineering-blogs", http.StatusSeeOther)
+}
+
+func notesOrEmpty(s *Server, ctx context.Context, companyID int64) []engineeringnotes.Note {
+	notes, err := s.engineeringNotes.ListByCompanyID(ctx, companyID)
+	if err != nil {
+		return []engineeringnotes.Note{}
+	}
+	return notes
 }
 
 func (s *Server) companyEditForm(w http.ResponseWriter, r *http.Request) {
@@ -526,6 +803,16 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 			data["PeopleCount"] = 0
 		} else {
 			data["PeopleCount"] = len(peopleList)
+		}
+	}
+
+	if _, ok := data["EngineeringBlogsCount"]; !ok && s != nil && s.engineeringNotes != nil {
+		engineeringNotesList, err := s.engineeringNotes.List(r.Context())
+		if err != nil {
+			log.Printf("list engineering blog notes for layout: %v", err)
+			data["EngineeringBlogsCount"] = 0
+		} else {
+			data["EngineeringBlogsCount"] = len(engineeringNotesList)
 		}
 	}
 

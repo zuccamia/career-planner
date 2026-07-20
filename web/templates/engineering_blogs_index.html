@@ -1,0 +1,55 @@
+{{define "engineering_blogs_index.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+  <div class="space-y-2">
+    <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">Engineering blog notes</p>
+  </div>
+</section>
+
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <form method="get" action="/engineering-blogs" class="flex flex-col gap-3 sm:flex-row sm:items-end">
+    <div class="grid gap-2 sm:min-w-72">
+      <label class="text-sm font-medium text-slate-900" for="engineering-blogs-company-filter">Filter by company</label>
+      <select class="rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="engineering-blogs-company-filter" name="company_id">
+        <option value="">All companies</option>
+        {{range .CompanyCounts}}
+        <option value="{{.CompanyID}}" {{if eq $.SelectedCompanyID .CompanyID}}selected{{end}}>{{.CompanyName}} ({{.NoteCount}})</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="flex items-center gap-3">
+      <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Apply filter</button>
+      <a class="text-sm font-medium text-slate-500 hover:text-slate-900" href="/engineering-blogs">Clear</a>
+    </div>
+  </form>
+
+  {{if .HasEngineeringNotes}}
+  <ul class="space-y-3">
+    {{range .EngineeringNotes}}
+    <li class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div class="space-y-2">
+          <p class="text-sm font-semibold text-slate-900"><a class="text-blue-700 hover:text-blue-800" href="/companies/{{.CompanyID}}/engineering-blogs">{{.CompanyName}}</a></p>
+          <p class="break-all text-sm font-semibold text-slate-900"><a href="{{.URL}}" target="_blank" rel="noreferrer">{{.URL}}</a></p>
+        </div>
+        <span class="text-sm text-slate-500">Updated {{.UpdatedAt.Format "2006-01-02"}}</span>
+      </div>
+      <p class="mt-3 whitespace-pre-wrap text-sm text-slate-700">{{.Notes}}</p>
+      <div class="mt-4 flex items-center gap-3">
+        <a class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100" href="/engineering-blogs/{{.ID}}/edit">Edit</a>
+        <form method="post" action="/engineering-blogs/{{.ID}}/delete" onsubmit="return confirm('Delete this engineering blog note?');">
+          <button class="inline-flex items-center justify-center rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-50" type="submit">Delete</button>
+        </form>
+      </div>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <div class="rounded-2xl bg-slate-50 px-4 py-5 text-slate-500">
+    <p>No engineering blog notes yet.</p>
+    <p class="mt-2 text-sm">Open a company page and jump to its engineering blog collection to add your first noted article.</p>
+  </div>
+  {{end}}
+</section>
+{{end}}
