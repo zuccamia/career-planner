@@ -1,5 +1,7 @@
 package dossiers
 
+// Stores dossiers and decodes structured JSON fields.
+
 import (
 	"context"
 	"database/sql"
@@ -9,19 +11,21 @@ import (
 	"time"
 )
 
+// SQLRepository stores dossier records in the application database.
 type SQLRepository struct {
 	db *sql.DB
 }
 
+// NewSQLRepository creates a dossier repository backed by the provided database handle.
 func NewSQLRepository(db *sql.DB) *SQLRepository {
+	if db == nil {
+		panic("dossiers database is required")
+	}
 	return &SQLRepository{db: db}
 }
 
+// Create inserts a completed dossier and returns the stored record.
 func (r *SQLRepository) Create(ctx context.Context, dossier Dossier) (Dossier, error) {
-	if r == nil || r.db == nil {
-		return Dossier{}, errors.New("database is not configured")
-	}
-
 	targetCustomersJSON, err := json.Marshal(dossier.TargetCustomers)
 	if err != nil {
 		return Dossier{}, fmt.Errorf("marshal target customers: %w", err)
@@ -97,11 +101,8 @@ func (r *SQLRepository) Create(ctx context.Context, dossier Dossier) (Dossier, e
 	return r.GetByID(ctx, id)
 }
 
+// GetLatestByCompanyID returns the most recently created dossier for a company.
 func (r *SQLRepository) GetLatestByCompanyID(ctx context.Context, companyID int64) (Dossier, error) {
-	if r == nil || r.db == nil {
-		return Dossier{}, errors.New("database is not configured")
-	}
-
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
 			id,
@@ -130,6 +131,7 @@ func (r *SQLRepository) GetLatestByCompanyID(ctx context.Context, companyID int6
 	return scanDossier(row)
 }
 
+// GetByID fetches a dossier by primary key.
 func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Dossier, error) {
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
@@ -157,10 +159,12 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Dossier, error) 
 	return scanDossier(row)
 }
 
+// scanner abstracts sql.Row and sql.Rows scanning for shared dossier decoding.
 type scanner interface {
 	Scan(dest ...any) error
 }
 
+// scanDossier decodes one dossier row, including its JSON-encoded fields.
 func scanDossier(row scanner) (Dossier, error) {
 	var dossier Dossier
 	var targetCustomersJSON string

@@ -3,7 +3,7 @@ import { expect, type Page } from '@playwright/test';
 export async function createCompany(
   page: Page,
   input: {
-    submittedName: string;
+	  name: string;
     officialName?: string;
     website?: string;
     techBlogURL?: string;
@@ -12,7 +12,7 @@ export async function createCompany(
   },
 ) {
   await page.goto('/companies/new');
-  await page.getByLabel('Company name').fill(input.submittedName);
+  await page.getByLabel('Company name').fill(input.name);
   await page.getByRole('button', { name: 'Continue' }).click();
 
   await expect(page.getByRole('button', { name: 'Confirm company' })).toBeVisible();
@@ -34,7 +34,7 @@ export async function createCompany(
   }
 
   await page.getByRole('button', { name: 'Confirm company' }).click();
-  await expect(page.getByRole('heading', { name: input.officialName ?? input.submittedName })).toBeVisible();
+  await expect(page.getByRole('heading', { name: input.officialName ?? input.name })).toBeVisible();
 }
 
 export async function createEngineeringNote(

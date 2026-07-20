@@ -1,5 +1,7 @@
 package companies
 
+// Persists companies and cleans up dependent data.
+
 import (
 	"context"
 	"database/sql"
@@ -8,19 +10,21 @@ import (
 	"time"
 )
 
+// SQLRepository stores company records in the application database.
 type SQLRepository struct {
 	db *sql.DB
 }
 
+// NewSQLRepository creates a company repository backed by the provided database handle.
 func NewSQLRepository(db *sql.DB) *SQLRepository {
+	if db == nil {
+		panic("companies database is required")
+	}
 	return &SQLRepository{db: db}
 }
 
+// Count returns the total number of saved companies.
 func (r *SQLRepository) Count(ctx context.Context) (int, error) {
-	if r == nil || r.db == nil {
-		return 0, errors.New("database is not configured")
-	}
-
 	row := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM companies`)
 	var count int
 	if err := row.Scan(&count); err != nil {
@@ -29,15 +33,11 @@ func (r *SQLRepository) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// Create inserts a new company row and returns the stored record.
 func (r *SQLRepository) Create(ctx context.Context, input CreateCompanyInput) (Company, error) {
-	if r == nil || r.db == nil {
-		return Company{}, errors.New("database is not configured")
-	}
-
 	now := time.Now().UTC()
 	result, err := r.db.ExecContext(ctx, `
 		INSERT INTO companies (
-			submitted_name,
 			official_name,
 			website,
 			tech_blog_url,
@@ -45,9 +45,8 @@ func (r *SQLRepository) Create(ctx context.Context, input CreateCompanyInput) (C
 			ats_provider,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?)
 	`,
-		input.SubmittedName,
 		input.OfficialName,
 		input.Website,
 		input.TechBlogURL,
@@ -68,11 +67,8 @@ func (r *SQLRepository) Create(ctx context.Context, input CreateCompanyInput) (C
 	return r.GetByID(ctx, id)
 }
 
+// Delete removes a company and the dependent data that should not outlive it.
 func (r *SQLRepository) Delete(ctx context.Context, id int64) error {
-	if r == nil || r.db == nil {
-		return errors.New("database is not configured")
-	}
-
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin delete company transaction: %w", err)
@@ -108,11 +104,8 @@ func (r *SQLRepository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Update writes editable fields for an existing company and returns the fresh record.
 func (r *SQLRepository) Update(ctx context.Context, input UpdateCompanyInput) (Company, error) {
-	if r == nil || r.db == nil {
-		return Company{}, errors.New("database is not configured")
-	}
-
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE companies
 		SET official_name = ?, website = ?, tech_blog_url = ?, ats_url = ?, ats_provider = ?, updated_at = ?
@@ -140,15 +133,11 @@ func (r *SQLRepository) Update(ctx context.Context, input UpdateCompanyInput) (C
 	return r.GetByID(ctx, input.ID)
 }
 
+// GetByID fetches one company by primary key.
 func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Company, error) {
-	if r == nil || r.db == nil {
-		return Company{}, errors.New("database is not configured")
-	}
-
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
 			id,
-			submitted_name,
 			official_name,
 			website,
 			tech_blog_url,
@@ -165,7 +154,6 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Company, error) 
 	var updatedAt string
 	if err := row.Scan(
 		&company.ID,
-		&company.SubmittedName,
 		&company.OfficialName,
 		&company.Website,
 		&company.TechBlogURL,
@@ -194,15 +182,11 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Company, error) 
 	return company, nil
 }
 
+// List returns companies ordered by most recently updated first.
 func (r *SQLRepository) List(ctx context.Context) ([]Company, error) {
-	if r == nil || r.db == nil {
-		return nil, errors.New("database is not configured")
-	}
-
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			id,
-			submitted_name,
 			official_name,
 			website,
 			tech_blog_url,
@@ -225,7 +209,6 @@ func (r *SQLRepository) List(ctx context.Context) ([]Company, error) {
 		var updatedAt string
 		if err := rows.Scan(
 			&company.ID,
-			&company.SubmittedName,
 			&company.OfficialName,
 			&company.Website,
 			&company.TechBlogURL,

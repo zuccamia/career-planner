@@ -6,7 +6,7 @@ test('user can create, edit, and delete a company', async ({ page }) => {
   const updatedCompanyName = 'Stripe E2E Co. Updated';
 
   await createCompany(page, {
-    submittedName: companyName,
+    name: companyName,
     officialName: companyName,
     website: 'https://stripe.com',
     techBlogURL: 'https://stripe.com/blog/engineering',
@@ -49,20 +49,19 @@ test('company forms surface validation errors', async ({ page }) => {
   await page.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByRole('button', { name: 'Confirm company' })).toBeVisible();
 
-  await page.locator('input[name="submitted_name"]').evaluate((input: HTMLInputElement) => {
+  await page.locator('input[name="official_name"]').evaluate((input: HTMLInputElement) => {
     input.value = '';
   });
   await page.getByRole('button', { name: 'Confirm company' }).click();
 
-  await expect(page.getByText('Submitted company name is required.')).toBeVisible();
+  await expect(page.getByText('official company name is required')).toBeVisible();
 });
 
 test('companies index lists saved companies', async ({ page }) => {
-  const submittedName = 'Vercel E2E';
   const officialName = 'Vercel E2E Inc.';
 
   await createCompany(page, {
-    submittedName,
+    name: officialName,
     officialName,
     website: 'https://vercel.com',
   });
@@ -70,6 +69,5 @@ test('companies index lists saved companies', async ({ page }) => {
   await page.goto('/companies');
   const companyCard = page.locator('a[href^="/companies/"]', { hasText: officialName }).first();
   await expect(companyCard).toBeVisible();
-  await expect(companyCard).toContainText(`Submitted as ${submittedName}`);
   await expect(companyCard).toContainText('https://vercel.com');
 });

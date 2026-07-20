@@ -15,17 +15,14 @@
   <p class="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-blue-700">{{.Note}}</p>
   {{end}}
 
-  {{if .Reasoning}}
+  {{if .HasReasoning}}
   <p class="text-slate-500"><strong>Why this guess:</strong> {{.Reasoning}}</p>
   {{end}}
 
   <form method="post" action="/companies" class="space-y-4">
-    <input name="submitted_name" type="hidden" value="{{.SubmittedName}}">
-
-    <div class="grid gap-2">
-      <label class="text-sm font-medium text-slate-900" for="submitted_name_display">Submitted name</label>
-      <input class="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-slate-500 shadow-sm outline-none" id="submitted_name_display" type="text" value="{{.SubmittedName}}" disabled>
-    </div>
+    {{if .CompanyName}}
+    <p class="text-sm text-slate-500">Search: {{.CompanyName}}</p>
+    {{end}}
 
     <div class="grid gap-2">
       <label class="text-sm font-medium text-slate-900" for="official_name">Official name</label>

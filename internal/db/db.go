@@ -106,7 +106,6 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	const schema = `
 CREATE TABLE IF NOT EXISTS companies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    submitted_name TEXT NOT NULL,
     official_name TEXT NOT NULL,
     website TEXT NOT NULL DEFAULT '',
     tech_blog_url TEXT NOT NULL DEFAULT '',
@@ -164,67 +163,5 @@ CREATE TABLE IF NOT EXISTS engineering_blog_notes (
 		return fmt.Errorf("migrate companies table: %w", err)
 	}
 
-	if err := addColumnIfMissing(ctx, db, "companies", "tech_blog_url", `ALTER TABLE companies ADD COLUMN tech_blog_url TEXT NOT NULL DEFAULT ''`); err != nil {
-		return fmt.Errorf("add companies.tech_blog_url column: %w", err)
-	}
-	if err := addColumnIfMissing(ctx, db, "dossiers", "recent_product_launches_json", `ALTER TABLE dossiers ADD COLUMN recent_product_launches_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
-		return fmt.Errorf("add dossiers.recent_product_launches_json column: %w", err)
-	}
-	if err := addColumnIfMissing(ctx, db, "dossiers", "company_culture_notes_json", `ALTER TABLE dossiers ADD COLUMN company_culture_notes_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
-		return fmt.Errorf("add dossiers.company_culture_notes_json column: %w", err)
-	}
-	if err := addColumnIfMissing(ctx, db, "dossiers", "has_internships", `ALTER TABLE dossiers ADD COLUMN has_internships INTEGER NOT NULL DEFAULT 0`); err != nil {
-		return fmt.Errorf("add dossiers.has_internships column: %w", err)
-	}
-	if err := addColumnIfMissing(ctx, db, "dossiers", "internship_seasons_json", `ALTER TABLE dossiers ADD COLUMN internship_seasons_json TEXT NOT NULL DEFAULT '[]'`); err != nil {
-		return fmt.Errorf("add dossiers.internship_seasons_json column: %w", err)
-	}
-	if err := addColumnIfMissing(ctx, db, "dossiers", "internship_summary", `ALTER TABLE dossiers ADD COLUMN internship_summary TEXT NOT NULL DEFAULT ''`); err != nil {
-		return fmt.Errorf("add dossiers.internship_summary column: %w", err)
-	}
-
 	return nil
-}
-
-func addColumnIfMissing(ctx context.Context, db *sql.DB, tableName string, columnName string, alterSQL string) error {
-	exists, err := columnExists(ctx, db, tableName, columnName)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-	if _, err := db.ExecContext(ctx, alterSQL); err != nil {
-		return err
-	}
-	return nil
-}
-
-func columnExists(ctx context.Context, db *sql.DB, tableName string, columnName string) (bool, error) {
-	rows, err := db.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, tableName))
-	if err != nil {
-		return false, fmt.Errorf("inspect %s columns: %w", tableName, err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var cid int
-		var name string
-		var dataType string
-		var notNull int
-		var defaultValue sql.NullString
-		var primaryKey int
-		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &primaryKey); err != nil {
-			return false, fmt.Errorf("scan %s columns: %w", tableName, err)
-		}
-		if name == columnName {
-			return true, nil
-		}
-	}
-
-	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("iterate %s columns: %w", tableName, err)
-	}
-
-	return false, nil
 }
