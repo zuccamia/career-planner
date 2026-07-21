@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ngochoang/career-planner/internal/llm"
+	"github.com/ngochoang/career-planner/internal/sources/llm"
 )
 
 // Candidate holds the tentative company details suggested before a record is saved.

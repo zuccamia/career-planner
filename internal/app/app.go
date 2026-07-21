@@ -12,8 +12,8 @@ import (
 	"github.com/ngochoang/career-planner/internal/dossiers"
 	"github.com/ngochoang/career-planner/internal/engineering_blogs"
 	apphttp "github.com/ngochoang/career-planner/internal/http"
-	"github.com/ngochoang/career-planner/internal/llm"
 	"github.com/ngochoang/career-planner/internal/people"
+	"github.com/ngochoang/career-planner/internal/sources/llm"
 )
 
 type App struct {

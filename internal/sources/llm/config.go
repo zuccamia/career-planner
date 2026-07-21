@@ -1,70 +1,27 @@
 package llm
 
+// Loads and validates environment-driven configuration for the shared LLM client.
+
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 )
 
 const (
-	ProviderAnthropic       = "anthropic"
+	ProviderAnthropic        = "anthropic"
 	ProviderOpenAICompatible = "openai-compatible"
-	AnthropicDefaultBaseURL = "https://api.anthropic.com/v1"
-	defaultProviderEnvVar   = "LLM_PROVIDER"
-	defaultAPIKeyEnvVar     = "LLM_API_KEY"
-	defaultModelEnvVar      = "LLM_MODEL"
-	defaultBaseURLEnvVar    = "LLM_BASE_URL"
-	placeholderAPIKey       = "your_key_here"
+	AnthropicDefaultBaseURL  = "https://api.anthropic.com/v1"
+	defaultProviderEnvVar    = "LLM_PROVIDER"
+	defaultAPIKeyEnvVar      = "LLM_API_KEY"
+	defaultModelEnvVar       = "LLM_MODEL"
+	defaultBaseURLEnvVar     = "LLM_BASE_URL"
+	placeholderAPIKey        = "your_key_here"
 )
 
 var SupportedProviders = []string{ProviderAnthropic, ProviderOpenAICompatible}
 
-var ErrToolSupport = errors.New("llm tool support error")
-
-type Error struct {
-	Message string
-}
-
-func (e *Error) Error() string {
-	return e.Message
-}
-
-type ConfigError struct {
-	Message string
-}
-
-func (e *ConfigError) Error() string {
-	return e.Message
-}
-
-type APIError struct {
-	Message string
-}
-
-func (e *APIError) Error() string {
-	return e.Message
-}
-
-func (e *APIError) IsToolSupportError() bool {
-	msg := strings.ToLower(e.Message)
-	signals := []string{
-		"failed to translate",
-		"tools is not supported",
-		"tool_use is not supported",
-		"unrecognized request argument: tools",
-		"does not support tools",
-		"invalid parameter: tools",
-		"unknown field: tools",
-	}
-	for _, signal := range signals {
-		if strings.Contains(msg, signal) {
-			return true
-		}
-	}
-	return false
-}
-
+// Config holds the provider settings required to create an LLM client.
 type Config struct {
 	Provider string
 	BaseURL  string
@@ -72,6 +29,7 @@ type Config struct {
 	APIKey   string
 }
 
+// LoadConfig reads LLM settings from environment variables and validates them.
 func LoadConfig() (Config, error) {
 	provider := strings.ToLower(strings.TrimSpace(os.Getenv(defaultProviderEnvVar)))
 	if provider == "" {

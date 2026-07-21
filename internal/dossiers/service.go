@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/ngochoang/career-planner/internal/companies"
-	"github.com/ngochoang/career-planner/internal/llm"
+	"github.com/ngochoang/career-planner/internal/sources/llm"
 )
 
 // Build generates a dossier for a company, merging fallback values with any LLM result.

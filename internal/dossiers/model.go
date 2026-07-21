@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/ngochoang/career-planner/internal/companies"
-	"github.com/ngochoang/career-planner/internal/llm"
+	"github.com/ngochoang/career-planner/internal/sources/llm"
 )
 
 var ErrDossierNotFound = errors.New("dossier not found")

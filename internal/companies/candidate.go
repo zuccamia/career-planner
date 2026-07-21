@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ngochoang/career-planner/internal/llm"
 	"github.com/ngochoang/career-planner/internal/shared"
+	"github.com/ngochoang/career-planner/internal/sources/llm"
 )
 
 // GuessCandidate turns free-form user input into a probable canonical company record for confirmation.
