@@ -15,19 +15,19 @@
   {{if .HasPeople}}
   <ul class="space-y-3">
     {{range .People}}
-    <li class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-      <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+    <li class="relative rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-slate-300 hover:bg-white">
+      <a class="absolute inset-0 z-10 rounded-2xl" href="/people/{{.ID}}" aria-label="Open person {{.FullName}}"></a>
+      <div class="relative z-0 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
+          <span class="block font-semibold text-blue-700">{{.FullName}}</span>
           {{if .LinkedInURL}}
-          <a class="block font-semibold text-blue-700 hover:text-blue-800" href="{{.LinkedInURL}}" target="_blank" rel="noreferrer">{{.FullName}}</a>
-          {{else}}
-          <span class="block font-semibold text-slate-900">{{.FullName}}</span>
+          <a class="relative z-20 mt-1 inline-flex text-xs text-slate-500 transition hover:text-slate-700" href="{{.LinkedInURL}}" target="_blank" rel="noreferrer">LinkedIn profile</a>
           {{end}}
           {{if or .Title .CompanyName}}
           <span class="block text-sm text-slate-500">{{if .Title}}{{.Title}}{{end}}{{if and .Title .CompanyName}} - {{end}}{{if .CompanyName}}{{.CompanyName}}{{end}}</span>
           {{end}}
         </div>
-        <div class="flex items-center gap-3">
+        <div class="relative z-20 flex items-center gap-3">
           <span class="text-sm text-slate-500">Updated {{.UpdatedAt.Format "2006-01-02"}}</span>
           <a class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" href="/people/{{.ID}}/edit">Edit</a>
           <form method="post" action="/people/{{.ID}}/delete" onsubmit="return confirm('Delete this person?');">
@@ -37,7 +37,7 @@
           </form>
         </div>
       </div>
-      {{if .Notes}}<p class="mt-2 overflow-hidden text-sm leading-6 text-slate-600" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{{.Notes}}</p>{{end}}
+      {{if .Notes}}<p class="relative z-0 mt-2 overflow-hidden text-sm leading-6 text-slate-600" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{{.Notes}}</p>{{end}}
     </li>
     {{end}}
   </ul>

@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ngochoang/career-planner/internal/communications"
 	"github.com/ngochoang/career-planner/internal/companies"
 	"github.com/ngochoang/career-planner/internal/db"
 	"github.com/ngochoang/career-planner/internal/dossiers"
@@ -51,7 +52,9 @@ func New() App {
 	engineeringBlogsService := engineering_blogs.NewService(engineeringBlogsRepo)
 	peopleRepo := people.NewSQLRepository(database)
 	peopleService := people.NewService(peopleRepo)
-	router := apphttp.NewRouter(companyService, dossierService, engineeringBlogsService, peopleService, apphttp.Options{
+	communicationsRepo := communications.NewSQLRepository(database)
+	communicationsService := communications.NewService(communicationsRepo, llmClient)
+	router := apphttp.NewRouter(companyService, dossierService, engineeringBlogsService, peopleService, communicationsService, apphttp.Options{
 		Environment:  environment,
 		DatabasePath: resolvedPath,
 	})

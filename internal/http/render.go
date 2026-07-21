@@ -58,6 +58,16 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 		}
 	}
 
+	if _, ok := data["CommunicationThreadsCount"]; !ok && s != nil && s.communications != nil {
+		count, err := s.communications.Count(r.Context())
+		if err != nil {
+			log.Printf("count communication threads for layout: %v", err)
+			data["CommunicationThreadsCount"] = 0
+		} else {
+			data["CommunicationThreadsCount"] = count
+		}
+	}
+
 	tmpl, err := parseTemplates("base.html", page)
 	if err != nil {
 		log.Printf("parse templates: %v", err)

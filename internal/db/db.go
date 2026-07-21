@@ -84,11 +84,13 @@ func Reset(ctx context.Context, path string) error {
 	defer database.Close()
 
 	statements := []string{
+		`DELETE FROM communication_entries`,
+		`DELETE FROM communication_threads`,
 		`DELETE FROM engineering_blog_notes`,
 		`DELETE FROM people`,
 		`DELETE FROM dossiers`,
 		`DELETE FROM companies`,
-		`DELETE FROM sqlite_sequence WHERE name IN ('engineering_blog_notes', 'people', 'dossiers', 'companies')`,
+		`DELETE FROM sqlite_sequence WHERE name IN ('communication_entries', 'communication_threads', 'engineering_blog_notes', 'people', 'dossiers', 'companies')`,
 	}
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement); err != nil {
@@ -148,6 +150,31 @@ CREATE TABLE IF NOT EXISTS people (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY (company_id) REFERENCES companies(id)
+);
+
+CREATE TABLE IF NOT EXISTS communication_threads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER NOT NULL,
+    channel TEXT NOT NULL DEFAULT 'general',
+    subject TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'open',
+    summary TEXT NOT NULL DEFAULT '',
+    summary_updated_at TEXT,
+    last_activity_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS communication_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id INTEGER NOT NULL,
+    direction TEXT NOT NULL DEFAULT 'note',
+    content TEXT NOT NULL DEFAULT '',
+    occurred_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (thread_id) REFERENCES communication_threads(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS engineering_blog_notes (

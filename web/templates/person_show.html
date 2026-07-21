@@ -1,0 +1,78 @@
+{{define "person_show.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<section class="space-y-2">
+  <p><a class="text-sm text-slate-500 transition hover:text-slate-900" href="/people">← Back to people</a></p>
+  <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">Person</p>
+  <div class="space-y-2">
+    <h1 class="text-3xl font-semibold tracking-tight text-slate-900">{{.Person.FullName}}</h1>
+    {{if or .Person.Title .Person.CompanyName}}
+    <p class="text-sm text-slate-500">{{if .Person.Title}}{{.Person.Title}}{{end}}{{if and .Person.Title .Person.CompanyName}} - {{end}}{{if .Person.CompanyName}}{{.Person.CompanyName}}{{end}}</p>
+    {{end}}
+    {{if .HasLinkedInURL}}<p><a class="text-sm text-blue-700 hover:text-blue-800" href="{{.Person.LinkedInURL}}" target="_blank" rel="noreferrer">Open LinkedIn profile</a></p>{{end}}
+    {{if .Person.Notes}}<p class="max-w-3xl text-sm leading-6 text-slate-600">{{.Person.Notes}}</p>{{end}}
+  </div>
+</section>
+
+<section class="grid gap-6 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
+  <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-900">Communication threads</h2>
+        <p class="text-sm text-slate-500">Track outreach, replies, and private notes for this person.</p>
+      </div>
+    </div>
+
+    {{if .HasThreads}}
+    <ul class="space-y-3">
+      {{range .Threads}}
+      <li class="relative rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-slate-300 hover:bg-white">
+        <a class="absolute inset-0 z-10 rounded-2xl" href="/communication-threads/{{.ID}}" aria-label="Open communication thread {{.Subject}}"></a>
+        <div class="relative z-0 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div class="space-y-1">
+            <span class="font-semibold text-blue-700">{{.Subject}}</span>
+            <p class="text-sm text-slate-500">{{.Channel}} · {{.Status}} · Last activity {{.LastActivityAt.Format "2006-01-02 15:04"}}</p>
+            {{if .Summary}}<p class="text-sm leading-6 text-slate-600">{{.Summary}}</p>{{end}}
+          </div>
+        </div>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    <div class="rounded-2xl bg-slate-50 px-4 py-5 text-sm text-slate-500">No communication threads yet.</div>
+    {{end}}
+  </div>
+
+  <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div>
+      <h2 class="text-lg font-semibold text-slate-900">Start a thread</h2>
+      <p class="text-sm text-slate-500">Create a conversation thread, then add messages or notes as entries.</p>
+    </div>
+    {{if .ThreadError}}
+    <p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{.ThreadError}}</p>
+    {{end}}
+    <form method="post" action="/people/{{.Person.ID}}/communication-threads" class="space-y-4">
+      <div class="grid gap-2">
+        <label class="text-sm font-medium text-slate-900" for="subject">Subject</label>
+        <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="subject" name="subject" type="text" value="{{.ThreadSubject}}" required>
+      </div>
+      <div class="grid gap-2">
+        <label class="text-sm font-medium text-slate-900" for="channel">Channel</label>
+        <select class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="channel" name="channel">
+          <option value="email" {{if eq .ThreadChannel "email"}}selected{{end}}>email</option>
+          <option value="linkedin" {{if eq .ThreadChannel "linkedin"}}selected{{end}}>linkedin</option>
+          <option value="call" {{if eq .ThreadChannel "call"}}selected{{end}}>call</option>
+          <option value="meeting" {{if eq .ThreadChannel "meeting"}}selected{{end}}>meeting</option>
+          <option value="text" {{if eq .ThreadChannel "text"}}selected{{end}}>text</option>
+          <option value="general" {{if or (eq .ThreadChannel "general") (eq .ThreadChannel "")}}selected{{end}}>general</option>
+        </select>
+      </div>
+      <div class="grid gap-2">
+        <label class="text-sm font-medium text-slate-900" for="occurred_at">When did it start?</label>
+        <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="occurred_at" name="occurred_at" type="datetime-local" value="{{.ThreadOccurredAt}}">
+      </div>
+      <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Create thread</button>
+    </form>
+  </div>
+</section>
+{{end}}

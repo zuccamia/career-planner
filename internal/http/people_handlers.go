@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ngochoang/career-planner/internal/communications"
 	"github.com/ngochoang/career-planner/internal/people"
 )
 
@@ -91,6 +92,42 @@ func (s *Server) personEditForm(w http.ResponseWriter, r *http.Request) {
 		"Notes":             person.Notes,
 	}
 	if err := s.render(w, r, "person_edit.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// personShow renders one person with communication threads.
+func (s *Server) personShow(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	person, err := s.people.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, people.ErrPersonNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("get person: %v", err)
+		http.Error(w, "could not load person", http.StatusInternalServerError)
+		return
+	}
+	threads, err := s.communications.ListThreadsByPersonID(r.Context(), id)
+	if err != nil && !errors.Is(err, communications.ErrThreadNotFound) {
+		log.Printf("list communication threads: %v", err)
+		http.Error(w, "could not load person", http.StatusInternalServerError)
+		return
+	}
+	data := map[string]any{
+		"Title":          person.FullName,
+		"ActiveNav":      "people",
+		"Person":         person,
+		"Threads":        threads,
+		"HasThreads":     len(threads) > 0,
+		"HasLinkedInURL": strings.TrimSpace(person.LinkedInURL) != "",
+	}
+	if err := s.render(w, r, "person_show.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

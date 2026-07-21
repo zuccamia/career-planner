@@ -51,3 +51,31 @@ export async function createEngineeringNote(
   await form.getByRole('button', { name: 'Save changes' }).click();
   await expect(page).toHaveURL(currentPath);
 }
+
+export async function createPerson(
+  page: Page,
+  input: {
+    fullName: string;
+    title?: string;
+    companyName?: string;
+    linkedInURL?: string;
+    notes?: string;
+  },
+) {
+  await page.goto('/people/new');
+  await page.getByLabel('Full name').fill(input.fullName);
+  if (input.title !== undefined) {
+    await page.getByLabel('Title').fill(input.title);
+  }
+  if (input.companyName !== undefined) {
+    await page.getByLabel('Company').selectOption({ label: input.companyName });
+  }
+  if (input.linkedInURL !== undefined) {
+    await page.getByLabel('LinkedIn URL').fill(input.linkedInURL);
+  }
+  if (input.notes !== undefined) {
+    await page.getByLabel('Notes').fill(input.notes);
+  }
+  await page.getByRole('button', { name: 'Save person' }).click();
+  await expect(page).toHaveURL('/people');
+}

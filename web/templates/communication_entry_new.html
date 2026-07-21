@@ -1,0 +1,73 @@
+{{define "communication_entry_new.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<section class="space-y-2">
+  <p><a class="text-sm text-slate-500 transition hover:text-slate-900" href="/communication-threads/{{.Thread.ID}}">← Back to thread</a></p>
+  <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">Communication thread</p>
+  <div class="space-y-2">
+    <h1 class="text-3xl font-semibold tracking-tight text-slate-900">Add entry</h1>
+    <p class="text-sm text-slate-500">{{.Thread.Subject}} · {{.Thread.PersonName}} · {{.Thread.Channel}}</p>
+  </div>
+</section>
+
+<section class="grid gap-6 xl:grid-cols-2 xl:items-start">
+  <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div class="space-y-4 rounded-2xl bg-slate-50 px-4 py-4">
+      <div>
+        <h2 class="text-lg font-semibold text-slate-900">Generate message</h2>
+        <p class="text-sm text-slate-500">Draft outreach or a reply using this thread.</p>
+      </div>
+      {{if .GenerateError}}<p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{.GenerateError}}</p>{{end}}
+      <div class="flex flex-wrap gap-3">
+        <form method="post" action="/communication-threads/{{.Thread.ID}}/generate">
+          <input type="hidden" name="goal" value="outreach">
+          <input type="hidden" name="return_to" value="entry-form">
+          <button class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" type="submit">Draft outreach</button>
+        </form>
+        <form method="post" action="/communication-threads/{{.Thread.ID}}/generate">
+          <input type="hidden" name="goal" value="reply">
+          <input type="hidden" name="return_to" value="entry-form">
+          <button class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" type="submit">Draft reply</button>
+        </form>
+      </div>
+      {{if .GeneratedMessage}}
+      <div class="space-y-2 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">{{.GeneratedGoal}}</p>
+        <p class="whitespace-pre-wrap text-sm leading-6 text-slate-700">{{.GeneratedMessage}}</p>
+        <form method="post" action="/communication-threads/{{.Thread.ID}}/generated-entry">
+          <input type="hidden" name="generated_message" value="{{.GeneratedMessage}}">
+          <input type="hidden" name="return_to" value="entry-form">
+          <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Add to thread</button>
+        </form>
+      </div>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    {{if .EntryError}}<p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{.EntryError}}</p>{{end}}
+    <form method="post" action="/communication-threads/{{.Thread.ID}}/entries" class="space-y-4">
+      <div class="grid gap-2">
+        <label class="text-sm font-medium text-slate-900" for="direction">Direction</label>
+        <select class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="direction" name="direction">
+          <option value="inbound" {{if eq .EntryDirection "inbound"}}selected{{end}}>inbound</option>
+          <option value="outbound" {{if eq .EntryDirection "outbound"}}selected{{end}}>outbound</option>
+          <option value="note" {{if or (eq .EntryDirection "note") (eq .EntryDirection "")}}selected{{end}}>note</option>
+        </select>
+      </div>
+      <div class="grid gap-2">
+        <label class="text-sm font-medium text-slate-900" for="entry_occurred_at">When?</label>
+        <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="entry_occurred_at" name="occurred_at" type="datetime-local" value="{{.EntryOccurredAt}}">
+      </div>
+      <div class="grid gap-2">
+        <label class="text-sm font-medium text-slate-900" for="content">Content</label>
+        <textarea class="min-h-40 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="content" name="content" required>{{.EntryContent}}</textarea>
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Save entry</button>
+        <a class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" href="/communication-threads/{{.Thread.ID}}">Cancel</a>
+      </div>
+    </form>
+  </div>
+</section>
+{{end}}
