@@ -1,5 +1,7 @@
 package people
 
+// Persists people records and joins associated company names.
+
 import (
 	"context"
 	"database/sql"
@@ -8,19 +10,21 @@ import (
 	"time"
 )
 
+// SQLRepository stores person records in the application database.
 type SQLRepository struct {
 	db *sql.DB
 }
 
+// NewSQLRepository creates a person repository backed by the provided database handle.
 func NewSQLRepository(db *sql.DB) *SQLRepository {
+	if db == nil {
+		panic("people database is required")
+	}
 	return &SQLRepository{db: db}
 }
 
+// Count returns the total number of saved people.
 func (r *SQLRepository) Count(ctx context.Context) (int, error) {
-	if r == nil || r.db == nil {
-		return 0, errors.New("database is not configured")
-	}
-
 	row := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM people`)
 	var count int
 	if err := row.Scan(&count); err != nil {
@@ -29,11 +33,8 @@ func (r *SQLRepository) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// Create inserts a new person row and returns the stored record.
 func (r *SQLRepository) Create(ctx context.Context, input CreatePersonInput) (Person, error) {
-	if r == nil || r.db == nil {
-		return Person{}, errors.New("database is not configured")
-	}
-
 	now := time.Now().UTC()
 	result, err := r.db.ExecContext(ctx, `
 		INSERT INTO people (
@@ -66,11 +67,8 @@ func (r *SQLRepository) Create(ctx context.Context, input CreatePersonInput) (Pe
 	return r.GetByID(ctx, id)
 }
 
+// GetByID fetches one person by primary key.
 func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Person, error) {
-	if r == nil || r.db == nil {
-		return Person{}, errors.New("database is not configured")
-	}
-
 	row := r.db.QueryRowContext(ctx, `
 		SELECT
 			p.id,
@@ -90,11 +88,8 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Person, error) {
 	return scanPerson(row)
 }
 
+// List returns people ordered by most recently updated first.
 func (r *SQLRepository) List(ctx context.Context) ([]Person, error) {
-	if r == nil || r.db == nil {
-		return nil, errors.New("database is not configured")
-	}
-
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			p.id,
@@ -131,10 +126,57 @@ func (r *SQLRepository) List(ctx context.Context) ([]Person, error) {
 	return peopleList, nil
 }
 
+// Update writes editable fields for an existing person and returns the fresh record.
+func (r *SQLRepository) Update(ctx context.Context, input UpdatePersonInput) (Person, error) {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE people
+		SET full_name = ?, title = ?, company_id = NULLIF(?, 0), linkedin_url = ?, notes = ?, updated_at = ?
+		WHERE id = ?
+	`,
+		input.FullName,
+		input.Title,
+		input.CompanyID,
+		input.LinkedInURL,
+		input.Notes,
+		time.Now().UTC().Format(time.RFC3339Nano),
+		input.ID,
+	)
+	if err != nil {
+		return Person{}, fmt.Errorf("update person: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return Person{}, fmt.Errorf("fetch updated person rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return Person{}, ErrPersonNotFound
+	}
+
+	return r.GetByID(ctx, input.ID)
+}
+
+// Delete removes a person from storage.
+func (r *SQLRepository) Delete(ctx context.Context, id int64) error {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM people WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete person: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("fetch deleted person rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrPersonNotFound
+	}
+	return nil
+}
+
+// personScanner abstracts sql.Row and sql.Rows scanning for shared person decoding.
 type personScanner interface {
 	Scan(dest ...any) error
 }
 
+// scanPerson decodes one person row, including joined company display data.
 func scanPerson(scanner personScanner) (Person, error) {
 	var person Person
 	var createdAt string
@@ -151,7 +193,7 @@ func scanPerson(scanner personScanner) (Person, error) {
 		&updatedAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Person{}, errors.New("person not found")
+			return Person{}, ErrPersonNotFound
 		}
 		return Person{}, fmt.Errorf("scan person row: %w", err)
 	}

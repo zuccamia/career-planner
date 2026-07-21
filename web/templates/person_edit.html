@@ -1,0 +1,50 @@
+{{define "person_edit.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<section class="space-y-2">
+  <p><a class="text-sm text-slate-500 transition hover:text-slate-900" href="/people">← Back to people</a></p>
+  <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">Edit person</p>
+</section>
+
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  {{if .Error}}
+  <p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">{{.Error}}</p>
+  {{end}}
+
+  <form method="post" action="/people/{{.Person.ID}}/edit" class="space-y-4">
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="full_name">Full name</label>
+      <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="full_name" name="full_name" type="text" value="{{.FullName}}" required>
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="title">Title</label>
+      <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="title" name="title" type="text" value="{{.PersonTitle}}">
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="company_id">Company</label>
+      <select class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="company_id" name="company_id">
+        <option value="0">No company selected</option>
+        {{range .Companies}}
+        <option value="{{.ID}}" {{if eq $.SelectedCompanyID .ID}}selected{{end}}>{{.OfficialName}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="linkedin_url">LinkedIn URL</label>
+      <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="linkedin_url" name="linkedin_url" type="url" value="{{.LinkedInURL}}" placeholder="https://www.linkedin.com/in/...">
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="notes">Notes</label>
+      <textarea class="min-h-28 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="notes" name="notes">{{.Notes}}</textarea>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Save changes</button>
+    </div>
+  </form>
+</section>
+{{end}}

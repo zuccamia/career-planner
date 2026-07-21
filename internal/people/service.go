@@ -1,56 +1,20 @@
 package people
 
+// Validates and normalizes person data before persistence.
+
 import (
 	"context"
 	"errors"
-	"net/url"
 	"strings"
-	"time"
+
+	"github.com/ngochoang/career-planner/internal/shared"
 )
 
-type Person struct {
-	ID          int64
-	FullName    string
-	Title       string
-	CompanyID   int64
-	CompanyName string
-	LinkedInURL string
-	Notes       string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-}
-
-type CreatePersonInput struct {
-	FullName    string
-	Title       string
-	CompanyID   int64
-	LinkedInURL string
-	Notes       string
-}
-
-type Repository interface {
-	Count(ctx context.Context) (int, error)
-	Create(ctx context.Context, input CreatePersonInput) (Person, error)
-	GetByID(ctx context.Context, id int64) (Person, error)
-	List(ctx context.Context) ([]Person, error)
-}
-
-type Service struct {
-	repo Repository
-}
-
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
-}
-
+// Create sanitizes user input and persists a new person.
 func (s *Service) Create(ctx context.Context, input CreatePersonInput) (Person, error) {
-	if s == nil || s.repo == nil {
-		return Person{}, errors.New("people repository is not configured")
-	}
-
 	input.FullName = strings.TrimSpace(input.FullName)
 	input.Title = strings.TrimSpace(input.Title)
-	input.LinkedInURL = sanitizeURL(input.LinkedInURL)
+	input.LinkedInURL = shared.SanitizeHTTPURL(input.LinkedInURL)
 	input.Notes = strings.TrimSpace(input.Notes)
 	if input.CompanyID < 0 {
 		input.CompanyID = 0
@@ -63,32 +27,49 @@ func (s *Service) Create(ctx context.Context, input CreatePersonInput) (Person, 
 	return s.repo.Create(ctx, input)
 }
 
-func (s *Service) List(ctx context.Context) ([]Person, error) {
-	if s == nil || s.repo == nil {
-		return nil, errors.New("people repository is not configured")
+// GetByID returns one person when the identifier is valid.
+func (s *Service) GetByID(ctx context.Context, id int64) (Person, error) {
+	if id <= 0 {
+		return Person{}, ErrPersonNotFound
 	}
+	return s.repo.GetByID(ctx, id)
+}
+
+// List returns all people from storage.
+func (s *Service) List(ctx context.Context) ([]Person, error) {
 	return s.repo.List(ctx)
 }
 
+// Count returns the number of persisted people.
 func (s *Service) Count(ctx context.Context) (int, error) {
-	if s == nil || s.repo == nil {
-		return 0, errors.New("people repository is not configured")
-	}
 	return s.repo.Count(ctx)
 }
 
-func sanitizeURL(raw string) string {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return ""
+// Update sanitizes user input and persists changes to an existing person.
+func (s *Service) Update(ctx context.Context, input UpdatePersonInput) (Person, error) {
+	if input.ID <= 0 {
+		return Person{}, ErrPersonNotFound
 	}
-	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.Host == "" {
-		return ""
+
+	input.FullName = strings.TrimSpace(input.FullName)
+	input.Title = strings.TrimSpace(input.Title)
+	input.LinkedInURL = shared.SanitizeHTTPURL(input.LinkedInURL)
+	input.Notes = strings.TrimSpace(input.Notes)
+	if input.CompanyID < 0 {
+		input.CompanyID = 0
 	}
-	scheme := strings.ToLower(parsed.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return ""
+
+	if input.FullName == "" {
+		return Person{}, errors.New("full name is required")
 	}
-	return parsed.String()
+
+	return s.repo.Update(ctx, input)
+}
+
+// Delete removes a person when the identifier is valid.
+func (s *Service) Delete(ctx context.Context, id int64) error {
+	if id <= 0 {
+		return ErrPersonNotFound
+	}
+	return s.repo.Delete(ctx, id)
 }

@@ -59,7 +59,10 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.HandleFunc("GET /engineering-blogs", server.engineeringBlogsIndex)
 	mux.HandleFunc("GET /people", server.peopleIndex)
 	mux.HandleFunc("GET /people/new", server.personNewForm)
+	mux.HandleFunc("GET /people/{id}/edit", server.personEditForm)
 	mux.HandleFunc("POST /people", server.personCreate)
+	mux.HandleFunc("POST /people/{id}/edit", server.personEditSubmit)
+	mux.HandleFunc("POST /people/{id}/delete", server.personDelete)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	return logging(mux)
 }

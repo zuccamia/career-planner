@@ -1,12 +1,17 @@
 import { expect, test } from '@playwright/test';
 import { createCompany } from './helpers';
+import { resetTestServer } from '../../playwright.config';
+
+test.beforeEach(async () => {
+  await resetTestServer();
+});
 
 test('user can create a person linked to a company', async ({ page }) => {
   const companyName = 'Notion E2E Labs';
   const personName = 'Ada Lovelace E2E';
 
   await createCompany(page, {
-    submittedName: companyName,
+    name: companyName,
     officialName: companyName,
   });
 
@@ -31,4 +36,55 @@ test('person form shows server-side validation errors', async ({ page }) => {
   await page.goto('/people/new');
   await page.locator('form[action="/people"]').evaluate((form: HTMLFormElement) => form.submit());
   await expect(page.getByText('full name is required')).toBeVisible();
+});
+
+test('user can edit and delete a person', async ({ page }) => {
+  const companyName = 'Linear E2E Labs';
+  const updatedCompanyName = 'Linear E2E Labs Updated';
+  const personName = 'Grace Hopper E2E';
+  const updatedPersonName = 'Grace Brewster Hopper E2E';
+
+  await createCompany(page, {
+    name: companyName,
+    officialName: companyName,
+  });
+
+  await createCompany(page, {
+    name: updatedCompanyName,
+    officialName: updatedCompanyName,
+  });
+
+  await page.goto('/people/new');
+  await page.getByLabel('Full name').fill(personName);
+  await page.getByLabel('Title').fill('Staff Engineer');
+  await page.getByLabel('Company').selectOption({ label: companyName });
+  await page.getByLabel('LinkedIn URL').fill('https://www.linkedin.com/in/grace-hopper-e2e');
+  await page.getByLabel('Notes').fill('Original notes.');
+  await page.getByRole('button', { name: 'Save person' }).click();
+
+  await expect(page).toHaveURL('/people');
+
+  const originalCard = page.locator('li', { hasText: personName }).first();
+  await originalCard.getByRole('link', { name: 'Edit' }).click();
+
+  await expect(page).toHaveURL(/\/people\/\d+\/edit$/);
+  await page.getByLabel('Full name').fill(updatedPersonName);
+  await page.getByLabel('Title').fill('Distinguished Engineer');
+  await page.getByLabel('Company').selectOption({ label: updatedCompanyName });
+  await page.getByLabel('LinkedIn URL').fill('https://www.linkedin.com/in/grace-brewster-hopper-e2e');
+  await page.getByLabel('Notes').fill('Updated notes.');
+  await page.getByRole('button', { name: 'Save changes' }).click();
+
+  await expect(page).toHaveURL('/people');
+  const updatedCard = page.locator('li', { hasText: updatedPersonName }).first();
+  await expect(updatedCard).toContainText('Distinguished Engineer');
+  await expect(updatedCard).toContainText(updatedCompanyName);
+  await expect(updatedCard.locator('a[href="https://www.linkedin.com/in/grace-brewster-hopper-e2e"]')).toBeVisible();
+  await expect(updatedCard).toContainText('Updated notes.');
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await updatedCard.getByRole('button', { name: `Delete person ${updatedPersonName}` }).click();
+
+  await expect(page).toHaveURL('/people');
+  await expect(page.locator('li', { hasText: updatedPersonName })).toHaveCount(0);
 });
