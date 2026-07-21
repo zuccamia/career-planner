@@ -83,7 +83,7 @@ func (r *SQLRepository) List(ctx context.Context) ([]Note, error) {
 	}
 	defer rows.Close()
 
-	return scanNotes(rows)
+	return scanEngineeringBlogNotes(rows)
 }
 
 // GetByID fetches one engineering blog note by primary key.
@@ -106,7 +106,7 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Note, error) {
 	}
 	defer rows.Close()
 
-	notes, err := scanNotes(rows)
+	notes, err := scanEngineeringBlogNotes(rows)
 	if err != nil {
 		return Note{}, err
 	}
@@ -137,7 +137,7 @@ func (r *SQLRepository) ListByCompanyID(ctx context.Context, companyID int64) ([
 	}
 	defer rows.Close()
 
-	return scanNotes(rows)
+	return scanEngineeringBlogNotes(rows)
 }
 
 // Update writes editable fields for an existing engineering blog note and returns the fresh record.
@@ -214,7 +214,8 @@ type scannerRows interface {
 	Err() error
 }
 
-func scanNotes(rows scannerRows) ([]Note, error) {
+// scanEngineeringBlogNotes reads engineering blog note rows into domain models and parses timestamps.
+func scanEngineeringBlogNotes(rows scannerRows) ([]Note, error) {
 	notes := make([]Note, 0)
 	for rows.Next() {
 		var note Note
