@@ -1,9 +1,10 @@
-package engineeringnotes
+package engineering_blogs
+
+// Persists engineering blog notes and aggregates company note counts.
 
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,17 +14,14 @@ type SQLRepository struct {
 	db *sql.DB
 }
 
-var ErrNoteNotFound = errors.New("engineering note not found")
-
 func NewSQLRepository(db *sql.DB) *SQLRepository {
+	if db == nil {
+		panic("engineering blogs database is required")
+	}
 	return &SQLRepository{db: db}
 }
 
 func (r *SQLRepository) Count(ctx context.Context) (int, error) {
-	if r == nil || r.db == nil {
-		return 0, errors.New("database is not configured")
-	}
-
 	row := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM engineering_blog_notes`)
 	var count int
 	if err := row.Scan(&count); err != nil {
@@ -33,10 +31,6 @@ func (r *SQLRepository) Count(ctx context.Context) (int, error) {
 }
 
 func (r *SQLRepository) Create(ctx context.Context, input CreateInput) (Note, error) {
-	if r == nil || r.db == nil {
-		return Note{}, errors.New("database is not configured")
-	}
-
 	now := time.Now().UTC()
 	result, err := r.db.ExecContext(ctx, `
 		INSERT INTO engineering_blog_notes (
@@ -66,10 +60,6 @@ func (r *SQLRepository) Create(ctx context.Context, input CreateInput) (Note, er
 }
 
 func (r *SQLRepository) List(ctx context.Context) ([]Note, error) {
-	if r == nil || r.db == nil {
-		return nil, errors.New("database is not configured")
-	}
-
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			n.id,
@@ -92,10 +82,6 @@ func (r *SQLRepository) List(ctx context.Context) ([]Note, error) {
 }
 
 func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Note, error) {
-	if r == nil || r.db == nil {
-		return Note{}, errors.New("database is not configured")
-	}
-
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			n.id,
@@ -125,10 +111,6 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Note, error) {
 }
 
 func (r *SQLRepository) ListByCompanyID(ctx context.Context, companyID int64) ([]Note, error) {
-	if r == nil || r.db == nil {
-		return nil, errors.New("database is not configured")
-	}
-
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			n.id,
@@ -152,10 +134,6 @@ func (r *SQLRepository) ListByCompanyID(ctx context.Context, companyID int64) ([
 }
 
 func (r *SQLRepository) Update(ctx context.Context, input UpdateInput) (Note, error) {
-	if r == nil || r.db == nil {
-		return Note{}, errors.New("database is not configured")
-	}
-
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE engineering_blog_notes
 		SET company_id = ?, url = ?, notes = ?, updated_at = ?
@@ -175,9 +153,6 @@ func (r *SQLRepository) Update(ctx context.Context, input UpdateInput) (Note, er
 }
 
 func (r *SQLRepository) Delete(ctx context.Context, id int64) error {
-	if r == nil || r.db == nil {
-		return errors.New("database is not configured")
-	}
 	result, err := r.db.ExecContext(ctx, `DELETE FROM engineering_blog_notes WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete engineering blog note: %w", err)
@@ -193,9 +168,6 @@ func (r *SQLRepository) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *SQLRepository) ListCompanyCounts(ctx context.Context) ([]CompanyCount, error) {
-	if r == nil || r.db == nil {
-		return nil, errors.New("database is not configured")
-	}
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 			c.id,

@@ -6,34 +6,34 @@
   <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">Engineering blog notes</p>
   <div class="flex flex-wrap items-center gap-3">
     <h1>{{.Company.OfficialName}}</h1>
-    <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.EngineeringNoteCount}} notes</span>
+    <span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.EngineeringBlogCount}} notes</span>
   </div>
 </section>
 
 <section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-  {{if .EngineeringNoteError}}
-  <p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">{{.EngineeringNoteError}}</p>
+  {{if .EngineeringBlogError}}
+  <p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">{{.EngineeringBlogError}}</p>
   {{end}}
 
-  <form method="post" action="/companies/{{.Company.ID}}/engineering-notes" class="space-y-4">
+  <form method="post" action="/companies/{{.Company.ID}}/engineering-blogs" class="space-y-4">
     <div class="grid gap-2">
       <label class="text-sm font-medium text-slate-900" for="engineering-note-url">Article URL</label>
-      <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="engineering-note-url" name="url" type="url" value="{{.EngineeringNoteURL}}" placeholder="https://..." required>
+      <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="engineering-note-url" name="url" type="url" value="{{.EngineeringBlogURL}}" placeholder="https://..." required>
     </div>
     <div class="grid gap-2">
       <label class="text-sm font-medium text-slate-900" for="engineering-note-notes">Your notes</label>
-      <textarea class="min-h-28 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="engineering-note-notes" name="notes" required>{{.EngineeringNoteNotes}}</textarea>
+      <textarea class="min-h-28 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="engineering-note-notes" name="notes" required>{{.EngineeringBlogNotes}}</textarea>
     </div>
     <div class="flex items-center gap-3">
-      <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Save engineering note</button>
+      <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Save changes</button>
     </div>
   </form>
 </section>
 
 <section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-  {{if .HasEngineeringNotes}}
+  {{if .HasEngineeringBlogs}}
   <div class="space-y-4">
-    {{range .EngineeringNotes}}
+    {{range .EngineeringBlogs}}
     <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
       <p class="break-all text-sm font-semibold text-slate-900"><a href="{{.URL}}" target="_blank" rel="noreferrer">{{.URL}}</a></p>
       <p class="mt-2 whitespace-pre-wrap text-slate-700">{{.Notes}}</p>

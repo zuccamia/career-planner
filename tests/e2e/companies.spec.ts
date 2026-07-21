@@ -1,5 +1,10 @@
 import { expect, test } from '@playwright/test';
 import { createCompany } from './helpers';
+import { resetTestServer } from '../../playwright.config';
+
+test.beforeEach(async () => {
+  await resetTestServer();
+});
 
 test('user can create, edit, and delete a company', async ({ page }) => {
   const companyName = 'Stripe E2E Co.';

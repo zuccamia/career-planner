@@ -34,6 +34,7 @@ export async function createCompany(
   }
 
   await page.getByRole('button', { name: 'Confirm company' }).click();
+  await expect(page).toHaveURL(/\/companies\/\d+$/);
   await expect(page.getByRole('heading', { name: input.officialName ?? input.name })).toBeVisible();
 }
 
@@ -41,7 +42,12 @@ export async function createEngineeringNote(
   page: Page,
   input: { articleURL: string; notes: string },
 ) {
+  await expect(page).toHaveURL(/\/companies\/\d+\/engineering-blogs$/);
+  const currentPath = new URL(page.url()).pathname;
+  const form = page.locator(`form[action="${currentPath}"]`);
+
   await page.getByLabel('Article URL').fill(input.articleURL);
   await page.getByLabel('Your notes').fill(input.notes);
-  await page.getByRole('button', { name: 'Save engineering note' }).click();
+  await form.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page).toHaveURL(currentPath);
 }

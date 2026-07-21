@@ -10,7 +10,7 @@ import (
 	"github.com/ngochoang/career-planner/internal/companies"
 	"github.com/ngochoang/career-planner/internal/db"
 	"github.com/ngochoang/career-planner/internal/dossiers"
-	"github.com/ngochoang/career-planner/internal/engineeringnotes"
+	"github.com/ngochoang/career-planner/internal/engineering_blogs"
 	apphttp "github.com/ngochoang/career-planner/internal/http"
 	"github.com/ngochoang/career-planner/internal/llm"
 	"github.com/ngochoang/career-planner/internal/people"
@@ -47,11 +47,11 @@ func New() App {
 	companyService := companies.NewService(llmClient, companyRepo)
 	dossierRepo := dossiers.NewSQLRepository(database)
 	dossierService := dossiers.NewService(llmClient, dossierRepo)
-	engineeringNotesRepo := engineeringnotes.NewSQLRepository(database)
-	engineeringNotesService := engineeringnotes.NewService(engineeringNotesRepo)
+	engineeringBlogsRepo := engineering_blogs.NewSQLRepository(database)
+	engineeringBlogsService := engineering_blogs.NewService(engineeringBlogsRepo)
 	peopleRepo := people.NewSQLRepository(database)
 	peopleService := people.NewService(peopleRepo)
-	router := apphttp.NewRouter(companyService, dossierService, engineeringNotesService, peopleService, apphttp.Options{
+	router := apphttp.NewRouter(companyService, dossierService, engineeringBlogsService, peopleService, apphttp.Options{
 		Environment:  environment,
 		DatabasePath: resolvedPath,
 	})

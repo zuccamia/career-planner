@@ -1,17 +1,22 @@
 import { expect, test } from '@playwright/test';
 import { createCompany, createEngineeringNote } from './helpers';
+import { resetTestServer } from '../../playwright.config';
+
+test.beforeEach(async () => {
+  await resetTestServer();
+});
 
 test('user can create, edit, delete, and filter engineering blog notes', async ({ page }) => {
   const cloudflareCompany = 'Cloudflare E2E, Inc.';
   const figmaCompany = 'Figma E2E, Inc.';
 
   await createCompany(page, {
-    submittedName: cloudflareCompany,
+    name: cloudflareCompany,
     officialName: cloudflareCompany,
   });
 
   await page.getByRole('link', { name: /View engineering blog collection/ }).click();
-  await expect(page.getByRole('button', { name: 'Save engineering note' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible();
 
   await createEngineeringNote(page, {
     articleURL: 'https://blog.cloudflare.com/how-we-built-edge-services/',
@@ -30,7 +35,7 @@ test('user can create, edit, delete, and filter engineering blog notes', async (
   await expect(page.getByText('Updated notes after a second read.')).toBeVisible();
 
   await createCompany(page, {
-    submittedName: figmaCompany,
+    name: figmaCompany,
     officialName: figmaCompany,
   });
   await page.getByRole('link', { name: /View engineering blog collection/ }).click();
@@ -60,13 +65,15 @@ test('engineering blog forms show validation errors', async ({ page }) => {
   const githubCompany = 'GitHub E2E, Inc.';
 
   await createCompany(page, {
-    submittedName: githubCompany,
+    name: githubCompany,
     officialName: githubCompany,
   });
 
   await page.getByRole('link', { name: /View engineering blog collection/ }).click();
+  await expect(page).toHaveURL(/\/companies\/\d+\/engineering-blogs$/);
+  const currentPath = new URL(page.url()).pathname;
   await page.getByLabel('Your notes').fill('Missing URL should fail.');
-  await page.locator('form[action$="/engineering-notes"]').evaluate((form: HTMLFormElement) => form.submit());
+  await page.locator(`form[action="${currentPath}"]`).evaluate((form: HTMLFormElement) => form.submit());
 
   await expect(page.getByText('article URL is required')).toBeVisible();
 

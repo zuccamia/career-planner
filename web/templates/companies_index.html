@@ -16,7 +16,7 @@
   <ul class="space-y-3">
     {{range .Companies}}
     <li>
-      <a class="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-blue-200 hover:bg-blue-50/40" href="/companies/{{.ID}}">
+      <a class="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-blue-200 hover:bg-blue-50/40" href="/companies/{{.ID}}" aria-label="View company {{.OfficialName}}">
         <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <span class="block font-semibold text-slate-900">{{.OfficialName}} <span class="ml-2 inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">{{.NoteCount}}</span></span>

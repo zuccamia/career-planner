@@ -8,7 +8,7 @@ import (
 
 	"github.com/ngochoang/career-planner/internal/companies"
 	"github.com/ngochoang/career-planner/internal/dossiers"
-	"github.com/ngochoang/career-planner/internal/engineeringnotes"
+	"github.com/ngochoang/career-planner/internal/engineering_blogs"
 	"github.com/ngochoang/career-planner/internal/people"
 )
 
@@ -16,7 +16,7 @@ import (
 type Server struct {
 	companies        *companies.Service
 	dossiers         *dossiers.Service
-	engineeringNotes *engineeringnotes.Service
+	engineeringBlogs *engineering_blogs.Service
 	people           *people.Service
 	environment      string
 	databasePath     string
@@ -29,11 +29,11 @@ type Options struct {
 }
 
 // NewRouter wires handlers, static assets, and middleware into the application router.
-func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, engineeringNotesService *engineeringnotes.Service, peopleService *people.Service, options Options) http.Handler {
+func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, engineeringBlogsService *engineering_blogs.Service, peopleService *people.Service, options Options) http.Handler {
 	server := &Server{
 		companies:        companiesService,
 		dossiers:         dossiersService,
-		engineeringNotes: engineeringNotesService,
+		engineeringBlogs: engineeringBlogsService,
 		people:           peopleService,
 		environment:      strings.TrimSpace(options.Environment),
 		databasePath:     strings.TrimSpace(options.DatabasePath),
@@ -53,7 +53,7 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.HandleFunc("POST /companies/{id}/edit", server.companyEditSubmit)
 	mux.HandleFunc("POST /companies/{id}/delete", server.companyDelete)
 	mux.HandleFunc("POST /companies/{id}/dossier", server.companyBuildDossier)
-	mux.HandleFunc("POST /companies/{id}/engineering-notes", server.companyCreateEngineeringNote)
+	mux.HandleFunc("POST /companies/{id}/engineering-blogs", server.companyCreateEngineeringBlog)
 	mux.HandleFunc("POST /engineering-blogs/{noteID}/edit", server.engineeringBlogEditSubmit)
 	mux.HandleFunc("POST /engineering-blogs/{noteID}/delete", server.engineeringBlogDelete)
 	mux.HandleFunc("GET /engineering-blogs", server.engineeringBlogsIndex)

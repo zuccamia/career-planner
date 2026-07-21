@@ -48,8 +48,8 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page string, dat
 		}
 	}
 
-	if _, ok := data["EngineeringBlogsCount"]; !ok && s != nil && s.engineeringNotes != nil {
-		count, err := s.engineeringNotes.Count(r.Context())
+	if _, ok := data["EngineeringBlogsCount"]; !ok && s != nil && s.engineeringBlogs != nil {
+		count, err := s.engineeringBlogs.Count(r.Context())
 		if err != nil {
 			log.Printf("count engineering blog notes for layout: %v", err)
 			data["EngineeringBlogsCount"] = 0

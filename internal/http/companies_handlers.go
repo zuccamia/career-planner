@@ -22,7 +22,7 @@ func (s *Server) companiesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	companyCounts, err := s.engineeringNotes.ListCompanyCounts(r.Context())
+	companyCounts, err := s.engineeringBlogs.ListCompanyCounts(r.Context())
 	if err != nil {
 		log.Printf("list engineering blog company counts: %v", err)
 		http.Error(w, "could not load companies", http.StatusInternalServerError)
@@ -148,7 +148,7 @@ func (s *Server) companyCreate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// companyShow renders one company with its latest dossier and engineering notes.
+// companyShow renders one company with its latest dossier and engineering blog notes.
 func (s *Server) companyShow(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil || id <= 0 {
@@ -175,7 +175,7 @@ func (s *Server) companyShow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notes, err := s.engineeringNotes.ListByCompanyID(r.Context(), id)
+	notes, err := s.engineeringBlogs.ListByCompanyID(r.Context(), id)
 	if err != nil {
 		log.Printf("list company engineering blog notes: %v", err)
 		http.Error(w, "could not load company", http.StatusInternalServerError)
@@ -202,9 +202,9 @@ func (s *Server) companyShow(w http.ResponseWriter, r *http.Request) {
 		"HasInfra":                 len(dossier.MajorTechStacks.Infrastructure) > 0,
 		"HasData":                  len(dossier.MajorTechStacks.Data) > 0,
 		"HasTooling":               len(dossier.MajorTechStacks.Tooling) > 0,
-		"EngineeringNotes":         notes,
-		"HasEngineeringNotes":      len(notes) > 0,
-		"EngineeringNoteCount":     len(notes),
+		"EngineeringBlogs":         notes,
+		"HasEngineeringBlogs":      len(notes) > 0,
+		"EngineeringBlogCount":     len(notes),
 	}
 	if err := s.render(w, r, "company_show.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
