@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// Create sanitizes user input and persists a new engineering blog note.
 func (s *Service) Create(ctx context.Context, input CreateInput) (Note, error) {
 	input.CompanyID = max(input.CompanyID, 0)
 	input.URL = sanitizeURL(input.URL)
@@ -25,6 +26,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Note, error) {
 	return s.repo.Create(ctx, input)
 }
 
+// ListByCompanyID returns notes for one company when the identifier is valid.
 func (s *Service) ListByCompanyID(ctx context.Context, companyID int64) ([]Note, error) {
 	if companyID <= 0 {
 		return []Note{}, nil
@@ -32,14 +34,17 @@ func (s *Service) ListByCompanyID(ctx context.Context, companyID int64) ([]Note,
 	return s.repo.ListByCompanyID(ctx, companyID)
 }
 
+// List returns all engineering blog notes from storage.
 func (s *Service) List(ctx context.Context) ([]Note, error) {
 	return s.repo.List(ctx)
 }
 
+// Count returns the number of persisted engineering blog notes.
 func (s *Service) Count(ctx context.Context) (int, error) {
 	return s.repo.Count(ctx)
 }
 
+// GetByID returns one engineering blog note when the identifier is valid.
 func (s *Service) GetByID(ctx context.Context, id int64) (Note, error) {
 	if id <= 0 {
 		return Note{}, errors.New("engineering blog note is required")
@@ -47,6 +52,7 @@ func (s *Service) GetByID(ctx context.Context, id int64) (Note, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
+// Update sanitizes user input and persists changes to an existing engineering blog note.
 func (s *Service) Update(ctx context.Context, input UpdateInput) (Note, error) {
 	input.ID = max(input.ID, 0)
 	input.CompanyID = max(input.CompanyID, 0)
@@ -67,6 +73,7 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) (Note, error) {
 	return s.repo.Update(ctx, input)
 }
 
+// Delete removes an engineering blog note when the identifier is valid.
 func (s *Service) Delete(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return errors.New("engineering blog note is required")
@@ -74,6 +81,7 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.repo.Delete(ctx, id)
 }
 
+// ListCompanyCounts returns each company with its engineering blog note total.
 func (s *Service) ListCompanyCounts(ctx context.Context) ([]CompanyCount, error) {
 	return s.repo.ListCompanyCounts(ctx)
 }

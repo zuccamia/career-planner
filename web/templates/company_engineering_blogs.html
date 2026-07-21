@@ -35,14 +35,17 @@
   <div class="space-y-4">
     {{range .EngineeringBlogs}}
     <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p class="break-all text-sm font-semibold text-slate-900"><a href="{{.URL}}" target="_blank" rel="noreferrer">{{.URL}}</a></p>
-      <p class="mt-2 whitespace-pre-wrap text-slate-700">{{.Notes}}</p>
-      <div class="mt-4 flex items-center gap-3">
-        <a class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-100" href="/engineering-blogs/{{.ID}}/edit">Edit</a>
-        <form method="post" action="/engineering-blogs/{{.ID}}/delete" onsubmit="return confirm('Delete this engineering blog note?');">
-          <button class="inline-flex items-center justify-center rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-50" type="submit">Delete</button>
-        </form>
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <p class="break-all text-sm font-semibold text-slate-900"><a href="{{.URL}}" target="_blank" rel="noreferrer">{{.URL}}</a></p>
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-slate-500">Updated {{.UpdatedAt.Format "2006-01-02"}}</span>
+          <a class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" href="/engineering-blogs/{{.ID}}/edit">Edit</a>
+          <form method="post" action="/engineering-blogs/{{.ID}}/delete" onsubmit="return confirm('Delete this engineering blog note?');">
+            <button class="inline-flex items-center justify-center rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:border-red-300 hover:bg-red-50" type="submit" aria-label="Delete engineering blog note {{.URL}}">Delete</button>
+          </form>
+        </div>
       </div>
+      <p class="mt-2 whitespace-pre-wrap text-slate-700">{{.Notes}}</p>
     </article>
     {{end}}
   </div>

@@ -8,8 +8,10 @@ import (
 	"time"
 )
 
+// ErrNoteNotFound reports that the requested engineering blog note does not exist.
 var ErrNoteNotFound = errors.New("engineering blog note not found")
 
+// Note is a persisted engineering blog article note associated with a company.
 type Note struct {
 	ID          int64
 	CompanyID   int64
@@ -20,12 +22,14 @@ type Note struct {
 	UpdatedAt   time.Time
 }
 
+// CreateInput contains the validated fields required to create an engineering blog note.
 type CreateInput struct {
 	CompanyID int64
 	URL       string
 	Notes     string
 }
 
+// UpdateInput contains the editable fields for an existing engineering blog note.
 type UpdateInput struct {
 	ID        int64
 	CompanyID int64
@@ -33,12 +37,14 @@ type UpdateInput struct {
 	Notes     string
 }
 
+// CompanyCount summarizes how many engineering blog notes belong to one company.
 type CompanyCount struct {
 	CompanyID   int64
 	CompanyName string
 	NoteCount   int64
 }
 
+// Repository defines the storage operations required by the engineering blogs service.
 type Repository interface {
 	Count(ctx context.Context) (int, error)
 	Create(ctx context.Context, input CreateInput) (Note, error)
@@ -50,10 +56,12 @@ type Repository interface {
 	Update(ctx context.Context, input UpdateInput) (Note, error)
 }
 
+// Service applies validation before delegating engineering blog note operations to the repository.
 type Service struct {
 	repo Repository
 }
 
+// NewService constructs an engineering blogs service with the required repository dependency.
 func NewService(repo Repository) *Service {
 	if repo == nil {
 		panic("engineering blogs repository is required")

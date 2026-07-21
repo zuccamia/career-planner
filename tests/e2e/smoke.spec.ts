@@ -1,4 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { resetTestServer } from '../../playwright.config';
+
+test.beforeEach(async () => {
+  await resetTestServer();
+});
 
 test('dashboard and primary navigation render', async ({ page }) => {
   await page.goto('/');

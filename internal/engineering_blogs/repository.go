@@ -10,10 +10,12 @@ import (
 	"time"
 )
 
+// SQLRepository stores engineering blog notes in the application database.
 type SQLRepository struct {
 	db *sql.DB
 }
 
+// NewSQLRepository creates an engineering blog repository backed by the provided database handle.
 func NewSQLRepository(db *sql.DB) *SQLRepository {
 	if db == nil {
 		panic("engineering blogs database is required")
@@ -21,6 +23,7 @@ func NewSQLRepository(db *sql.DB) *SQLRepository {
 	return &SQLRepository{db: db}
 }
 
+// Count returns the total number of saved engineering blog notes.
 func (r *SQLRepository) Count(ctx context.Context) (int, error) {
 	row := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM engineering_blog_notes`)
 	var count int
@@ -30,6 +33,7 @@ func (r *SQLRepository) Count(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// Create inserts a new engineering blog note row and returns the stored record.
 func (r *SQLRepository) Create(ctx context.Context, input CreateInput) (Note, error) {
 	now := time.Now().UTC()
 	result, err := r.db.ExecContext(ctx, `
@@ -59,6 +63,7 @@ func (r *SQLRepository) Create(ctx context.Context, input CreateInput) (Note, er
 	return r.GetByID(ctx, id)
 }
 
+// List returns all engineering blog notes ordered by most recently updated first.
 func (r *SQLRepository) List(ctx context.Context) ([]Note, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
@@ -81,6 +86,7 @@ func (r *SQLRepository) List(ctx context.Context) ([]Note, error) {
 	return scanNotes(rows)
 }
 
+// GetByID fetches one engineering blog note by primary key.
 func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Note, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
@@ -110,6 +116,7 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Note, error) {
 	return notes[0], nil
 }
 
+// ListByCompanyID returns engineering blog notes for one company ordered by most recently updated first.
 func (r *SQLRepository) ListByCompanyID(ctx context.Context, companyID int64) ([]Note, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
@@ -133,6 +140,7 @@ func (r *SQLRepository) ListByCompanyID(ctx context.Context, companyID int64) ([
 	return scanNotes(rows)
 }
 
+// Update writes editable fields for an existing engineering blog note and returns the fresh record.
 func (r *SQLRepository) Update(ctx context.Context, input UpdateInput) (Note, error) {
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE engineering_blog_notes
@@ -152,6 +160,7 @@ func (r *SQLRepository) Update(ctx context.Context, input UpdateInput) (Note, er
 	return r.GetByID(ctx, input.ID)
 }
 
+// Delete removes one engineering blog note by identifier.
 func (r *SQLRepository) Delete(ctx context.Context, id int64) error {
 	result, err := r.db.ExecContext(ctx, `DELETE FROM engineering_blog_notes WHERE id = ?`, id)
 	if err != nil {
@@ -167,6 +176,7 @@ func (r *SQLRepository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+// ListCompanyCounts returns each company with the number of associated engineering blog notes.
 func (r *SQLRepository) ListCompanyCounts(ctx context.Context) ([]CompanyCount, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
