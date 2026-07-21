@@ -31,8 +31,8 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 	}
 
 	recentCompanies := companiesList
-	if len(recentCompanies) > 5 {
-		recentCompanies = recentCompanies[:5]
+	if len(recentCompanies) > 3 {
+		recentCompanies = recentCompanies[:3]
 	}
 
 	data := map[string]any{
