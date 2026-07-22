@@ -44,6 +44,17 @@ func (s *Server) companiesIndex(w http.ResponseWriter, r *http.Request) {
 		peopleCountByCompanyID[count.CompanyID] = count.PersonCount
 	}
 
+	applicationCounts, err := s.applications.ListCompanyCounts(r.Context())
+	if err != nil {
+		log.Printf("list applications company counts: %v", err)
+		http.Error(w, "could not load companies", http.StatusInternalServerError)
+		return
+	}
+	applicationCountByCompanyID := make(map[int64]int64, len(applicationCounts))
+	for _, count := range applicationCounts {
+		applicationCountByCompanyID[count.CompanyID] = count.ApplicationCount
+	}
+
 	companyCards := make([]map[string]any, 0, len(companiesList))
 	for _, company := range companiesList {
 		companyCards = append(companyCards, map[string]any{
@@ -53,6 +64,7 @@ func (s *Server) companiesIndex(w http.ResponseWriter, r *http.Request) {
 			"UpdatedAt":    company.UpdatedAt,
 			"NoteCount":    countByCompanyID[company.ID],
 			"PersonCount":  peopleCountByCompanyID[company.ID],
+			"ApplicationCount": applicationCountByCompanyID[company.ID],
 		})
 	}
 	data := map[string]any{

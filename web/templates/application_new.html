@@ -1,0 +1,73 @@
+{{define "application_new.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<section class="space-y-2">
+  <p><a class="text-sm text-slate-500 transition hover:text-slate-900" href="{{.BackHref}}">{{.BackLabel}}</a></p>
+  <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">{{.FormTitle}}</p>
+</section>
+
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  {{if .Error}}
+  <p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">{{.Error}}</p>
+  {{end}}
+
+  {{if not .HasCompanies}}
+  <p class="rounded-2xl bg-slate-50 px-4 py-4 text-slate-500">Add a company first before creating an application.</p>
+  {{else}}
+  <form method="post" action="{{.FormAction}}" class="space-y-4">
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="company_id">Company</label>
+      <select class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="company_id" name="company_id" required>
+        <option value="">Select company</option>
+        {{range .Companies}}
+        <option value="{{.ID}}" {{if eq $.SelectedCompanyID .ID}}selected{{end}}>{{.OfficialName}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="person_id">Person</label>
+      <select class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="person_id" name="person_id">
+        <option value="0">No person selected</option>
+        {{range .People}}
+        <option value="{{.ID}}" {{if eq $.SelectedPersonID .ID}}selected{{end}}>{{.FullName}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="role_title">Role title</label>
+      <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="role_title" name="role_title" type="text" value="{{.RoleTitle}}" placeholder="e.g. Software Engineer Intern" required>
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="status">Status</label>
+      <select class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="status" name="status">
+        {{range .Statuses}}
+        <option value="{{.}}" {{if eq $.Status .}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="job_posting_url">Job posting URL</label>
+      <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="job_posting_url" name="job_posting_url" type="url" value="{{.JobPostingURL}}" placeholder="https://jobs.example.com/...">
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="job_description_raw">Job description (raw)</label>
+      <textarea class="min-h-48 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 font-mono text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="job_description_raw" name="job_description_raw">{{.JobDescriptionRaw}}</textarea>
+    </div>
+
+    <div class="grid gap-2">
+      <label class="text-sm font-medium text-slate-900" for="notes">Notes</label>
+      <textarea class="min-h-28 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="notes" name="notes">{{.Notes}}</textarea>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">{{.SubmitLabel}}</button>
+    </div>
+  </form>
+  {{end}}
+</section>
+{{end}}

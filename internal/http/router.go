@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ngochoang/career-planner/internal/applications"
 	"github.com/ngochoang/career-planner/internal/communications"
 	"github.com/ngochoang/career-planner/internal/companies"
 	"github.com/ngochoang/career-planner/internal/dossiers"
@@ -16,6 +17,7 @@ import (
 // Server bundles the services and runtime options needed by HTTP handlers.
 type Server struct {
 	companies        *companies.Service
+	applications     *applications.Service
 	communications   *communications.Service
 	dossiers         *dossiers.Service
 	engineeringBlogs *engineering_blogs.Service
@@ -31,9 +33,10 @@ type Options struct {
 }
 
 // NewRouter wires handlers, static assets, and middleware into the application router.
-func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, engineeringBlogsService *engineering_blogs.Service, peopleService *people.Service, communicationsService *communications.Service, options Options) http.Handler {
+func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, engineeringBlogsService *engineering_blogs.Service, peopleService *people.Service, applicationsService *applications.Service, communicationsService *communications.Service, options Options) http.Handler {
 	server := &Server{
 		companies:        companiesService,
+		applications:     applicationsService,
 		communications:   communicationsService,
 		dossiers:         dossiersService,
 		engineeringBlogs: engineeringBlogsService,
@@ -45,6 +48,14 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /test/reset", server.testReset)
 	mux.HandleFunc("GET /", server.home)
+	mux.HandleFunc("GET /applications", server.applicationsIndex)
+	mux.HandleFunc("GET /applications/new", server.applicationNewForm)
+	mux.HandleFunc("POST /applications", server.applicationCreate)
+	mux.HandleFunc("GET /applications/{id}", server.applicationShow)
+	mux.HandleFunc("GET /applications/{id}/edit", server.applicationEditForm)
+	mux.HandleFunc("POST /applications/{id}/edit", server.applicationEditSubmit)
+	mux.HandleFunc("POST /applications/{id}/delete", server.applicationDelete)
+	mux.HandleFunc("POST /applications/{id}/extract-job-description", server.applicationExtractJobDescription)
 	mux.HandleFunc("GET /companies", server.companiesIndex)
 	mux.HandleFunc("GET /companies/new", server.companyNewForm)
 	mux.HandleFunc("POST /companies/new", server.companyNewSubmit)

@@ -84,13 +84,16 @@ func Reset(ctx context.Context, path string) error {
 	defer database.Close()
 
 	statements := []string{
+		`DELETE FROM application_artifacts`,
+		`DELETE FROM application_events`,
+		`DELETE FROM applications`,
 		`DELETE FROM communication_entries`,
 		`DELETE FROM communication_threads`,
 		`DELETE FROM engineering_blog_notes`,
 		`DELETE FROM people`,
 		`DELETE FROM dossiers`,
 		`DELETE FROM companies`,
-		`DELETE FROM sqlite_sequence WHERE name IN ('communication_entries', 'communication_threads', 'engineering_blog_notes', 'people', 'dossiers', 'companies')`,
+		`DELETE FROM sqlite_sequence WHERE name IN ('application_artifacts', 'application_events', 'applications', 'communication_entries', 'communication_threads', 'engineering_blog_notes', 'people', 'dossiers', 'companies')`,
 	}
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement); err != nil {
@@ -139,6 +142,60 @@ CREATE TABLE IF NOT EXISTS dossiers (
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_dossiers_company_id ON dossiers(company_id);
+
+CREATE TABLE IF NOT EXISTS applications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    person_id INTEGER,
+    role_title TEXT NOT NULL DEFAULT '',
+    job_posting_url TEXT NOT NULL DEFAULT '',
+    job_description_raw TEXT NOT NULL DEFAULT '',
+    job_description_extracted_json TEXT NOT NULL DEFAULT '{}',
+    status TEXT NOT NULL DEFAULT 'wishlist',
+    applied_at TEXT,
+    next_action TEXT NOT NULL DEFAULT '',
+    next_step_at TEXT,
+    notes TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (company_id) REFERENCES companies(id),
+    FOREIGN KEY (person_id) REFERENCES people(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_applications_company_id ON applications(company_id);
+CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
+CREATE INDEX IF NOT EXISTS idx_applications_next_step_at ON applications(next_step_at);
+
+CREATE TABLE IF NOT EXISTS application_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL,
+    type TEXT NOT NULL DEFAULT 'note',
+    content TEXT NOT NULL DEFAULT '',
+    from_status TEXT NOT NULL DEFAULT '',
+    to_status TEXT NOT NULL DEFAULT '',
+    occurred_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_application_events_application_id ON application_events(application_id);
+
+CREATE TABLE IF NOT EXISTS application_artifacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT '',
+    label TEXT NOT NULL DEFAULT '',
+    storage_type TEXT NOT NULL DEFAULT 'inline',
+    file_path TEXT NOT NULL DEFAULT '',
+    content TEXT NOT NULL DEFAULT '',
+    mime_type TEXT NOT NULL DEFAULT 'text/plain',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_application_artifacts_application_id ON application_artifacts(application_id);
 
 CREATE TABLE IF NOT EXISTS people (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

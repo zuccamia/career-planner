@@ -21,6 +21,10 @@ test('dashboard and primary navigation render', async ({ page }) => {
   await expect(page).toHaveURL('/people');
   await expect(page.getByRole('link', { name: 'Person' }).first()).toBeVisible();
 
+  await page.getByRole('link', { name: 'Applications' }).click();
+  await expect(page).toHaveURL('/applications');
+  await expect(page.getByRole('link', { name: 'Application' }).first()).toBeVisible();
+
   await page.getByRole('link', { name: 'Engineering blogs' }).click();
   await expect(page).toHaveURL('/engineering-blogs');
   await expect(page.getByLabel('Filter by company')).toBeVisible();

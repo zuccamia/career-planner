@@ -79,3 +79,37 @@ export async function createPerson(
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page).toHaveURL('/people');
 }
+
+export async function createApplication(
+  page: Page,
+  input: {
+    companyName: string;
+    roleTitle: string;
+    personName?: string;
+    status?: string;
+    jobPostingURL?: string;
+    jobDescriptionRaw?: string;
+    notes?: string;
+  },
+) {
+  await page.goto('/applications/new');
+  await page.getByLabel('Company').selectOption({ label: input.companyName });
+  if (input.personName !== undefined) {
+    await page.getByLabel('Person').selectOption({ label: input.personName });
+  }
+  await page.getByLabel('Role title').fill(input.roleTitle);
+  if (input.status !== undefined) {
+    await page.getByLabel('Status').selectOption(input.status);
+  }
+  if (input.jobPostingURL !== undefined) {
+    await page.getByLabel('Job posting URL').fill(input.jobPostingURL);
+  }
+  if (input.jobDescriptionRaw !== undefined) {
+    await page.getByLabel('Job description (raw)').fill(input.jobDescriptionRaw);
+  }
+  if (input.notes !== undefined) {
+    await page.getByLabel('Notes').fill(input.notes);
+  }
+  await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page).toHaveURL(/\/applications\/\d+$/);
+}

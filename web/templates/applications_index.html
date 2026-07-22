@@ -1,0 +1,41 @@
+{{define "applications_index.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+  <div class="space-y-2">
+    <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">Application tracker</p>
+  </div>
+
+  <div>
+    <a class="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" href="/applications/new"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg><span>Application</span></a>
+  </div>
+</section>
+
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  {{if .HasApplications}}
+  <ul class="space-y-3">
+    {{range .Applications}}
+    <li>
+      <a class="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-blue-200 hover:bg-blue-50/40" href="/applications/{{.ID}}" aria-label="View application {{.RoleTitle}} at {{.CompanyName}}">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div class="space-y-2">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="font-semibold text-slate-900">{{.RoleTitle}}</span>
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold {{applicationStatusClasses .Status}}">{{.Status}}</span>
+            </div>
+            <p class="text-sm text-slate-600">{{.CompanyName}}{{if .PersonName}} · {{.PersonName}}{{end}}</p>
+          </div>
+          <span class="text-sm text-slate-500">Updated {{.UpdatedAt.Format "2006-01-02"}}</span>
+        </div>
+      </a>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <div class="rounded-2xl bg-slate-50 px-4 py-5 text-slate-500">
+    <p>No saved applications yet.</p>
+    <a class="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700" href="/applications/new"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg><span>Application</span></a>
+  </div>
+  {{end}}
+</section>
+{{end}}

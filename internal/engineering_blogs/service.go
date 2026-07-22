@@ -7,11 +7,13 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+
+	"github.com/ngochoang/career-planner/internal/shared"
 )
 
 // Create sanitizes user input and persists a new engineering blog note.
 func (s *Service) Create(ctx context.Context, input CreateInput) (Note, error) {
-	input.CompanyID = max(input.CompanyID, 0)
+	input.CompanyID = shared.NonNegativeInt64(input.CompanyID)
 	input.URL = sanitizeURL(input.URL)
 	input.Notes = strings.TrimSpace(input.Notes)
 	if input.CompanyID <= 0 {
@@ -54,8 +56,8 @@ func (s *Service) GetByID(ctx context.Context, id int64) (Note, error) {
 
 // Update sanitizes user input and persists changes to an existing engineering blog note.
 func (s *Service) Update(ctx context.Context, input UpdateInput) (Note, error) {
-	input.ID = max(input.ID, 0)
-	input.CompanyID = max(input.CompanyID, 0)
+	input.ID = shared.NonNegativeInt64(input.ID)
+	input.CompanyID = shared.NonNegativeInt64(input.CompanyID)
 	input.URL = sanitizeURL(input.URL)
 	input.Notes = strings.TrimSpace(input.Notes)
 	if input.ID <= 0 {
@@ -102,9 +104,3 @@ func sanitizeURL(raw string) string {
 	return parsed.String()
 }
 
-func max(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
-}
