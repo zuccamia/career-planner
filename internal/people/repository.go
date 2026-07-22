@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -124,6 +125,38 @@ func (r *SQLRepository) List(ctx context.Context) ([]Person, error) {
 	}
 
 	return peopleList, nil
+}
+
+// ListCompanyCounts returns each company with the number of associated people.
+func (r *SQLRepository) ListCompanyCounts(ctx context.Context) ([]CompanyCount, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT
+			c.id,
+			c.official_name,
+			COUNT(p.id) AS person_count
+		FROM companies c
+		LEFT JOIN people p ON p.company_id = c.id
+		GROUP BY c.id, c.official_name
+		ORDER BY CASE WHEN COUNT(p.id) > 0 THEN 0 ELSE 1 END, LOWER(c.official_name)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list people company counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make([]CompanyCount, 0)
+	for rows.Next() {
+		var count CompanyCount
+		if err := rows.Scan(&count.CompanyID, &count.CompanyName, &count.PersonCount); err != nil {
+			return nil, fmt.Errorf("scan people company count row: %w", err)
+		}
+		count.CompanyName = strings.TrimSpace(count.CompanyName)
+		counts = append(counts, count)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate people company counts: %w", err)
+	}
+	return counts, nil
 }
 
 // Update writes editable fields for an existing person and returns the fresh record.

@@ -40,6 +40,13 @@ type UpdatePersonInput struct {
 	Notes       string
 }
 
+// CompanyCount summarizes how many people belong to one company.
+type CompanyCount struct {
+	CompanyID   int64
+	CompanyName string
+	PersonCount int64
+}
+
 var ErrPersonNotFound = errors.New("person not found")
 
 // Repository defines the storage operations required by the people service.
@@ -49,6 +56,7 @@ type Repository interface {
 	Delete(ctx context.Context, id int64) error
 	GetByID(ctx context.Context, id int64) (Person, error)
 	List(ctx context.Context) ([]Person, error)
+	ListCompanyCounts(ctx context.Context) ([]CompanyCount, error)
 	Update(ctx context.Context, input UpdatePersonInput) (Person, error)
 }
 

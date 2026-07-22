@@ -25,13 +25,13 @@ test('user can create, edit, and delete a company', async ({ page }) => {
   await expect(page.getByText('Greenhouse')).toBeVisible();
   await expect(page.getByText('No dossier yet. Build one to generate a first-pass company summary.')).toBeVisible();
 
-  await page.getByRole('link', { name: 'Edit' }).click();
+  await page.getByRole('link', { name: 'Edit company' }).click();
   await expect(page.getByText('Edit company')).toBeVisible();
 
   await page.getByLabel('Official name').fill(updatedCompanyName);
   await page.getByLabel('Website').fill('https://www.stripe.com');
   await page.getByLabel('ATS provider').fill('Ashby');
-  await page.getByRole('button', { name: 'Save changes' }).click();
+  await page.getByRole('button', { name: 'Save' }).click();
 
   await expect(page.getByRole('heading', { name: updatedCompanyName })).toBeVisible();
   await expect(page.getByRole('link', { name: 'https://www.stripe.com', exact: true })).toBeVisible();

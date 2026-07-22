@@ -45,6 +45,11 @@ func (s *Service) Count(ctx context.Context) (int, error) {
 	return s.repo.Count(ctx)
 }
 
+// ListCompanyCounts returns each company with its linked people total.
+func (s *Service) ListCompanyCounts(ctx context.Context) ([]CompanyCount, error) {
+	return s.repo.ListCompanyCounts(ctx)
+}
+
 // Update sanitizes user input and persists changes to an existing person.
 func (s *Service) Update(ctx context.Context, input UpdatePersonInput) (Person, error) {
 	if input.ID <= 0 {

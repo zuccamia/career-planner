@@ -13,7 +13,7 @@ import (
 	"github.com/ngochoang/career-planner/internal/dossiers"
 )
 
-// companiesIndex renders the companies list with engineering note counts.
+// companiesIndex renders the companies list with engineering note and people counts.
 func (s *Server) companiesIndex(w http.ResponseWriter, r *http.Request) {
 	companiesList, err := s.companies.List(r.Context())
 	if err != nil {
@@ -32,6 +32,18 @@ func (s *Server) companiesIndex(w http.ResponseWriter, r *http.Request) {
 	for _, count := range companyCounts {
 		countByCompanyID[count.CompanyID] = count.NoteCount
 	}
+
+	peopleCounts, err := s.people.ListCompanyCounts(r.Context())
+	if err != nil {
+		log.Printf("list people company counts: %v", err)
+		http.Error(w, "could not load companies", http.StatusInternalServerError)
+		return
+	}
+	peopleCountByCompanyID := make(map[int64]int64, len(peopleCounts))
+	for _, count := range peopleCounts {
+		peopleCountByCompanyID[count.CompanyID] = count.PersonCount
+	}
+
 	companyCards := make([]map[string]any, 0, len(companiesList))
 	for _, company := range companiesList {
 		companyCards = append(companyCards, map[string]any{
@@ -40,6 +52,7 @@ func (s *Server) companiesIndex(w http.ResponseWriter, r *http.Request) {
 			"Website":      company.Website,
 			"UpdatedAt":    company.UpdatedAt,
 			"NoteCount":    countByCompanyID[company.ID],
+			"PersonCount":  peopleCountByCompanyID[company.ID],
 		})
 	}
 	data := map[string]any{

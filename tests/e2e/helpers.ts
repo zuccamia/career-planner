@@ -48,7 +48,7 @@ export async function createEngineeringNote(
 
   await page.getByLabel('Article URL').fill(input.articleURL);
   await page.getByLabel('Your notes').fill(input.notes);
-  await form.getByRole('button', { name: 'Save changes' }).click();
+  await form.getByRole('button', { name: 'Save' }).click();
   await expect(page).toHaveURL(currentPath);
 }
 
@@ -76,6 +76,6 @@ export async function createPerson(
   if (input.notes !== undefined) {
     await page.getByLabel('Notes').fill(input.notes);
   }
-  await page.getByRole('button', { name: 'Save person' }).click();
+  await page.getByRole('button', { name: 'Save' }).click();
   await expect(page).toHaveURL('/people');
 }

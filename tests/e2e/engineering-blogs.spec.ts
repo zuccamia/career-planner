@@ -15,8 +15,8 @@ test('user can create, edit, delete, and filter engineering blog notes', async (
     officialName: cloudflareCompany,
   });
 
-  await page.getByRole('link', { name: /View engineering blog collection/ }).click();
-  await expect(page.getByRole('button', { name: 'Save changes' })).toBeVisible();
+  await page.getByRole('link', { name: /View Engineering blog notes/ }).click();
+  await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
 
   await createEngineeringNote(page, {
     articleURL: 'https://blog.cloudflare.com/how-we-built-edge-services/',
@@ -26,10 +26,10 @@ test('user can create, edit, delete, and filter engineering blog notes', async (
   await expect(page.getByRole('link', { name: 'https://blog.cloudflare.com/how-we-built-edge-services/', exact: true })).toBeVisible();
   await expect(page.getByText('Strong write-up on edge runtime architecture.')).toBeVisible();
 
-  await page.getByRole('link', { name: 'Edit' }).click();
+  await page.getByRole('link', { name: /Edit engineering blog note/ }).click();
   await page.getByLabel('Article URL').fill('https://blog.cloudflare.com/edge-runtime-deep-dive/');
   await page.getByLabel('Your notes').fill('Updated notes after a second read.');
-  await page.getByRole('button', { name: 'Save changes' }).click();
+  await page.getByRole('button', { name: 'Save' }).click();
 
   await expect(page.getByRole('link', { name: 'https://blog.cloudflare.com/edge-runtime-deep-dive/', exact: true })).toBeVisible();
   await expect(page.getByText('Updated notes after a second read.')).toBeVisible();
@@ -38,7 +38,7 @@ test('user can create, edit, delete, and filter engineering blog notes', async (
     name: figmaCompany,
     officialName: figmaCompany,
   });
-  await page.getByRole('link', { name: /View engineering blog collection/ }).click();
+  await page.getByRole('link', { name: /View Engineering blog notes/ }).click();
   await createEngineeringNote(page, {
     articleURL: 'https://www.figma.com/blog/how-figma-scales/',
     notes: 'Interesting notes on scaling multiplayer editing.',
@@ -69,7 +69,7 @@ test('engineering blog forms show validation errors', async ({ page }) => {
     officialName: githubCompany,
   });
 
-  await page.getByRole('link', { name: /View engineering blog collection/ }).click();
+  await page.getByRole('link', { name: /View Engineering blog notes/ }).click();
   await expect(page).toHaveURL(/\/companies\/\d+\/engineering-blogs$/);
   const currentPath = new URL(page.url()).pathname;
   await page.getByLabel('Your notes').fill('Missing URL should fail.');
@@ -81,7 +81,7 @@ test('engineering blog forms show validation errors', async ({ page }) => {
     articleURL: 'https://github.blog/engineering/example/',
     notes: 'Initial note.',
   });
-  await page.getByRole('link', { name: 'Edit' }).click();
+  await page.getByRole('link', { name: /Edit engineering blog note/ }).click();
   await page.getByLabel('Article URL').fill('');
   await page.locator('form[action*="/engineering-blogs/"][action$="/edit"]').evaluate((form: HTMLFormElement) => form.submit());
 
