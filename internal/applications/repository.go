@@ -88,13 +88,10 @@ func (r *SQLRepository) Create(ctx context.Context, input CreateApplicationInput
 			job_description_raw,
 			job_description_extracted_json,
 			status,
-			applied_at,
-			next_action,
-			next_step_at,
 			notes,
 			created_at,
 			updated_at
-		) VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		input.CompanyID,
 		input.PersonID,
@@ -103,9 +100,6 @@ func (r *SQLRepository) Create(ctx context.Context, input CreateApplicationInput
 		input.JobDescriptionRaw,
 		input.JobDescriptionExtractedJSON,
 		input.Status,
-		formatNullableTime(input.AppliedAt),
-		input.NextAction,
-		formatNullableTime(input.NextStepAt),
 		input.Notes,
 		now.Format(time.RFC3339Nano),
 		now.Format(time.RFC3339Nano),
@@ -270,12 +264,10 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Application, err
 			a.job_description_raw,
 			a.job_description_extracted_json,
 			a.status,
-			a.applied_at,
-			a.next_action,
-			a.next_step_at,
 			a.notes,
 			a.created_at,
-			a.updated_at
+			a.updated_at,
+			''
 		FROM applications a
 		JOIN companies c ON c.id = a.company_id
 		LEFT JOIN people p ON p.id = a.person_id
@@ -284,7 +276,7 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Application, err
 	return scanApplication(row)
 }
 
-// List returns applications ordered by most recently updated first.
+// List returns applications ordered by latest event first, then most recently updated.
 func (r *SQLRepository) List(ctx context.Context) ([]Application, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
@@ -298,16 +290,19 @@ func (r *SQLRepository) List(ctx context.Context) ([]Application, error) {
 			a.job_description_raw,
 			a.job_description_extracted_json,
 			a.status,
-			a.applied_at,
-			a.next_action,
-			a.next_step_at,
 			a.notes,
 			a.created_at,
-			a.updated_at
+			a.updated_at,
+			COALESCE(latest_event.occurred_at, '')
 		FROM applications a
 		JOIN companies c ON c.id = a.company_id
 		LEFT JOIN people p ON p.id = a.person_id
-		ORDER BY a.updated_at DESC, a.id DESC
+		LEFT JOIN (
+			SELECT application_id, MAX(occurred_at) AS occurred_at
+			FROM application_events
+			GROUP BY application_id
+		) latest_event ON latest_event.application_id = a.id
+		ORDER BY COALESCE(latest_event.occurred_at, a.updated_at) DESC, a.id DESC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list applications: %w", err)
@@ -334,7 +329,7 @@ func (r *SQLRepository) List(ctx context.Context) ([]Application, error) {
 func (r *SQLRepository) Update(ctx context.Context, input UpdateApplicationInput) (Application, error) {
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE applications
-		SET company_id = ?, person_id = NULLIF(?, 0), role_title = ?, job_posting_url = ?, job_description_raw = ?, job_description_extracted_json = ?, status = ?, applied_at = ?, next_action = ?, next_step_at = ?, notes = ?, updated_at = ?
+		SET company_id = ?, person_id = NULLIF(?, 0), role_title = ?, job_posting_url = ?, job_description_raw = ?, job_description_extracted_json = ?, status = ?, notes = ?, updated_at = ?
 		WHERE id = ?
 	`,
 		input.CompanyID,
@@ -344,9 +339,6 @@ func (r *SQLRepository) Update(ctx context.Context, input UpdateApplicationInput
 		input.JobDescriptionRaw,
 		input.JobDescriptionExtractedJSON,
 		input.Status,
-		formatNullableTime(input.AppliedAt),
-		input.NextAction,
-		formatNullableTime(input.NextStepAt),
 		input.Notes,
 		time.Now().UTC().Format(time.RFC3339Nano),
 		input.ID,
@@ -363,6 +355,27 @@ func (r *SQLRepository) Update(ctx context.Context, input UpdateApplicationInput
 	}
 
 	return r.GetByID(ctx, input.ID)
+}
+
+// UpdateStatus updates only the status and updated_at fields for one application.
+func (r *SQLRepository) UpdateStatus(ctx context.Context, applicationID int64, status string) (Application, error) {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE applications
+		SET status = ?, updated_at = ?
+		WHERE id = ?
+	`, status, time.Now().UTC().Format(time.RFC3339Nano), applicationID)
+	if err != nil {
+		return Application{}, fmt.Errorf("update application status: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return Application{}, fmt.Errorf("fetch updated application status rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return Application{}, ErrApplicationNotFound
+	}
+
+	return r.GetByID(ctx, applicationID)
 }
 
 // UpdateJobDescriptionExtractedJSON overwrites the structured job-description payload for one application.
@@ -490,10 +503,9 @@ type applicationScanner interface {
 
 func scanApplication(scanner applicationScanner) (Application, error) {
 	var application Application
-	var appliedAt sql.NullString
-	var nextStepAt sql.NullString
 	var createdAt string
 	var updatedAt string
+	var latestEventAt string
 	if err := scanner.Scan(
 		&application.ID,
 		&application.CompanyID,
@@ -505,12 +517,10 @@ func scanApplication(scanner applicationScanner) (Application, error) {
 		&application.JobDescriptionRaw,
 		&application.JobDescriptionExtractedJSON,
 		&application.Status,
-		&appliedAt,
-		&application.NextAction,
-		&nextStepAt,
 		&application.Notes,
 		&createdAt,
 		&updatedAt,
+		&latestEventAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Application{}, ErrApplicationNotFound
@@ -518,14 +528,6 @@ func scanApplication(scanner applicationScanner) (Application, error) {
 		return Application{}, fmt.Errorf("scan application row: %w", err)
 	}
 
-	parsedAppliedAt, err := parseNullableTime(appliedAt)
-	if err != nil {
-		return Application{}, fmt.Errorf("parse application applied_at: %w", err)
-	}
-	parsedNextStepAt, err := parseNullableTime(nextStepAt)
-	if err != nil {
-		return Application{}, fmt.Errorf("parse application next_step_at: %w", err)
-	}
 	parsedCreatedAt, err := time.Parse(time.RFC3339Nano, createdAt)
 	if err != nil {
 		return Application{}, fmt.Errorf("parse application created_at: %w", err)
@@ -535,10 +537,15 @@ func scanApplication(scanner applicationScanner) (Application, error) {
 		return Application{}, fmt.Errorf("parse application updated_at: %w", err)
 	}
 
-	application.AppliedAt = parsedAppliedAt
-	application.NextStepAt = parsedNextStepAt
 	application.CreatedAt = parsedCreatedAt
 	application.UpdatedAt = parsedUpdatedAt
+	if strings.TrimSpace(latestEventAt) != "" {
+		parsedLatestEventAt, err := time.Parse(time.RFC3339Nano, latestEventAt)
+		if err != nil {
+			return Application{}, fmt.Errorf("parse application latest_event_at: %w", err)
+		}
+		application.LatestEventAt = parsedLatestEventAt
+	}
 
 	return application, nil
 }
@@ -630,20 +637,3 @@ func scanArtifact(scanner artifactScanner) (Artifact, error) {
 	return artifact, nil
 }
 
-func formatNullableTime(value *time.Time) any {
-	if value == nil || value.IsZero() {
-		return nil
-	}
-	return value.UTC().Format(time.RFC3339Nano)
-}
-
-func parseNullableTime(value sql.NullString) (*time.Time, error) {
-	if !value.Valid || value.String == "" {
-		return nil, nil
-	}
-	parsed, err := time.Parse(time.RFC3339Nano, value.String)
-	if err != nil {
-		return nil, err
-	}
-	return &parsed, nil
-}

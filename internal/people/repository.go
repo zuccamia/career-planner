@@ -80,7 +80,8 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Person, error) {
 			p.linkedin_url,
 			p.notes,
 			p.created_at,
-			p.updated_at
+			p.updated_at,
+			''
 		FROM people p
 		LEFT JOIN companies c ON c.id = p.company_id
 		WHERE p.id = ?
@@ -89,7 +90,7 @@ func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Person, error) {
 	return scanPerson(row)
 }
 
-// List returns people ordered by most recently updated first.
+// List returns people ordered by latest thread activity first, then most recently updated.
 func (r *SQLRepository) List(ctx context.Context) ([]Person, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
@@ -101,10 +102,16 @@ func (r *SQLRepository) List(ctx context.Context) ([]Person, error) {
 			p.linkedin_url,
 			p.notes,
 			p.created_at,
-			p.updated_at
+			p.updated_at,
+			COALESCE(latest_thread.last_activity_at, '')
 		FROM people p
 		LEFT JOIN companies c ON c.id = p.company_id
-		ORDER BY p.updated_at DESC, p.id DESC
+		LEFT JOIN (
+			SELECT person_id, MAX(last_activity_at) AS last_activity_at
+			FROM communication_threads
+			GROUP BY person_id
+		) latest_thread ON latest_thread.person_id = p.id
+		ORDER BY COALESCE(latest_thread.last_activity_at, p.updated_at) DESC, p.id DESC
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list people: %w", err)
@@ -214,6 +221,7 @@ func scanPerson(scanner personScanner) (Person, error) {
 	var person Person
 	var createdAt string
 	var updatedAt string
+	var latestThreadLastActivityAt string
 	if err := scanner.Scan(
 		&person.ID,
 		&person.FullName,
@@ -224,6 +232,7 @@ func scanPerson(scanner personScanner) (Person, error) {
 		&person.Notes,
 		&createdAt,
 		&updatedAt,
+		&latestThreadLastActivityAt,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Person{}, ErrPersonNotFound
@@ -240,6 +249,13 @@ func scanPerson(scanner personScanner) (Person, error) {
 		return Person{}, fmt.Errorf("parse person updated_at: %w", err)
 	}
 	person.CreatedAt = parsedCreatedAt
+	if strings.TrimSpace(latestThreadLastActivityAt) != "" {
+		parsedLatestThreadLastActivityAt, err := time.Parse(time.RFC3339Nano, latestThreadLastActivityAt)
+		if err != nil {
+			return Person{}, fmt.Errorf("parse person latest_thread_last_activity_at: %w", err)
+		}
+		person.LatestThreadLastActivityAt = parsedLatestThreadLastActivityAt
+	}
 	person.UpdatedAt = parsedUpdatedAt
 
 	return person, nil

@@ -210,3 +210,31 @@ test('user can add a generated message to the thread', async ({ page }) => {
   await page.goto(threadPath);
   await expect(page.getByText('Would love to reconnect next week if you are open to it.')).toBeVisible();
 });
+
+test('people card updated timestamp uses latest communication thread last activity', async ({ page }) => {
+  const companyName = 'People Timestamp E2E Labs';
+  const personName = 'Annie Easley E2E';
+
+  await createCompany(page, {
+    name: companyName,
+    officialName: companyName,
+  });
+
+  await createPerson(page, {
+    fullName: personName,
+    companyName,
+  });
+
+  await page.locator('li', { hasText: personName }).first().click({ position: { x: 40, y: 40 } });
+  await page.getByLabel('Subject').fill('Intro');
+  await page.getByRole('button', { name: 'Add thread' }).click();
+  await page.getByRole('link', { name: 'Entry' }).click();
+  await page.getByLabel('Direction').selectOption('outbound');
+  await page.getByLabel('Content').fill('Following up with a quick hello.');
+  await page.getByRole('button', { name: 'Save' }).click();
+
+  const today = new Date().toISOString().slice(0, 10);
+  await page.goto('/people');
+  const personCard = page.locator('li', { hasText: personName }).first();
+  await expect(personCard).toContainText(`Updated ${today}`);
+});

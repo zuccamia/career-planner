@@ -108,6 +108,26 @@ func (r *SQLRepository) CreateEntry(ctx context.Context, input CreateEntryInput)
 	return r.getEntryByID(ctx, entryID)
 }
 
+// UpdateThread updates editable fields on an existing communication thread.
+func (r *SQLRepository) UpdateThread(ctx context.Context, input UpdateThreadInput) (Thread, error) {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE communication_threads
+		SET channel = ?, subject = ?, updated_at = ?
+		WHERE id = ?
+	`, input.Channel, input.Subject, time.Now().UTC().Format(time.RFC3339Nano), input.ThreadID)
+	if err != nil {
+		return Thread{}, fmt.Errorf("update communication thread: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return Thread{}, fmt.Errorf("fetch communication thread update rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return Thread{}, ErrThreadNotFound
+	}
+	return r.GetThreadByID(ctx, input.ThreadID)
+}
+
 // DeleteEntry removes one thread entry and refreshes the parent thread activity timestamp.
 func (r *SQLRepository) DeleteEntry(ctx context.Context, id int64) error {
 	tx, err := r.db.BeginTx(ctx, nil)

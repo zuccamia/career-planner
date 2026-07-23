@@ -37,12 +37,12 @@
         <form method="post" action="/communication-threads/{{.Thread.ID}}/generate">
           <input type="hidden" name="goal" value="outreach">
           <input type="hidden" name="return_to" value="entry-form">
-          {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Draft outreach" "Variant" "secondary" "Size" "compact"}}
+          {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Draft outreach" "Variant" "primary" "Size" "compact"}}
         </form>
         <form method="post" action="/communication-threads/{{.Thread.ID}}/generate">
           <input type="hidden" name="goal" value="reply">
           <input type="hidden" name="return_to" value="entry-form">
-          {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Draft reply" "Variant" "secondary" "Size" "compact"}}
+          {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Draft reply" "Variant" "primary" "Size" "compact"}}
         </form>
       </div>
       {{if .GeneratedMessage}}

@@ -14,6 +14,7 @@ type fakeRepository struct {
 	createThreadInput  CreateThreadInput
 	createEntryInput   CreateEntryInput
 	threadDetail       ThreadDetail
+	updateThreadInput  UpdateThreadInput
 	updateSummaryInput UpdateSummaryInput
 	updateStatusThread int64
 	updateStatusValue  string
@@ -31,6 +32,10 @@ func (f *fakeRepository) CreateEntry(ctx context.Context, input CreateEntryInput
 func (f *fakeRepository) DeleteEntry(ctx context.Context, id int64) error { return nil }
 func (f *fakeRepository) GetThreadByID(ctx context.Context, id int64) (Thread, error) {
 	return Thread{ID: id}, nil
+}
+func (f *fakeRepository) UpdateThread(ctx context.Context, input UpdateThreadInput) (Thread, error) {
+	f.updateThreadInput = input
+	return Thread{ID: input.ThreadID, Channel: input.Channel, Subject: input.Subject}, nil
 }
 func (f *fakeRepository) GetThreadDetail(ctx context.Context, id int64) (ThreadDetail, error) {
 	return f.threadDetail, nil
@@ -176,9 +181,80 @@ func TestBuildThreadContextIncludesOptionalFields(t *testing.T) {
 		Entries: []Entry{{OccurredAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC), Direction: "outbound", Content: "Sent first email"}},
 	})
 
-	for _, want := range []string{"Person: Jane Doe", "Background notes: Strong referral", "Existing summary: Waiting on reply", "- 2026-01-02T03:04:05Z | outbound | Sent first email"} {
+	for _, want := range []string{
+		"Person: Jane Doe",
+		"Background notes: Strong referral",
+		"Existing summary: Waiting on reply",
+		"Entry direction reference: inbound = from the person to me; outbound = from me to the person; note = private internal note.",
+		"Entry order: newest first.",
+		"- 2026-01-02T03:04:05Z | outbound | from me to person | Sent first email",
+	} {
 		if !strings.Contains(contextText, want) {
 			t.Fatalf("expected context to contain %q, got %q", want, contextText)
 		}
+	}
+}
+
+func TestBuildThreadContextLabelsEntryOwnershipByDirection(t *testing.T) {
+	svc := NewService(&fakeRepository{}, nil)
+	contextText := svc.buildThreadContext(context.Background(), ThreadDetail{
+		Thread: Thread{PersonName: "Jane Doe", Channel: "email", Subject: "Thread", Status: "open"},
+		Entries: []Entry{
+			{OccurredAt: time.Date(2026, 1, 3, 9, 0, 0, 0, time.UTC), Direction: "outbound", Content: "I replied with availability."},
+			{OccurredAt: time.Date(2026, 1, 2, 8, 0, 0, 0, time.UTC), Direction: "inbound", Content: "Jane asked for times."},
+			{OccurredAt: time.Date(2026, 1, 1, 7, 0, 0, 0, time.UTC), Direction: "note", Content: "Need to follow up this week."},
+		},
+	})
+
+	for _, want := range []string{
+		"- 2026-01-03T09:00:00Z | outbound | from me to person | I replied with availability.",
+		"- 2026-01-02T08:00:00Z | inbound | from person to me | Jane asked for times.",
+		"- 2026-01-01T07:00:00Z | note | private internal note | Need to follow up this week.",
+	} {
+		if !strings.Contains(contextText, want) {
+			t.Fatalf("expected context to contain %q, got %q", want, contextText)
+		}
+	}
+}
+
+func TestSummarizeThreadPromptExplainsDirectionOwnership(t *testing.T) {
+	activityAt := time.Now().UTC()
+	repo := &fakeRepository{threadDetail: ThreadDetail{
+		Thread: Thread{ID: 1, PersonName: "Jane Doe", Channel: "email", Subject: "Intro", Status: "open", LastActivityAt: activityAt},
+		Entries: []Entry{
+			{OccurredAt: time.Date(2026, 1, 3, 9, 0, 0, 0, time.UTC), Direction: "outbound", Content: "I replied with availability."},
+			{OccurredAt: time.Date(2026, 1, 2, 8, 0, 0, 0, time.UTC), Direction: "inbound", Content: "Jane asked for times."},
+		},
+	}}
+	client := fakeLLMClient{generate: func(prompt llm.Prompt, out any) error {
+		for _, want := range []string{
+			"summary should be 1 to 2 sentences",
+			"prioritize the most recent activity and the clearest context for the next action",
+			"include only the most important relationship context, current status, and next-step if any",
+			"attribute actions and statements to the correct party based on entry direction",
+			"inbound entries are messages from the person named in the thread to me",
+			"outbound entries are messages from me to the person named in the thread",
+			"entries are listed newest first, so do not assume the first listed entry started the thread",
+			"- 2026-01-03T09:00:00Z | outbound | from me to person | I replied with availability.",
+			"- 2026-01-02T08:00:00Z | inbound | from person to me | Jane asked for times.",
+		} {
+			if !strings.Contains(prompt.User, want) {
+				t.Fatalf("expected summarize prompt to contain %q, got %q", want, prompt.User)
+			}
+		}
+		payload := out.(*struct {
+			Summary string `json:"summary"`
+		})
+		payload.Summary = "Jane asked for times, and I replied with availability."
+		return nil
+	}}
+	svc := NewService(repo, client)
+
+	thread, err := svc.SummarizeThread(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("SummarizeThread returned error: %v", err)
+	}
+	if thread.Summary != "Jane asked for times, and I replied with availability." {
+		t.Fatalf("unexpected summary: %q", thread.Summary)
 	}
 }

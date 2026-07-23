@@ -28,7 +28,7 @@
           </div>
         </div>
         <div class="relative z-20 flex items-center gap-3">
-          <span class="text-sm text-slate-500">Updated {{.UpdatedAt.Format "2006-01-02"}}</span>
+          <span class="text-sm text-slate-500">Updated {{if .LatestThreadLastActivityAt.IsZero}}{{.UpdatedAt.Format "2006-01-02"}}{{else}}{{.LatestThreadLastActivityAt.Format "2006-01-02"}}{{end}}</span>
           {{template "partials/button" dict "Kind" "link" "Href" (printf "/people/%d/edit" .ID) "Variant" "icon" "Icon" "edit" "IconOnly" true "AriaLabel" (printf "Edit person %s" .FullName)}}
           <form class="relative z-20" method="post" action="/people/{{.ID}}/delete" onsubmit="return confirm('Delete this person?');">
             {{template "partials/button" dict "Kind" "button" "Type" "submit" "Variant" "danger-icon" "Icon" "delete" "IconOnly" true "AriaLabel" (printf "Delete person %s" .FullName)}}

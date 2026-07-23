@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ngochoang/career-planner/internal/applications"
 )
@@ -97,7 +98,7 @@ func (s *Server) applicationEditForm(w http.ResponseWriter, r *http.Request) {
 		Title:             "Edit application",
 		FormTitle:         "Edit application",
 		FormAction:        "/applications/" + strconv.FormatInt(application.ID, 10) + "/edit",
-		SubmitLabel:       "Save changes",
+		SubmitLabel:       "Save",
 		BackHref:          "/applications/" + strconv.FormatInt(application.ID, 10),
 		BackLabel:         "← Back to application",
 		SelectedCompanyID: application.CompanyID,
@@ -223,9 +224,9 @@ func (s *Server) applicationShow(w http.ResponseWriter, r *http.Request) {
 		"ActiveNav":             "applications",
 		"Application":           application,
 		"Structured":            structured,
-		"RoleLevelLabel":        formatSlugLabel(structured.RoleLevel),
-		"EmploymentTypeLabel":   formatSlugLabel(structured.EmploymentType),
-		"SeasonLabel":           formatSlugLabel(structured.Season),
+		"RoleLevelLabel":        humanizeSnakeCase(structured.RoleLevel),
+		"EmploymentTypeLabel":   humanizeSnakeCase(structured.EmploymentType),
+		"SeasonLabel":           humanizeSnakeCase(structured.Season),
 		"SalaryLabel":           formatSalaryLabel(structured.Salary.Currency, structured.Salary.Amount),
 		"Events":                events,
 		"Artifacts":             artifacts,
@@ -252,26 +253,47 @@ func (s *Server) applicationShow(w http.ResponseWriter, r *http.Request) {
 		"HasMajors":             len(structured.Requirements.Majors) > 0,
 		"HasAvailability":       len(structured.Requirements.Availability) > 0,
 		"HasWorkAuthorization":  strings.TrimSpace(structured.Requirements.WorkAuthorization) != "",
+		"Statuses":              applications.Statuses,
 	}
 	if err := s.render(w, r, "application_show.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-func formatSlugLabel(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
+func (s *Server) applicationStatusUpdate(w http.ResponseWriter, r *http.Request) {
+	id, ok := applicationPathID(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
 	}
-	value = strings.ReplaceAll(value, "_", " ")
-	parts := strings.Fields(strings.ToLower(value))
-	for i, part := range parts {
-		if len(part) == 0 {
-			continue
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	occurredAt, err := parseOptionalLocalDateTime(r.FormValue("occurred_at"))
+	if err != nil {
+		http.Error(w, "invalid occurred at", http.StatusBadRequest)
+		return
+	}
+
+	application, err := s.applications.UpdateStatus(r.Context(), applications.UpdateStatusInput{
+		ApplicationID: id,
+		Status:        r.FormValue("status"),
+		OccurredAt:    occurredAt,
+		Notes:         r.FormValue("notes"),
+	})
+	if err != nil {
+		if errors.Is(err, applications.ErrApplicationNotFound) {
+			http.NotFound(w, r)
+			return
 		}
-		parts[i] = strings.ToUpper(part[:1]) + part[1:]
+		log.Printf("update application status: %v", err)
+		http.Error(w, "could not update application status", http.StatusInternalServerError)
+		return
 	}
-	return strings.Join(parts, " ")
+
+	http.Redirect(w, r, "/applications/"+strconv.FormatInt(application.ID, 10), http.StatusSeeOther)
 }
 
 func formatSalaryLabel(currency, amount string) string {
@@ -294,6 +316,18 @@ func formatSalaryLabel(currency, amount string) string {
 		return amount
 	}
 	return currency + amount
+}
+
+func parseOptionalLocalDateTime(value string) (time.Time, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, nil
+	}
+	parsed, err := time.ParseInLocation("2006-01-02T15:04", value, time.Local)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return parsed.UTC(), nil
 }
 
 // applicationExtractJobDescription generates structured JSON for one application's raw job description.

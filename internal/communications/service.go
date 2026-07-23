@@ -12,12 +12,13 @@ import (
 )
 
 var allowedChannels = map[string]struct{}{
-	"email":    {},
-	"linkedin": {},
-	"call":     {},
-	"meeting":  {},
-	"text":     {},
-	"general":  {},
+	"email":     {},
+	"handshake": {},
+	"linkedin":  {},
+	"call":      {},
+	"meeting":   {},
+	"text":      {},
+	"general":   {},
 }
 
 var allowedDirections = map[string]struct{}{
@@ -50,6 +51,19 @@ func (s *Service) CreateThread(ctx context.Context, input CreateThreadInput) (Th
 		return Thread{}, fmt.Errorf("subject is required")
 	}
 	return s.repo.CreateThread(ctx, input)
+}
+
+// UpdateThread sanitizes editable thread fields and persists them.
+func (s *Service) UpdateThread(ctx context.Context, input UpdateThreadInput) (Thread, error) {
+	if input.ThreadID <= 0 {
+		return Thread{}, ErrThreadNotFound
+	}
+	input.Channel = normalizeChannel(input.Channel)
+	input.Subject = strings.TrimSpace(input.Subject)
+	if input.Subject == "" {
+		return Thread{}, fmt.Errorf("subject is required")
+	}
+	return s.repo.UpdateThread(ctx, input)
 }
 
 // CreateEntry sanitizes user input and appends a communication entry to an existing thread.
@@ -201,6 +215,8 @@ func (s *Service) buildThreadContext(_ context.Context, detail ThreadDetail) str
 		fmt.Sprintf("Channel: %s", detail.Thread.Channel),
 		fmt.Sprintf("Subject: %s", detail.Thread.Subject),
 		fmt.Sprintf("Status: %s", detail.Thread.Status),
+		"Entry direction reference: inbound = from the person to me; outbound = from me to the person; note = private internal note.",
+		"Entry order: newest first.",
 	}
 	if strings.TrimSpace(detail.Thread.PersonNotes) != "" {
 		parts = append(parts, fmt.Sprintf("Background notes: %s", strings.TrimSpace(detail.Thread.PersonNotes)))
@@ -210,7 +226,18 @@ func (s *Service) buildThreadContext(_ context.Context, detail ThreadDetail) str
 	}
 	parts = append(parts, "Entries:")
 	for _, entry := range detail.Entries {
-		parts = append(parts, fmt.Sprintf("- %s | %s | %s", entry.OccurredAt.Format(time.RFC3339), entry.Direction, strings.TrimSpace(entry.Content)))
+		parts = append(parts, fmt.Sprintf("- %s | %s | %s | %s", entry.OccurredAt.Format(time.RFC3339), entry.Direction, entryActorLabel(entry.Direction), strings.TrimSpace(entry.Content)))
 	}
 	return strings.Join(parts, "\n")
+}
+
+func entryActorLabel(direction string) string {
+	switch normalizeDirection(direction) {
+	case "inbound":
+		return "from person to me"
+	case "outbound":
+		return "from me to person"
+	default:
+		return "private internal note"
+	}
 }

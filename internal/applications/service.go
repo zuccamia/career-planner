@@ -44,7 +44,7 @@ func (s *Service) CountByStatus(ctx context.Context, status string) (int, error)
 
 // Create sanitizes user input and persists a new application.
 func (s *Service) Create(ctx context.Context, input CreateApplicationInput) (Application, error) {
-	input.CompanyID, input.PersonID, input.RoleTitle, input.JobPostingURL, input.JobDescriptionRaw, input.JobDescriptionExtractedJSON, input.Status, input.NextAction, input.Notes = normalizeApplicationFields(
+	input.CompanyID, input.PersonID, input.RoleTitle, input.JobPostingURL, input.JobDescriptionRaw, input.JobDescriptionExtractedJSON, input.Status, input.Notes = normalizeApplicationFields(
 		input.CompanyID,
 		input.PersonID,
 		input.RoleTitle,
@@ -52,7 +52,6 @@ func (s *Service) Create(ctx context.Context, input CreateApplicationInput) (App
 		input.JobDescriptionRaw,
 		input.JobDescriptionExtractedJSON,
 		input.Status,
-		input.NextAction,
 		input.Notes,
 	)
 
@@ -63,7 +62,12 @@ func (s *Service) Create(ctx context.Context, input CreateApplicationInput) (App
 		return Application{}, errors.New("role title is required")
 	}
 
-	return s.repo.Create(ctx, input)
+	application, err := s.repo.Create(ctx, input)
+	if err != nil {
+		return Application{}, err
+	}
+
+	return application, nil
 }
 
 // GetByID returns one application when the identifier is valid.
@@ -87,7 +91,7 @@ func (s *Service) ListCompanyCounts(ctx context.Context) ([]CompanyCount, error)
 // Update sanitizes user input and persists changes to an existing application.
 func (s *Service) Update(ctx context.Context, input UpdateApplicationInput) (Application, error) {
 	input.ID = shared.NonNegativeInt64(input.ID)
-	input.CompanyID, input.PersonID, input.RoleTitle, input.JobPostingURL, input.JobDescriptionRaw, input.JobDescriptionExtractedJSON, input.Status, input.NextAction, input.Notes = normalizeApplicationFields(
+	input.CompanyID, input.PersonID, input.RoleTitle, input.JobPostingURL, input.JobDescriptionRaw, input.JobDescriptionExtractedJSON, input.Status, input.Notes = normalizeApplicationFields(
 		input.CompanyID,
 		input.PersonID,
 		input.RoleTitle,
@@ -95,7 +99,6 @@ func (s *Service) Update(ctx context.Context, input UpdateApplicationInput) (App
 		input.JobDescriptionRaw,
 		input.JobDescriptionExtractedJSON,
 		input.Status,
-		input.NextAction,
 		input.Notes,
 	)
 
@@ -112,7 +115,83 @@ func (s *Service) Update(ctx context.Context, input UpdateApplicationInput) (App
 		return Application{}, errors.New("application status is required")
 	}
 
-	return s.repo.Update(ctx, input)
+	before, err := s.repo.GetByID(ctx, input.ID)
+	if err != nil {
+		return Application{}, err
+	}
+
+	application, err := s.repo.Update(ctx, input)
+	if err != nil {
+		return Application{}, err
+	}
+
+	if before.Status != application.Status {
+		if _, err := s.repo.CreateEvent(ctx, CreateEventInput{
+			ApplicationID: application.ID,
+			Type:          "status_changed",
+			FromStatus:    before.Status,
+			ToStatus:      application.Status,
+			OccurredAt:    application.UpdatedAt,
+		}); err != nil {
+			return Application{}, err
+		}
+	}
+
+	if summary := summarizeApplicationChanges(before, application); summary != "" {
+		if _, err := s.repo.CreateEvent(ctx, CreateEventInput{
+			ApplicationID: application.ID,
+			Type:          "note",
+			Content:       summary,
+			OccurredAt:    application.UpdatedAt,
+		}); err != nil {
+			return Application{}, err
+		}
+	}
+
+	return application, nil
+}
+
+// UpdateStatus changes only the application status and records a timeline event when it changes.
+func (s *Service) UpdateStatus(ctx context.Context, input UpdateStatusInput) (Application, error) {
+	input.ApplicationID = shared.NonNegativeInt64(input.ApplicationID)
+	input.Status = normalizeStatus(input.Status)
+	input.Notes = strings.TrimSpace(input.Notes)
+
+	if input.ApplicationID <= 0 {
+		return Application{}, ErrApplicationNotFound
+	}
+	if input.Status == "" {
+		return Application{}, errors.New("application status is required")
+	}
+	if input.OccurredAt.IsZero() {
+		input.OccurredAt = time.Now().UTC()
+	}
+
+	before, err := s.repo.GetByID(ctx, input.ApplicationID)
+	if err != nil {
+		return Application{}, err
+	}
+	if before.Status == input.Status {
+		return before, nil
+	}
+
+	application, err := s.repo.UpdateStatus(ctx, input.ApplicationID, input.Status)
+	if err != nil {
+		return Application{}, err
+	}
+
+	if _, err := s.repo.CreateEvent(ctx, CreateEventInput{
+		ApplicationID: application.ID,
+		Type:          "status_changed",
+		Content:       input.Notes,
+		FromStatus:    before.Status,
+		ToStatus:      application.Status,
+		OccurredAt:    input.OccurredAt,
+	}); err != nil {
+		return Application{}, err
+	}
+
+	return application, nil
 }
 
 // ExtractJobDescription asks the configured LLM to turn raw job description text into structured JSON.
@@ -271,7 +350,7 @@ func normalizeArtifactStorageType(storageType string) string {
 	return storageType
 }
 
-func normalizeApplicationFields(companyID, personID int64, roleTitle, jobPostingURL, jobDescriptionRaw, jobDescriptionExtractedJSON, status, nextAction, notes string) (int64, int64, string, string, string, string, string, string, string) {
+func normalizeApplicationFields(companyID, personID int64, roleTitle, jobPostingURL, jobDescriptionRaw, jobDescriptionExtractedJSON, status, notes string) (int64, int64, string, string, string, string, string, string) {
 	return shared.NonNegativeInt64(companyID),
 		shared.NonNegativeInt64(personID),
 		strings.TrimSpace(roleTitle),
@@ -279,7 +358,6 @@ func normalizeApplicationFields(companyID, personID int64, roleTitle, jobPosting
 		strings.TrimSpace(jobDescriptionRaw),
 		normalizeExtractedJSON(jobDescriptionExtractedJSON),
 		normalizeInputStatus(status),
-		strings.TrimSpace(nextAction),
 		strings.TrimSpace(notes)
 }
 
@@ -306,4 +384,31 @@ func makeAllowedValues(values []string) map[string]struct{} {
 	}
 	return allowed
 }
+
+func summarizeApplicationChanges(before, after Application) string {
+	changes := make([]string, 0, 6)
+
+	if before.CompanyID != after.CompanyID || before.CompanyName != after.CompanyName {
+		changes = append(changes, "company")
+	}
+	if before.PersonID != after.PersonID || before.PersonName != after.PersonName {
+		changes = append(changes, "contact")
+	}
+	if before.RoleTitle != after.RoleTitle {
+		changes = append(changes, "role title")
+	}
+	if before.JobPostingURL != after.JobPostingURL {
+		changes = append(changes, "job posting URL")
+	}
+	if before.Notes != after.Notes {
+		changes = append(changes, "notes")
+	}
+
+	if len(changes) == 0 {
+		return ""
+	}
+
+	return "Updated " + strings.Join(changes, ", ")
+}
+
 

@@ -14,6 +14,47 @@ import (
 	"github.com/ngochoang/career-planner/internal/people"
 )
 
+// communicationThreadEdit renders the edit form for one communication thread.
+func (s *Server) communicationThreadEdit(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	s.renderCommunicationThreadEditForm(w, r, id, nil)
+}
+
+// communicationThreadUpdate persists editable thread fields.
+func (s *Server) communicationThreadUpdate(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	_, err = s.communications.UpdateThread(r.Context(), communications.UpdateThreadInput{
+		ThreadID: id,
+		Channel:  r.FormValue("channel"),
+		Subject:  r.FormValue("subject"),
+	})
+	if err == nil {
+		http.Redirect(w, r, "/communication-threads/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+		return
+	}
+	if errors.Is(err, communications.ErrThreadNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	s.renderCommunicationThreadEditForm(w, r, id, map[string]any{
+		"ThreadError":   err.Error(),
+		"ThreadSubject": strings.TrimSpace(r.FormValue("subject")),
+		"ThreadChannel": strings.TrimSpace(r.FormValue("channel")),
+	})
+}
+
 // communicationThreadCreate creates a new communication thread for one person.
 func (s *Server) communicationThreadCreate(w http.ResponseWriter, r *http.Request) {
 	personID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -55,7 +96,7 @@ func (s *Server) communicationThreadCreate(w http.ResponseWriter, r *http.Reques
 		"Title":            person.FullName,
 		"ActiveNav":        "people",
 		"Person":           person,
-		"Threads":          threads,
+		"Threads":          buildPersonThreadCardViews(threads),
 		"HasThreads":       len(threads) > 0,
 		"HasLinkedInURL":   strings.TrimSpace(person.LinkedInURL) != "",
 		"ThreadError":      err.Error(),
@@ -64,7 +105,7 @@ func (s *Server) communicationThreadCreate(w http.ResponseWriter, r *http.Reques
 		"ThreadOccurredAt": strings.TrimSpace(r.FormValue("occurred_at")),
 	}
 	if err := s.render(w, r, "person_show.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("render communication thread create error state: %v", err)
 	}
 }
 
@@ -96,7 +137,7 @@ func (s *Server) communicationThreadShow(w http.ResponseWriter, r *http.Request)
 		"HasSummaryUpdatedAt": detail.Thread.SummaryUpdatedAt != nil,
 	}
 	if err := s.render(w, r, "communication_thread_show.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("render communication thread show: %v", err)
 	}
 }
 
@@ -355,6 +396,33 @@ func (s *Server) renderCommunicationEntryForm(w http.ResponseWriter, r *http.Req
 		data[key] = value
 	}
 	if err := s.render(w, r, "communication_entry_new.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// renderCommunicationThreadEditForm renders the edit page with optional transient state.
+func (s *Server) renderCommunicationThreadEditForm(w http.ResponseWriter, r *http.Request, threadID int64, extra map[string]any) {
+	thread, err := s.communications.GetThreadByID(r.Context(), threadID)
+	if err != nil {
+		if errors.Is(err, communications.ErrThreadNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+		log.Printf("get communication thread for edit form: %v", err)
+		http.Error(w, "could not load communication thread", http.StatusInternalServerError)
+		return
+	}
+	data := map[string]any{
+		"Title":         "Edit thread",
+		"ActiveNav":     "people",
+		"Thread":        thread,
+		"ThreadSubject": thread.Subject,
+		"ThreadChannel": thread.Channel,
+	}
+	for key, value := range extra {
+		data[key] = value
+	}
+	if err := s.render(w, r, "communication_thread_edit.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

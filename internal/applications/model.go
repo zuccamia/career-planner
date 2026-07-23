@@ -14,7 +14,7 @@ import (
 var ErrApplicationNotFound = errors.New("application not found")
 
 // Statuses lists the supported application workflow states in display order.
-var Statuses = []string{"wishlist", "applied", "in_process", "offer", "rejected", "withdrawn"}
+var Statuses = []string{"wishlist", "applied", "online_assessment", "first_interview", "second_interview", "additional_interview", "offer", "rejected", "withdrawn"}
 
 // Application is the persisted job application record used throughout the application.
 type Application struct {
@@ -28,12 +28,10 @@ type Application struct {
 	JobDescriptionRaw           string
 	JobDescriptionExtractedJSON string
 	Status                      string
-	AppliedAt                   *time.Time
-	NextAction                  string
-	NextStepAt                  *time.Time
 	Notes                       string
 	CreatedAt                   time.Time
 	UpdatedAt                   time.Time
+	LatestEventAt               time.Time
 }
 
 // Event is one timeline entry associated with an application.
@@ -79,9 +77,6 @@ type CreateApplicationInput struct {
 	JobDescriptionRaw           string
 	JobDescriptionExtractedJSON string
 	Status                      string
-	AppliedAt                   *time.Time
-	NextAction                  string
-	NextStepAt                  *time.Time
 	Notes                       string
 }
 
@@ -95,9 +90,6 @@ type UpdateApplicationInput struct {
 	JobDescriptionRaw           string
 	JobDescriptionExtractedJSON string
 	Status                      string
-	AppliedAt                   *time.Time
-	NextAction                  string
-	NextStepAt                  *time.Time
 	Notes                       string
 }
 
@@ -109,6 +101,14 @@ type CreateEventInput struct {
 	FromStatus    string
 	ToStatus      string
 	OccurredAt    time.Time
+}
+
+// UpdateStatusInput contains the values supported by the quick status-update workflow.
+type UpdateStatusInput struct {
+	ApplicationID int64
+	Status        string
+	OccurredAt    time.Time
+	Notes         string
 }
 
 // CreateArtifactInput contains the values required to save one application artifact.
@@ -136,6 +136,7 @@ type Repository interface {
 	ListArtifactsByApplicationID(ctx context.Context, applicationID int64) ([]Artifact, error)
 	ListEventsByApplicationID(ctx context.Context, applicationID int64) ([]Event, error)
 	Update(ctx context.Context, input UpdateApplicationInput) (Application, error)
+	UpdateStatus(ctx context.Context, applicationID int64, status string) (Application, error)
 	UpdateJobDescriptionRaw(ctx context.Context, applicationID int64, raw string) (Application, error)
 	UpdateJobDescriptionExtractedJSON(ctx context.Context, applicationID int64, extractedJSON string) (Application, error)
 }

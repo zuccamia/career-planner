@@ -21,11 +21,11 @@
           <div class="space-y-2">
             <div class="flex flex-wrap items-center gap-2">
               <span class="font-semibold text-slate-900">{{.RoleTitle}}</span>
-              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold {{applicationStatusClasses .Status}}">{{.Status}}</span>
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold {{applicationStatusClasses .Status}}">{{humanizeSnakeCase .Status}}</span>
             </div>
             <p class="text-sm text-slate-600">{{.CompanyName}}{{if .PersonName}} · {{.PersonName}}{{end}}</p>
           </div>
-          <span class="text-sm text-slate-500">Updated {{.UpdatedAt.Format "2006-01-02"}}</span>
+          <span class="text-sm text-slate-500">Updated {{if .LatestEventAt.IsZero}}{{.UpdatedAt.Format "2006-01-02"}}{{else}}{{.LatestEventAt.Format "2006-01-02"}}{{end}}</span>
         </div>
       </a>
     </li>

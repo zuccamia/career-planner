@@ -44,7 +44,7 @@
       <label class="text-sm font-medium text-slate-900" for="status">Status</label>
       <select class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="status" name="status">
         {{range .Statuses}}
-        <option value="{{.}}" {{if eq $.Status .}}selected{{end}}>{{.}}</option>
+        <option value="{{.}}" {{if eq $.Status .}}selected{{end}}>{{humanizeSnakeCase .}}</option>
         {{end}}
       </select>
     </div>

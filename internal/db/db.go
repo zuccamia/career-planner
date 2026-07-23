@@ -152,9 +152,6 @@ CREATE TABLE IF NOT EXISTS applications (
     job_description_raw TEXT NOT NULL DEFAULT '',
     job_description_extracted_json TEXT NOT NULL DEFAULT '{}',
     status TEXT NOT NULL DEFAULT 'wishlist',
-    applied_at TEXT,
-    next_action TEXT NOT NULL DEFAULT '',
-    next_step_at TEXT,
     notes TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -164,7 +161,6 @@ CREATE TABLE IF NOT EXISTS applications (
 
 CREATE INDEX IF NOT EXISTS idx_applications_company_id ON applications(company_id);
 CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
-CREATE INDEX IF NOT EXISTS idx_applications_next_step_at ON applications(next_step_at);
 
 CREATE TABLE IF NOT EXISTS application_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

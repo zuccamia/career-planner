@@ -19,6 +19,7 @@ type Person struct {
 	Notes       string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	LatestThreadLastActivityAt time.Time
 }
 
 // CreatePersonInput contains the validated fields required to create a person.

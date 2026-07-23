@@ -51,6 +51,13 @@ type CreateThreadInput struct {
 	OccurredAt time.Time
 }
 
+// UpdateThreadInput contains the editable fields for an existing communication thread.
+type UpdateThreadInput struct {
+	ThreadID int64
+	Channel  string
+	Subject  string
+}
+
 // CreateEntryInput contains the data required to append a communication entry to a thread.
 type CreateEntryInput struct {
 	ThreadID   int64
@@ -82,6 +89,7 @@ type Repository interface {
 	GetThreadByID(ctx context.Context, id int64) (Thread, error)
 	GetThreadDetail(ctx context.Context, id int64) (ThreadDetail, error)
 	ListThreadsByPersonID(ctx context.Context, personID int64) ([]Thread, error)
+	UpdateThread(ctx context.Context, input UpdateThreadInput) (Thread, error)
 	UpdateThreadStatus(ctx context.Context, threadID int64, status string) (Thread, error)
 	UpdateThreadSummary(ctx context.Context, input UpdateSummaryInput) (Thread, error)
 }

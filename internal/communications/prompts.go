@@ -14,10 +14,16 @@ Return exactly one JSON object with this key:
 - summary
 
 Rules:
-- summary should be 3 to 6 sentences
-- capture the relationship context, important facts learned, current status, and the most relevant next-step if any
+- summary should be 1 to 2 sentences
+- prioritize the most recent activity and the clearest context for the next action
+- include only the most important relationship context, current status, and next-step if any
 - do not invent facts
 - treat notes as private internal context
+- attribute actions and statements to the correct party based on entry direction
+- inbound entries are messages from the person named in the thread to me
+- outbound entries are messages from me to the person named in the thread
+- note entries are private internal notes, not messages sent by either party
+- entries are listed newest first, so do not assume the first listed entry started the thread
 
 Thread details:
 %s`

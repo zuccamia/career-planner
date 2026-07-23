@@ -4,6 +4,7 @@ package http
 
 import (
 	"errors"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"applicationStatusClasses": applicationStatusClasses,
+		"applicationEventSummary": applicationEventSummary,
+		"humanizeSnakeCase":       humanizeSnakeCase,
 		"dict":                     templateDict,
 	}
 }
@@ -64,8 +67,14 @@ func applicationStatusClasses(status string) string {
 		return "bg-slate-100 text-slate-700"
 	case "applied":
 		return "bg-blue-100 text-blue-700"
-	case "in_process":
+	case "online_assessment":
+		return "bg-cyan-100 text-cyan-700"
+	case "first_interview":
 		return "bg-amber-100 text-amber-800"
+	case "second_interview":
+		return "bg-orange-100 text-orange-800"
+	case "additional_interview":
+		return "bg-fuchsia-100 text-fuchsia-700"
 	case "offer":
 		return "bg-emerald-100 text-emerald-700"
 	case "rejected":
@@ -75,6 +84,64 @@ func applicationStatusClasses(status string) string {
 	default:
 		return "bg-slate-100 text-slate-700"
 	}
+}
+
+func applicationEventSummary(eventType, content, fromStatus, toStatus string) string {
+	eventType = strings.TrimSpace(strings.ToLower(eventType))
+	content = strings.TrimSpace(content)
+	fromStatus = strings.TrimSpace(fromStatus)
+	toStatus = strings.TrimSpace(toStatus)
+
+	switch eventType {
+	case "status_changed":
+		if fromStatus != "" && toStatus != "" {
+			if content != "" {
+				return fmt.Sprintf("Status changed: %s → %s — %s", humanizeSnakeCase(fromStatus), humanizeSnakeCase(toStatus), content)
+			}
+			return fmt.Sprintf("Status changed: %s → %s", humanizeSnakeCase(fromStatus), humanizeSnakeCase(toStatus))
+		}
+		if toStatus != "" {
+			if content != "" {
+				return fmt.Sprintf("Status changed: %s — %s", humanizeSnakeCase(toStatus), content)
+			}
+			return fmt.Sprintf("Status changed: %s", humanizeSnakeCase(toStatus))
+		}
+		if content != "" {
+			return content
+		}
+		return "Status changed"
+	case "created":
+		if content != "" {
+			return content
+		}
+		if toStatus != "" {
+			return fmt.Sprintf("Application created: %s", humanizeSnakeCase(toStatus))
+		}
+		return "Application created"
+	default:
+		if content != "" {
+			return content
+		}
+		if toStatus != "" {
+			if fromStatus != "" {
+				return fmt.Sprintf("%s → %s", humanizeSnakeCase(fromStatus), humanizeSnakeCase(toStatus))
+			}
+			return humanizeSnakeCase(toStatus)
+		}
+		return humanizeSnakeCase(eventType)
+	}
+}
+
+func humanizeSnakeCase(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "" {
+		return ""
+	}
+	value = strings.Join(strings.Fields(strings.ReplaceAll(value, "_", " ")), " ")
+	if value == "" {
+		return ""
+	}
+	return strings.ToUpper(value[:1]) + value[1:]
 }
 
 func templateDict(values ...any) (map[string]any, error) {

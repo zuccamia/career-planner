@@ -14,15 +14,19 @@ import (
 type fakeRepository struct {
 	createInput         CreateApplicationInput
 	updateInput         UpdateApplicationInput
+	updateStatusID      int64
+	updateStatusValue   string
 	updateRawID         int64
 	updateRawValue      string
 	updateExtractedID   int64
 	updateExtractedJSON string
 	getByIDResult       Application
 	createEventInput    CreateEventInput
+	createEventInputs   []CreateEventInput
 	createArtifactInput CreateArtifactInput
 	createCalled        bool
 	updateCalled        bool
+	updateStatusCalled  bool
 	updateRawCalled     bool
 	updateExtractedCall bool
 	eventCalled         bool
@@ -36,7 +40,7 @@ func (f *fakeRepository) CountByStatus(ctx context.Context, status string) (int,
 func (f *fakeRepository) Create(ctx context.Context, input CreateApplicationInput) (Application, error) {
 	f.createCalled = true
 	f.createInput = input
-	return Application{RoleTitle: input.RoleTitle}, nil
+	return Application{ID: 1, CompanyID: input.CompanyID, PersonID: input.PersonID, RoleTitle: input.RoleTitle, JobPostingURL: input.JobPostingURL, JobDescriptionRaw: input.JobDescriptionRaw, JobDescriptionExtractedJSON: input.JobDescriptionExtractedJSON, Status: input.Status, Notes: input.Notes, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}, nil
 }
 func (f *fakeRepository) CreateArtifact(ctx context.Context, input CreateArtifactInput) (Artifact, error) {
 	f.artifactCalled = true
@@ -46,6 +50,7 @@ func (f *fakeRepository) CreateArtifact(ctx context.Context, input CreateArtifac
 func (f *fakeRepository) CreateEvent(ctx context.Context, input CreateEventInput) (Event, error) {
 	f.eventCalled = true
 	f.createEventInput = input
+	f.createEventInputs = append(f.createEventInputs, input)
 	return Event{Type: input.Type}, nil
 }
 func (f *fakeRepository) Delete(ctx context.Context, id int64) error { return nil }
@@ -68,7 +73,17 @@ func (f *fakeRepository) ListEventsByApplicationID(ctx context.Context, applicat
 func (f *fakeRepository) Update(ctx context.Context, input UpdateApplicationInput) (Application, error) {
 	f.updateCalled = true
 	f.updateInput = input
-	return Application{ID: input.ID, RoleTitle: input.RoleTitle}, nil
+	return Application{ID: input.ID, CompanyID: input.CompanyID, PersonID: input.PersonID, RoleTitle: input.RoleTitle, JobPostingURL: input.JobPostingURL, JobDescriptionRaw: input.JobDescriptionRaw, JobDescriptionExtractedJSON: input.JobDescriptionExtractedJSON, Status: input.Status, Notes: input.Notes, UpdatedAt: time.Now().UTC()}, nil
+}
+func (f *fakeRepository) UpdateStatus(ctx context.Context, applicationID int64, status string) (Application, error) {
+	f.updateStatusCalled = true
+	f.updateStatusID = applicationID
+	f.updateStatusValue = status
+	application := f.getByIDResult
+	application.ID = applicationID
+	application.Status = status
+	application.UpdatedAt = time.Now().UTC()
+	return application, nil
 }
 func (f *fakeRepository) UpdateJobDescriptionRaw(ctx context.Context, applicationID int64, raw string) (Application, error) {
 	f.updateRawCalled = true
@@ -108,13 +123,12 @@ func TestServiceCreateSanitizesInput(t *testing.T) {
 		JobDescriptionRaw:           "  detailed job description  ",
 		JobDescriptionExtractedJSON: "  {\"level\":\"intern\"}  ",
 		Status:                      " APPLIED ",
-		NextAction:                  "  Tailor resume  ",
 		Notes:                       "  referral pending  ",
 	})
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
-	if repo.createInput.PersonID != 0 || repo.createInput.RoleTitle != "Software Engineer Intern" || repo.createInput.JobPostingURL != "https://jobs.example.com/roles/123" || repo.createInput.JobDescriptionRaw != "detailed job description" || repo.createInput.JobDescriptionExtractedJSON != "{\"level\":\"intern\"}" || repo.createInput.Status != "applied" || repo.createInput.NextAction != "Tailor resume" || repo.createInput.Notes != "referral pending" {
+	if repo.createInput.PersonID != 0 || repo.createInput.RoleTitle != "Software Engineer Intern" || repo.createInput.JobPostingURL != "https://jobs.example.com/roles/123" || repo.createInput.JobDescriptionRaw != "detailed job description" || repo.createInput.JobDescriptionExtractedJSON != "{\"level\":\"intern\"}" || repo.createInput.Status != "applied" || repo.createInput.Notes != "referral pending" {
 		t.Fatalf("unexpected sanitized create input: %+v", repo.createInput)
 	}
 }
@@ -128,6 +142,9 @@ func TestServiceCreateDefaultsStatusAndExtractedJSON(t *testing.T) {
 	}
 	if repo.createInput.Status != "wishlist" || repo.createInput.JobDescriptionExtractedJSON != "{}" {
 		t.Fatalf("unexpected defaults: %+v", repo.createInput)
+	}
+	if len(repo.createEventInputs) != 0 {
+		t.Fatalf("expected no events on create, got %d", len(repo.createEventInputs))
 	}
 }
 
@@ -145,8 +162,8 @@ func TestServiceCreateRejectsMissingCompany(t *testing.T) {
 
 func TestServiceUpdateSanitizesInput(t *testing.T) {
 	repo := &fakeRepository{}
+	repo.getByIDResult = Application{ID: 10, CompanyID: 4, RoleTitle: "Backend Engineer", Status: "applied"}
 	svc := NewService(repo, nil)
-	now := time.Now().UTC()
 	_, err := svc.Update(context.Background(), UpdateApplicationInput{
 		ID:                          10,
 		CompanyID:                   4,
@@ -156,20 +173,22 @@ func TestServiceUpdateSanitizesInput(t *testing.T) {
 		JobDescriptionRaw:           "  jd  ",
 		JobDescriptionExtractedJSON: " ",
 		Status:                      " OFFER ",
-		AppliedAt:                   &now,
-		NextAction:                  "  Review offer  ",
 		Notes:                       "  top choice  ",
 	})
 	if err != nil {
 		t.Fatalf("Update returned error: %v", err)
 	}
-	if repo.updateInput.PersonID != 0 || repo.updateInput.RoleTitle != "Backend Engineer" || repo.updateInput.Status != "offer" || repo.updateInput.JobDescriptionExtractedJSON != "{}" || repo.updateInput.NextAction != "Review offer" || repo.updateInput.Notes != "top choice" {
+	if repo.updateInput.PersonID != 0 || repo.updateInput.RoleTitle != "Backend Engineer" || repo.updateInput.Status != "offer" || repo.updateInput.JobDescriptionExtractedJSON != "{}" || repo.updateInput.Notes != "top choice" {
 		t.Fatalf("unexpected sanitized update input: %+v", repo.updateInput)
+	}
+	if len(repo.createEventInputs) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(repo.createEventInputs))
 	}
 }
 
 func TestServiceUpdatePreservesProvidedExtractedJSON(t *testing.T) {
 	repo := &fakeRepository{}
+	repo.getByIDResult = Application{ID: 10, CompanyID: 4, RoleTitle: "Backend Engineer", Status: "applied", JobDescriptionRaw: "updated raw description", JobDescriptionExtractedJSON: "{\"level\":\"intern\"}"}
 	svc := NewService(repo, nil)
 	_, err := svc.Update(context.Background(), UpdateApplicationInput{
 		ID:                          10,
@@ -185,6 +204,45 @@ func TestServiceUpdatePreservesProvidedExtractedJSON(t *testing.T) {
 	if repo.updateInput.JobDescriptionExtractedJSON != "{\"level\":\"intern\"}" {
 		t.Fatalf("expected extracted JSON to be preserved, got %+v", repo.updateInput.JobDescriptionExtractedJSON)
 	}
+	if len(repo.createEventInputs) != 0 {
+		t.Fatalf("expected no events for unchanged tracked fields, got %+v", repo.createEventInputs)
+	}
+}
+
+func TestServiceUpdateCreatesStatusChangedEvent(t *testing.T) {
+	repo := &fakeRepository{}
+	repo.getByIDResult = Application{ID: 10, CompanyID: 4, RoleTitle: "Backend Engineer", Status: "wishlist"}
+	svc := NewService(repo, nil)
+
+	_, err := svc.Update(context.Background(), UpdateApplicationInput{ID: 10, CompanyID: 4, RoleTitle: "Backend Engineer", Status: "applied"})
+	if err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+	if len(repo.createEventInputs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(repo.createEventInputs))
+	}
+	event := repo.createEventInputs[0]
+	if event.Type != "status_changed" || event.FromStatus != "wishlist" || event.ToStatus != "applied" {
+		t.Fatalf("unexpected status event: %+v", event)
+	}
+}
+
+func TestServiceUpdateCreatesGenericUpdateEvent(t *testing.T) {
+	repo := &fakeRepository{}
+	repo.getByIDResult = Application{ID: 10, CompanyID: 4, RoleTitle: "Backend Engineer", Status: "applied", Notes: "old"}
+	svc := NewService(repo, nil)
+
+	_, err := svc.Update(context.Background(), UpdateApplicationInput{ID: 10, CompanyID: 4, RoleTitle: "Backend Engineer", Status: "applied", Notes: "new"})
+	if err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+	if len(repo.createEventInputs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(repo.createEventInputs))
+	}
+	event := repo.createEventInputs[0]
+	if event.Type != "note" || !strings.Contains(event.Content, "notes") {
+		t.Fatalf("unexpected generic update event: %+v", event)
+	}
 }
 
 func TestServiceUpdateRejectsInvalidID(t *testing.T) {
@@ -192,6 +250,48 @@ func TestServiceUpdateRejectsInvalidID(t *testing.T) {
 	_, err := svc.Update(context.Background(), UpdateApplicationInput{ID: 0, CompanyID: 1, RoleTitle: "Role", Status: "applied"})
 	if !errors.Is(err, ErrApplicationNotFound) {
 		t.Fatalf("expected ErrApplicationNotFound, got %v", err)
+	}
+}
+
+func TestServiceUpdateStatusSanitizesInput(t *testing.T) {
+	repo := &fakeRepository{}
+	repo.getByIDResult = Application{ID: 10, CompanyID: 4, RoleTitle: "Backend Engineer", Status: "wishlist"}
+	svc := NewService(repo, nil)
+
+	occurredAt := time.Date(2026, time.July, 22, 12, 30, 0, 0, time.UTC)
+	_, err := svc.UpdateStatus(context.Background(), UpdateStatusInput{ApplicationID: 10, Status: " OFFER ", OccurredAt: occurredAt, Notes: "  recruiter advanced me  "})
+	if err != nil {
+		t.Fatalf("UpdateStatus returned error: %v", err)
+	}
+	if !repo.updateStatusCalled || repo.updateStatusID != 10 || repo.updateStatusValue != "offer" {
+		t.Fatalf("unexpected update status call: id=%d status=%q called=%v", repo.updateStatusID, repo.updateStatusValue, repo.updateStatusCalled)
+	}
+	if len(repo.createEventInputs) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(repo.createEventInputs))
+	}
+	event := repo.createEventInputs[0]
+	if event.Content != "recruiter advanced me" || !event.OccurredAt.Equal(occurredAt) {
+		t.Fatalf("unexpected update status event: %+v", event)
+	}
+}
+
+func TestServiceUpdateStatusReturnsExistingApplicationWhenStatusUnchanged(t *testing.T) {
+	repo := &fakeRepository{}
+	repo.getByIDResult = Application{ID: 10, CompanyID: 4, RoleTitle: "Backend Engineer", Status: "applied"}
+	svc := NewService(repo, nil)
+
+	application, err := svc.UpdateStatus(context.Background(), UpdateStatusInput{ApplicationID: 10, Status: " applied "})
+	if err != nil {
+		t.Fatalf("UpdateStatus returned error: %v", err)
+	}
+	if repo.updateStatusCalled {
+		t.Fatal("expected repo.UpdateStatus not to be called for unchanged status")
+	}
+	if len(repo.createEventInputs) != 0 {
+		t.Fatalf("expected no events, got %d", len(repo.createEventInputs))
+	}
+	if application.Status != "applied" {
+		t.Fatalf("unexpected application returned: %+v", application)
 	}
 }
 
