@@ -40,6 +40,9 @@ func (f *fakeRepository) UpdateThread(ctx context.Context, input UpdateThreadInp
 func (f *fakeRepository) GetThreadDetail(ctx context.Context, id int64) (ThreadDetail, error) {
 	return f.threadDetail, nil
 }
+func (f *fakeRepository) ListDailyEntryCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error) {
+	return nil, nil
+}
 func (f *fakeRepository) ListThreadsByPersonID(ctx context.Context, personID int64) ([]Thread, error) {
 	return nil, nil
 }

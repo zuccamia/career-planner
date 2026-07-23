@@ -63,9 +63,22 @@ type Artifact struct {
 
 // CompanyCount summarizes how many applications belong to one company.
 type CompanyCount struct {
-	CompanyID         int64
-	CompanyName       string
-	ApplicationCount  int64
+	CompanyID        int64
+	CompanyName      string
+	ApplicationCount int64
+}
+
+// DailyCount summarizes how many records matched on one calendar day.
+type DailyCount struct {
+	Day   time.Time
+	Count int
+}
+
+// StatusTransitionCount summarizes how many status-change events occurred between two statuses.
+type StatusTransitionCount struct {
+	FromStatus string
+	ToStatus   string
+	Count      int
 }
 
 // CreateApplicationInput contains the validated fields required to create an application.
@@ -133,6 +146,8 @@ type Repository interface {
 	GetByID(ctx context.Context, id int64) (Application, error)
 	List(ctx context.Context) ([]Application, error)
 	ListCompanyCounts(ctx context.Context) ([]CompanyCount, error)
+	ListDailyAppliedCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error)
+	ListStatusTransitionCounts(ctx context.Context) ([]StatusTransitionCount, error)
 	ListArtifactsByApplicationID(ctx context.Context, applicationID int64) ([]Artifact, error)
 	ListEventsByApplicationID(ctx context.Context, applicationID int64) ([]Event, error)
 	Update(ctx context.Context, input UpdateApplicationInput) (Application, error)
@@ -143,8 +158,8 @@ type Repository interface {
 
 // Service applies validation before delegating to the repository.
 type Service struct {
-	repo   Repository
-	client llm.Client
+	repo     Repository
+	client   llm.Client
 	fetchURL func(ctx context.Context, url string) (string, error)
 }
 

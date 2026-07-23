@@ -325,6 +325,38 @@ func (r *SQLRepository) List(ctx context.Context) ([]Application, error) {
 	return applicationsList, nil
 }
 
+// ListStatusTransitionCounts returns grouped status-change event counts across all applications.
+func (r *SQLRepository) ListStatusTransitionCounts(ctx context.Context) ([]StatusTransitionCount, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT from_status, to_status, COUNT(*)
+		FROM application_events
+		WHERE type = 'status_changed'
+		  AND from_status <> ''
+		  AND to_status <> ''
+		GROUP BY from_status, to_status
+		ORDER BY COUNT(*) DESC, from_status, to_status
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("list application status transition counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make([]StatusTransitionCount, 0)
+	for rows.Next() {
+		var item StatusTransitionCount
+		if err := rows.Scan(&item.FromStatus, &item.ToStatus, &item.Count); err != nil {
+			return nil, fmt.Errorf("scan application status transition count row: %w", err)
+		}
+		item.FromStatus = strings.TrimSpace(item.FromStatus)
+		item.ToStatus = strings.TrimSpace(item.ToStatus)
+		counts = append(counts, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate application status transition counts: %w", err)
+	}
+	return counts, nil
+}
+
 // Update writes editable fields for an existing application and returns the fresh record.
 func (r *SQLRepository) Update(ctx context.Context, input UpdateApplicationInput) (Application, error) {
 	result, err := r.db.ExecContext(ctx, `
@@ -448,6 +480,42 @@ func (r *SQLRepository) ListEventsByApplicationID(ctx context.Context, applicati
 	}
 
 	return events, nil
+}
+
+// ListDailyAppliedCounts returns per-day counts of application events that transition into applied.
+func (r *SQLRepository) ListDailyAppliedCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT substr(occurred_at, 1, 10) AS day, COUNT(*)
+		FROM application_events
+		WHERE type = 'status_changed'
+		  AND to_status = 'applied'
+		  AND occurred_at >= ?
+		  AND occurred_at < ?
+		GROUP BY substr(occurred_at, 1, 10)
+		ORDER BY day ASC
+	`, from.Format(time.RFC3339Nano), to.Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, fmt.Errorf("list daily applied application counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make([]DailyCount, 0)
+	for rows.Next() {
+		var day string
+		var count DailyCount
+		if err := rows.Scan(&day, &count.Count); err != nil {
+			return nil, fmt.Errorf("scan daily applied application count row: %w", err)
+		}
+		count.Day, err = time.Parse("2006-01-02", day)
+		if err != nil {
+			return nil, fmt.Errorf("parse daily applied application count day: %w", err)
+		}
+		counts = append(counts, count)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate daily applied application counts: %w", err)
+	}
+	return counts, nil
 }
 
 // ListArtifactsByApplicationID returns artifacts for one application ordered by newest first.
@@ -636,4 +704,3 @@ func scanArtifact(scanner artifactScanner) (Artifact, error) {
 
 	return artifact, nil
 }
-

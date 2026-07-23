@@ -86,6 +86,40 @@ func (r *SQLRepository) List(ctx context.Context) ([]Note, error) {
 	return scanEngineeringBlogNotes(rows)
 }
 
+// ListDailyCreatedCounts returns per-day counts of engineering blog notes created in the requested range.
+func (r *SQLRepository) ListDailyCreatedCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT substr(created_at, 1, 10) AS day, COUNT(*)
+		FROM engineering_blog_notes
+		WHERE created_at >= ?
+		  AND created_at < ?
+		GROUP BY substr(created_at, 1, 10)
+		ORDER BY day ASC
+	`, from.Format(time.RFC3339Nano), to.Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, fmt.Errorf("list daily engineering blog note counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make([]DailyCount, 0)
+	for rows.Next() {
+		var day string
+		var count DailyCount
+		if err := rows.Scan(&day, &count.Count); err != nil {
+			return nil, fmt.Errorf("scan daily engineering blog note count row: %w", err)
+		}
+		count.Day, err = time.Parse("2006-01-02", day)
+		if err != nil {
+			return nil, fmt.Errorf("parse daily engineering blog note count day: %w", err)
+		}
+		counts = append(counts, count)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate daily engineering blog note counts: %w", err)
+	}
+	return counts, nil
+}
+
 // GetByID fetches one engineering blog note by primary key.
 func (r *SQLRepository) GetByID(ctx context.Context, id int64) (Note, error) {
 	rows, err := r.db.QueryContext(ctx, `

@@ -3,6 +3,7 @@ package http
 // Loads templates and injects shared layout data.
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -16,9 +17,10 @@ import (
 func templateFuncs() template.FuncMap {
 	return template.FuncMap{
 		"applicationStatusClasses": applicationStatusClasses,
-		"applicationEventSummary": applicationEventSummary,
-		"humanizeSnakeCase":       humanizeSnakeCase,
+		"applicationEventSummary":  applicationEventSummary,
+		"humanizeSnakeCase":        humanizeSnakeCase,
 		"dict":                     templateDict,
+		"toJSON":                   toJSON,
 	}
 }
 
@@ -157,6 +159,14 @@ func templateDict(values ...any) (map[string]any, error) {
 		data[key] = values[i+1]
 	}
 	return data, nil
+}
+
+func toJSON(value any) (template.JS, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return template.JS(encoded), nil
 }
 
 // render fills shared layout data and executes the requested page template.

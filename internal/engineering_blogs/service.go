@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/ngochoang/career-planner/internal/shared"
 )
@@ -39,6 +40,14 @@ func (s *Service) ListByCompanyID(ctx context.Context, companyID int64) ([]Note,
 // List returns all engineering blog notes from storage.
 func (s *Service) List(ctx context.Context) ([]Note, error) {
 	return s.repo.List(ctx)
+}
+
+// ListDailyCreatedCounts returns per-day counts of engineering blog notes created in the requested range.
+func (s *Service) ListDailyCreatedCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error) {
+	if from.IsZero() || to.IsZero() || !from.Before(to) {
+		return []DailyCount{}, nil
+	}
+	return s.repo.ListDailyCreatedCounts(ctx, from.UTC(), to.UTC())
 }
 
 // Count returns the number of persisted engineering blog notes.
@@ -103,4 +112,3 @@ func sanitizeURL(raw string) string {
 	}
 	return parsed.String()
 }
-

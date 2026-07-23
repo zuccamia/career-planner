@@ -31,6 +31,7 @@ type fakeRepository struct {
 	updateExtractedCall bool
 	eventCalled         bool
 	artifactCalled      bool
+	transitionCounts    []StatusTransitionCount
 }
 
 func (f *fakeRepository) Count(ctx context.Context) (int, error) { return 0, nil }
@@ -63,6 +64,12 @@ func (f *fakeRepository) GetByID(ctx context.Context, id int64) (Application, er
 func (f *fakeRepository) List(ctx context.Context) ([]Application, error) { return nil, nil }
 func (f *fakeRepository) ListCompanyCounts(ctx context.Context) ([]CompanyCount, error) {
 	return nil, nil
+}
+func (f *fakeRepository) ListDailyAppliedCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error) {
+	return nil, nil
+}
+func (f *fakeRepository) ListStatusTransitionCounts(ctx context.Context) ([]StatusTransitionCount, error) {
+	return f.transitionCounts, nil
 }
 func (f *fakeRepository) ListArtifactsByApplicationID(ctx context.Context, applicationID int64) ([]Artifact, error) {
 	return nil, nil
@@ -295,6 +302,19 @@ func TestServiceUpdateStatusReturnsExistingApplicationWhenStatusUnchanged(t *tes
 	}
 }
 
+func TestServiceListStatusTransitionCountsReturnsRepositoryValues(t *testing.T) {
+	repo := &fakeRepository{transitionCounts: []StatusTransitionCount{{FromStatus: "applied", ToStatus: "offer", Count: 2}}}
+	svc := NewService(repo, nil)
+
+	counts, err := svc.ListStatusTransitionCounts(context.Background())
+	if err != nil {
+		t.Fatalf("ListStatusTransitionCounts returned error: %v", err)
+	}
+	if len(counts) != 1 || counts[0].FromStatus != "applied" || counts[0].ToStatus != "offer" || counts[0].Count != 2 {
+		t.Fatalf("unexpected transition counts: %+v", counts)
+	}
+}
+
 func TestServiceCreateEventNormalizesDefaults(t *testing.T) {
 	repo := &fakeRepository{}
 	svc := NewService(repo, nil)
@@ -413,7 +433,7 @@ func TestExtractJobDescriptionOverwritesExtractedJSON(t *testing.T) {
 		CompanyName:       "Google",
 		RoleTitle:         "Software Engineering Intern",
 		JobPostingURL:     "https://careers.example.com/job/42",
-			JobDescriptionRaw: "Master's internship in distributed systems using Go and Python. This is a full-time internship role.",
+		JobDescriptionRaw: "Master's internship in distributed systems using Go and Python. This is a full-time internship role.",
 	}}
 	svc := NewService(repo, fakeLLMClient{generate: func(prompt llm.Prompt, out any) error {
 		result := out.(*JobDescriptionStructured)

@@ -43,6 +43,12 @@ type ThreadDetail struct {
 	Entries []Entry
 }
 
+// DailyCount summarizes how many records matched on one calendar day.
+type DailyCount struct {
+	Day   time.Time
+	Count int
+}
+
 // CreateThreadInput contains the user-provided values required to open a thread.
 type CreateThreadInput struct {
 	PersonID   int64
@@ -88,6 +94,7 @@ type Repository interface {
 	DeleteEntry(ctx context.Context, id int64) error
 	GetThreadByID(ctx context.Context, id int64) (Thread, error)
 	GetThreadDetail(ctx context.Context, id int64) (ThreadDetail, error)
+	ListDailyEntryCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error)
 	ListThreadsByPersonID(ctx context.Context, personID int64) ([]Thread, error)
 	UpdateThread(ctx context.Context, input UpdateThreadInput) (Thread, error)
 	UpdateThreadStatus(ctx context.Context, threadID int64, status string) (Thread, error)

@@ -88,6 +88,19 @@ func (s *Service) ListCompanyCounts(ctx context.Context) ([]CompanyCount, error)
 	return s.repo.ListCompanyCounts(ctx)
 }
 
+// ListDailyAppliedCounts returns per-day counts of application events that changed status to applied.
+func (s *Service) ListDailyAppliedCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error) {
+	if from.IsZero() || to.IsZero() || !from.Before(to) {
+		return []DailyCount{}, nil
+	}
+	return s.repo.ListDailyAppliedCounts(ctx, from.UTC(), to.UTC())
+}
+
+// ListStatusTransitionCounts returns grouped historical status-change counts across all applications.
+func (s *Service) ListStatusTransitionCounts(ctx context.Context) ([]StatusTransitionCount, error) {
+	return s.repo.ListStatusTransitionCounts(ctx)
+}
+
 // Update sanitizes user input and persists changes to an existing application.
 func (s *Service) Update(ctx context.Context, input UpdateApplicationInput) (Application, error) {
 	input.ID = shared.NonNegativeInt64(input.ID)
@@ -410,5 +423,3 @@ func summarizeApplicationChanges(before, after Application) string {
 
 	return "Updated " + strings.Join(changes, ", ")
 }
-
-

@@ -44,6 +44,12 @@ type CompanyCount struct {
 	NoteCount   int64
 }
 
+// DailyCount summarizes how many records matched on one calendar day.
+type DailyCount struct {
+	Day   time.Time
+	Count int
+}
+
 // Repository defines the storage operations required by the engineering blogs service.
 type Repository interface {
 	Count(ctx context.Context) (int, error)
@@ -51,6 +57,7 @@ type Repository interface {
 	Delete(ctx context.Context, id int64) error
 	GetByID(ctx context.Context, id int64) (Note, error)
 	List(ctx context.Context) ([]Note, error)
+	ListDailyCreatedCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error)
 	ListCompanyCounts(ctx context.Context) ([]CompanyCount, error)
 	ListByCompanyID(ctx context.Context, companyID int64) ([]Note, error)
 	Update(ctx context.Context, input UpdateInput) (Note, error)

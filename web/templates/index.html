@@ -5,68 +5,273 @@
   <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">Dashboard</p>
 </section>
 
-<section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-  <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <p class="text-sm font-medium text-slate-500">Applications</p>
-    <p class="mt-3 text-3xl font-semibold text-slate-900">{{.ApplicationsCount}}</p>
-    <p class="mt-2 text-sm text-slate-500">Tracked across your active pipeline.</p>
-  </article>
-  <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <p class="text-sm font-medium text-slate-500">Interviews</p>
-    <p class="mt-3 text-3xl font-semibold text-slate-900">{{.InterviewsCount}}</p>
-    <p class="mt-2 text-sm text-slate-500">Coming soon</p>
-  </article>
-  <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <p class="text-sm font-medium text-slate-500">Offers</p>
-    <p class="mt-3 text-3xl font-semibold text-slate-900">{{.OffersCount}}</p>
-    <p class="mt-2 text-sm text-slate-500">Applications currently in offer state.</p>
-  </article>
-  <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <p class="text-sm font-medium text-slate-500">Rejections</p>
-    <p class="mt-3 text-3xl font-semibold text-slate-900">{{.RejectionsCount}}</p>
-    <p class="mt-2 text-sm text-slate-500">Applications closed as rejected.</p>
-  </article>
-</section>
+<section>
+  <article class="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div class="space-y-1">
+      <h2 class="text-xl font-semibold text-slate-900">Application pipeline</h2>
+    </div>
 
-<section class="grid gap-4 sm:grid-cols-3">
-  <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <p class="text-sm font-medium text-slate-500">Companies tracked</p>
-    <p class="mt-3 text-3xl font-semibold text-slate-900">{{.TotalCompanies}}</p>
-  </article>
-  <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <p class="text-sm font-medium text-slate-500">With dossier</p>
-    <p class="mt-3 text-3xl font-semibold text-slate-900">{{.CompaniesWithDossier}}</p>
-  </article>
-  <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <p class="text-sm font-medium text-slate-500">Without dossier</p>
-    <p class="mt-3 text-3xl font-semibold text-slate-900">{{.CompaniesWithoutDossier}}</p>
+    {{if .HasPipelineStages}}
+    <div class="space-y-4 lg:hidden">
+      {{range .PipelineStages}}
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="mb-3 flex items-start justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold text-slate-900">{{.Label}}</p>
+            <p class="text-xs text-slate-500">{{.StatusLabel}}</p>
+          </div>
+          <p class="text-2xl font-semibold leading-none text-slate-900">{{.Count}}</p>
+        </div>
+        <div class="h-3 rounded-full {{.MutedClass}}">
+          <div class="h-3 rounded-full {{.AccentClass}}" style="width: {{.Width}}%;"></div>
+        </div>
+      </div>
+      {{end}}
+    </div>
+
+    <div class="hidden overflow-x-auto lg:block">
+      <div class="min-w-[960px] rounded-3xl bg-slate-50 p-6">
+        <svg id="pipeline-sankey" class="block h-auto w-full overflow-visible" viewBox="0 0 1080 380" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Application pipeline visualization"></svg>
+        <p id="pipeline-sankey-fallback" class="mt-4 hidden text-sm text-slate-500"></p>
+      </div>
+    </div>
+    {{else}}
+    {{template "partials/empty_state" dict "Message" "No application pipeline yet. Add applications to see the funnel fill in."}}
+    {{end}}
   </article>
 </section>
 
 <section>
-  <article class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    <div class="space-y-1">
-      <h2 class="text-xl font-semibold text-slate-900">Recent companies</h2>
+  <article class="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div class="space-y-1">
+        <h2 class="text-xl font-semibold text-slate-900">Activity over time</h2>
+        <p class="text-sm text-slate-500">Showing the last {{.ActivityVisibleDays}} days at a glance, with horizontal scrolling available across the full {{.ActivityWindowDays}}-day activity history.</p>
+      </div>
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="flex min-h-20 flex-col justify-between rounded-2xl bg-blue-50 px-4 py-3">
+          <p class="text-xs font-semibold uppercase tracking-[0.12em] text-blue-700">Applied</p>
+          <p class="text-right text-2xl font-semibold leading-none text-slate-900">{{.AppliedActivityTotal}}</p>
+        </div>
+        <div class="flex min-h-20 flex-col justify-between rounded-2xl bg-amber-50 px-4 py-3">
+          <p class="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Threads</p>
+          <p class="text-right text-2xl font-semibold leading-none text-slate-900">{{.ThreadActivityTotal}}</p>
+        </div>
+        <div class="flex min-h-20 flex-col justify-between rounded-2xl bg-emerald-50 px-4 py-3">
+          <p class="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">Tech blogs</p>
+          <p class="text-right text-2xl font-semibold leading-none text-slate-900">{{.TechBlogActivityTotal}}</p>
+        </div>
+        <div class="flex min-h-20 flex-col justify-between rounded-2xl bg-slate-100 px-4 py-3">
+          <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">Total</p>
+          <p class="text-right text-2xl font-semibold leading-none text-slate-900">{{.TotalActivityCount}}</p>
+        </div>
+      </div>
     </div>
 
-    {{if .HasRecentCompanies}}
-    <ul class="space-y-3">
-      {{range .RecentCompanies}}
-      <li>
-        <a class="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-blue-200 hover:bg-blue-50/40" href="/companies/{{.ID}}">
-          <div class="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <span class="block font-semibold text-slate-900">{{.OfficialName}}</span>
+    {{if .HasActivityDays}}
+    <div class="overflow-x-auto">
+      <div class="min-w-[1440px]">
+        <div class="mb-4 flex flex-wrap items-center gap-4 text-sm text-slate-600">
+          <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-blue-500"></span>Applied events</span>
+          <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-amber-500"></span>Thread entries</span>
+          <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-emerald-500"></span>Tech blog notes</span>
+        </div>
+        <div class="flex h-64 items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+          {{range .ActivityDays}}
+          <div class="flex min-w-0 flex-1 flex-col items-center justify-end gap-3">
+            <div class="flex h-40 items-end gap-1" aria-label="{{.Label}}: {{.AppliedCount}} applied, {{.ThreadEntryCount}} thread entries, {{.TechBlogCount}} tech blogs">
+              <div class="w-3 rounded-t bg-blue-500" style="height: {{.AppliedHeight}}%;" title="Applied: {{.AppliedCount}}"></div>
+              <div class="w-3 rounded-t bg-amber-500" style="height: {{.ThreadEntryHeight}}%;" title="Thread entries: {{.ThreadEntryCount}}"></div>
+              <div class="w-3 rounded-t bg-emerald-500" style="height: {{.TechBlogHeight}}%;" title="Tech blog notes: {{.TechBlogCount}}"></div>
             </div>
-            <span class="text-sm text-slate-500">Updated {{.UpdatedAt.Format "2006-01-02"}}</span>
+            <div class="space-y-1 text-center">
+              <p class="text-xs font-semibold text-slate-700">{{.Label}}</p>
+              <p class="text-[11px] text-slate-500">{{.TotalCount}} total</p>
+            </div>
           </div>
-        </a>
-      </li>
-      {{end}}
-    </ul>
+          {{end}}
+        </div>
+      </div>
+    </div>
     {{else}}
-    {{template "partials/empty_state" dict "Message" "No companies yet. Add one to start building your dashboard."}}
+    {{template "partials/empty_state" dict "Message" "No recent activity yet. Status changes, thread entries, and tech blog additions will appear here."}}
     {{end}}
   </article>
 </section>
+
+{{end}}
+
+{{define "page_head"}}
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
+{{end}}
+
+{{define "page_scripts"}}
+<script>
+  (() => {
+    const mount = document.getElementById("pipeline-sankey");
+    const fallbackEl = document.getElementById("pipeline-sankey-fallback");
+    if (!mount) return;
+
+    const showFallback = (message) => {
+      mount.classList.add("hidden");
+      if (fallbackEl) {
+        fallbackEl.textContent = message;
+        fallbackEl.classList.remove("hidden");
+      }
+    };
+
+    const d3 = window.d3;
+    // d3-sankey's UMD build attaches onto the d3 global, so one check covers all symbols.
+    if (!d3 || typeof d3.sankey !== "function") {
+      showFallback("Could not load the pipeline visualization.");
+      return;
+    }
+
+    const data = {{toJSON .PipelineSankey}};
+    if (!data.nodes?.length || !data.links?.length) {
+      showFallback("No stage transitions recorded yet. Update application statuses to build the flow.");
+      return;
+    }
+
+    // ---- config (single source of truth) --------------------------------
+    const CFG = {
+      width: 1080,
+      height: 380,
+      nodeWidth: 12,
+      nodePadding: 22,
+      labelOffset: 10,        // gap between a node and its label
+      rightPad: 16,           // breathing room past the widest label
+      gutterFallback: 170,    // right margin used only if labels can't be measured
+      cornerRadius: 5,
+      depthEasing: 1.5,       // 1 = even columns; >1 widens gaps toward later stages
+      link: { base: 0.34, hot: 0.8, muted: 0.12 },
+      nodeMuted: 0.35,
+    };
+    const margin = { top: 18, right: CFG.gutterFallback, bottom: 18, left: 20 };
+
+    const svg = d3.select(mount);
+    svg.selectAll("*").remove();
+
+    // ---- layout (provisional; x columns get re-spaced after measuring) ---
+    const sankey = d3.sankey()
+      .nodeId(d => d.id)
+      .nodeWidth(CFG.nodeWidth)
+      .nodePadding(CFG.nodePadding)
+      .nodeAlign(d3.sankeyLeft)
+      .nodeSort((a, b) =>
+        ((a.verticalOrder ?? 0) - (b.verticalOrder ?? 0)) ||
+        d3.descending(a.value, b.value) ||
+        d3.ascending(a.name, b.name))
+      .extent([[margin.left, margin.top], [CFG.width - margin.right, CFG.height - margin.bottom]]);
+
+    const graph = sankey({
+      nodes: data.nodes.map(d => ({ ...d })),
+      links: data.links.map(d => ({
+        ...d,
+        source: data.nodes[d.source].id,
+        target: data.nodes[d.target].id,
+      })),
+    });
+
+    // Eased horizontal fraction per column. d3 assigns contiguous depths
+    // (0..maxDepth) under sankeyLeft, so basing spacing on the *computed* depth
+    // guarantees the deepest occupied column lands at fraction 1 (the right edge).
+    // ease-in (t^p, p>1): gaps stay small near the root and widen with depth.
+    const maxDepth = d3.max(graph.nodes, d => d.depth) || 0;
+    const frac = (depth) => (maxDepth === 0 ? 0 : Math.pow((depth || 0) / maxDepth, CFG.depthEasing));
+
+    // ---- build elements (positions applied after the fit pass) -----------
+    const links = svg.append("g")
+      .attr("fill", "none")
+      .selectAll("path")
+      .data(graph.links)
+      .join("path")
+      .attr("stroke", d => d.target.color)
+      .attr("stroke-opacity", CFG.link.base)
+      .attr("stroke-width", d => Math.max(1, d.width));
+
+    const nodes = svg.append("g")
+      .selectAll("g")
+      .data(graph.nodes)
+      .join("g");
+
+    const rects = nodes.append("rect")
+      .attr("rx", CFG.cornerRadius)
+      .attr("fill", d => d.color);
+
+    const label = nodes.append("text")
+      .attr("fill", "#0f172a")
+      .attr("text-anchor", "start"); // every label sits to the right of its node
+
+    label.append("tspan").attr("dy", "-0.15em")
+      .attr("font-size", 13).attr("font-weight", 500).text(d => d.name);
+    label.append("tspan").attr("dy", "1.2em")
+      .attr("font-size", 18).attr("font-weight", 700).text(d => d.value || 0);
+
+    // Widest label line, in SVG user units. getComputedTextLength returns 0 when
+    // the SVG is display:none (mobile), so we fall back to a fixed gutter then.
+    let widestLabel = 0;
+    label.selectAll("tspan").each(function () {
+      const len = this.getComputedTextLength ? this.getComputedTextLength() : 0;
+      if (len > widestLabel) widestLabel = len;
+    });
+
+    // Reserve exactly enough right margin for the widest label, then spread
+    // the eased columns across the full remaining width.
+    margin.right = widestLabel > 0
+      ? CFG.labelOffset + widestLabel + CFG.rightPad
+      : CFG.gutterFallback;
+    const rightEdge = CFG.width - margin.right - CFG.nodeWidth;
+    const usableWidth = rightEdge - margin.left;
+
+    graph.nodes.forEach(node => {
+      node.x0 = margin.left + frac(node.depth) * usableWidth;
+      node.x1 = node.x0 + CFG.nodeWidth;
+      node.labelX = node.x1 + CFG.labelOffset;
+    });
+    sankey.update(graph);
+
+    // ---- apply final geometry --------------------------------------------
+    rects
+      .attr("x", d => d.x0)
+      .attr("y", d => d.y0)
+      .attr("width", d => d.x1 - d.x0)
+      .attr("height", d => Math.max(1, d.y1 - d.y0));
+
+    links.attr("d", d3.sankeyLinkHorizontal());
+
+    label.attr("y", d => (d.y0 + d.y1) / 2);
+    label.selectAll("tspan").attr("x", d => d.labelX);
+
+    // ---- hover: light up the full path through a stage -------------------
+    const trace = (start) => {
+      const litLinks = new Set();
+      const litNodes = new Set([start]);
+      const walk = (node, downstream) => {
+        (downstream ? node.sourceLinks : node.targetLinks).forEach(link => {
+          if (litLinks.has(link)) return;
+          litLinks.add(link);
+          const next = downstream ? link.target : link.source;
+          litNodes.add(next);
+          walk(next, downstream);
+        });
+      };
+      walk(start, true);
+      walk(start, false);
+      return { litLinks, litNodes };
+    };
+
+    nodes
+      .on("mouseenter", (_event, node) => {
+        const { litLinks, litNodes } = trace(node);
+        links.attr("stroke-opacity", l => litLinks.has(l) ? CFG.link.hot : CFG.link.muted);
+        rects.attr("opacity", n => litNodes.has(n) ? 1 : CFG.nodeMuted);
+      })
+      .on("mouseleave", () => {
+        links.attr("stroke-opacity", CFG.link.base);
+        rects.attr("opacity", 1);
+      });
+  })();
+</script>
 {{end}}

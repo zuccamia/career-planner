@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
+  {{block "page_head" .}}{{end}}
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
   <div class="mx-auto flex min-h-screen w-full max-w-7xl flex-col lg:flex-row">
@@ -77,6 +78,7 @@
       </div>
     </main>
   </div>
+  {{block "page_scripts" .}}{{end}}
 </body>
 </html>
 {{end}}

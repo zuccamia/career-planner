@@ -10,7 +10,7 @@ test('dashboard and primary navigation render', async ({ page }) => {
 
   await expect(page).toHaveTitle('Career Planner');
   await expect(page.getByText('Dashboard', { exact: true })).toBeVisible();
-  await expect(page.getByText('Companies tracked')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Application pipeline' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Add company' }).first()).toBeVisible();
 
   await page.getByRole('link', { name: 'Companies' }).click();

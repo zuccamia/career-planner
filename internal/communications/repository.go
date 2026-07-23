@@ -285,6 +285,40 @@ func (r *SQLRepository) ListThreadsByPersonID(ctx context.Context, personID int6
 	return threads, nil
 }
 
+// ListDailyEntryCounts returns per-day counts of communication entries in the requested range.
+func (r *SQLRepository) ListDailyEntryCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT substr(occurred_at, 1, 10) AS day, COUNT(*)
+		FROM communication_entries
+		WHERE occurred_at >= ?
+		  AND occurred_at < ?
+		GROUP BY substr(occurred_at, 1, 10)
+		ORDER BY day ASC
+	`, from.Format(time.RFC3339Nano), to.Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, fmt.Errorf("list daily communication entry counts: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make([]DailyCount, 0)
+	for rows.Next() {
+		var day string
+		var count DailyCount
+		if err := rows.Scan(&day, &count.Count); err != nil {
+			return nil, fmt.Errorf("scan daily communication entry count row: %w", err)
+		}
+		count.Day, err = time.Parse("2006-01-02", day)
+		if err != nil {
+			return nil, fmt.Errorf("parse daily communication entry count day: %w", err)
+		}
+		counts = append(counts, count)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate daily communication entry counts: %w", err)
+	}
+	return counts, nil
+}
+
 // UpdateThreadStatus persists a new status for one communication thread.
 func (r *SQLRepository) UpdateThreadStatus(ctx context.Context, threadID int64, status string) (Thread, error) {
 	result, err := r.db.ExecContext(ctx, `

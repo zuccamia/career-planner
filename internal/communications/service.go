@@ -118,6 +118,14 @@ func (s *Service) GetThreadDetail(ctx context.Context, id int64) (ThreadDetail, 
 	return s.repo.GetThreadDetail(ctx, id)
 }
 
+// ListDailyEntryCounts returns per-day counts of communication entries in the requested range.
+func (s *Service) ListDailyEntryCounts(ctx context.Context, from, to time.Time) ([]DailyCount, error) {
+	if from.IsZero() || to.IsZero() || !from.Before(to) {
+		return []DailyCount{}, nil
+	}
+	return s.repo.ListDailyEntryCounts(ctx, from.UTC(), to.UTC())
+}
+
 // ListThreadsByPersonID returns all threads for one person when the identifier is valid.
 func (s *Service) ListThreadsByPersonID(ctx context.Context, personID int64) ([]Thread, error) {
 	if personID <= 0 {
