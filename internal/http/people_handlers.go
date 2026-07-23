@@ -8,10 +8,47 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ngochoang/career-planner/internal/communications"
 	"github.com/ngochoang/career-planner/internal/people"
 )
+
+type personThreadCardView struct {
+	ID                int64
+	Subject           string
+	Status            string
+	Channel           string
+	ChannelLabel      string
+	HasLastActivityAt bool
+	LastActivityLabel string
+	Summary           string
+}
+
+func buildPersonThreadCardViews(threads []communications.Thread) []personThreadCardView {
+	views := make([]personThreadCardView, 0, len(threads))
+	for _, thread := range threads {
+		channel := strings.TrimSpace(thread.Channel)
+		channelLabel := channel
+		if channelLabel == "" {
+			channelLabel = "general"
+		}
+		view := personThreadCardView{
+			ID:           thread.ID,
+			Subject:      thread.Subject,
+			Status:       thread.Status,
+			Channel:      channel,
+			ChannelLabel: channelLabel,
+			Summary:      strings.TrimSpace(thread.Summary),
+		}
+		if !thread.LastActivityAt.IsZero() {
+			view.HasLastActivityAt = true
+			view.LastActivityLabel = thread.LastActivityAt.In(time.Local).Format("2006-01-02 15:04")
+		}
+		views = append(views, view)
+	}
+	return views
+}
 
 // peopleIndex renders the list of saved people.
 func (s *Server) peopleIndex(w http.ResponseWriter, r *http.Request) {
@@ -123,12 +160,12 @@ func (s *Server) personShow(w http.ResponseWriter, r *http.Request) {
 		"Title":          person.FullName,
 		"ActiveNav":      "people",
 		"Person":         person,
-		"Threads":        threads,
+		"Threads":        buildPersonThreadCardViews(threads),
 		"HasThreads":     len(threads) > 0,
 		"HasLinkedInURL": strings.TrimSpace(person.LinkedInURL) != "",
 	}
 	if err := s.render(w, r, "person_show.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("render person show: %v", err)
 	}
 }
 

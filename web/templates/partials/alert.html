@@ -1,0 +1,3 @@
+{{define "partials/alert"}}
+<p class="rounded-2xl border px-4 py-3 text-sm {{if eq .Variant "error"}}border-red-200 bg-red-50 text-red-700{{else if eq .Variant "warning"}}border-amber-200 bg-amber-50 text-amber-800{{else if eq .Variant "info"}}border-blue-200 bg-blue-50 text-blue-700{{else}}border-slate-200 bg-slate-50 text-slate-700{{end}}">{{.Message}}</p>
+{{end}}

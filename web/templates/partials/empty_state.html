@@ -1,0 +1,11 @@
+{{define "partials/empty_state"}}
+<div class="rounded-2xl bg-slate-50 px-4 py-5 text-sm text-slate-500">
+  <p>{{.Message}}</p>
+  {{if .Detail}}
+  <p class="mt-2 text-sm">{{.Detail}}</p>
+  {{end}}
+  {{if .ActionHTML}}
+  <div class="mt-4">{{.ActionHTML}}</div>
+  {{end}}
+</div>
+{{end}}

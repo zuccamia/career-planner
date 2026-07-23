@@ -38,7 +38,7 @@ test('user can create and view an application', async ({ page }) => {
   await expect(page.getByText('Need transcript before submission.')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Job description' })).toBeVisible();
   await expect(page.getByText('No structured job description yet.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Extract structured description' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Extract description' })).toBeVisible();
   await expect(page.getByText('Raw job description', { exact: true })).toBeVisible();
 
   await page.goto('/applications');
@@ -56,7 +56,7 @@ test('application form shows validation errors', async ({ page }) => {
   });
 
   await page.goto('/applications/new');
-  await page.getByLabel('Company').selectOption({ label: companyName });
+  await page.getByLabel('Company', { exact: true }).selectOption({ label: companyName });
   await page.locator('form[action="/applications"]').evaluate((form: HTMLFormElement) => form.submit());
   await expect(page.getByText('role title is required')).toBeVisible();
 });
@@ -103,8 +103,8 @@ test('user can edit and delete an application', async ({ page }) => {
   await expect(page).toHaveURL(/\/applications\/\d+\/edit$/);
   await expect(page.getByText('Edit application')).toBeVisible();
 
-  await page.getByLabel('Company').selectOption({ label: updatedCompanyName });
-  await page.getByLabel('Person').selectOption({ label: updatedPersonName });
+  await page.getByLabel('Company', { exact: true }).selectOption({ label: updatedCompanyName });
+  await page.getByLabel('Person', { exact: true }).selectOption({ label: updatedPersonName });
   await page.getByLabel('Role title').fill(updatedRoleTitle);
   await page.getByLabel('Status').selectOption('applied');
   await page.getByLabel('Job posting URL').fill('https://jobs.example.com/software-engineer-intern');

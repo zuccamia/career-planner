@@ -12,13 +12,11 @@
       <span aria-hidden="true">·</span>
       <span class="inline-flex items-center" aria-label="{{.Thread.Channel}}">
         {{if eq .Thread.Channel "linkedin"}}
-        <svg class="h-4 w-4" viewBox="0 0 382 382" aria-hidden="true">
-          <path fill="#0077B7" d="M347.445,0H34.555C15.471,0,0,15.471,0,34.555v312.889C0,366.529,15.471,382,34.555,382h312.889 C366.529,382,382,366.529,382,347.444V34.555C382,15.471,366.529,0,347.445,0z M118.207,329.844c0,5.554-4.502,10.056-10.056,10.056 H65.345c-5.554,0-10.056-4.502-10.056-10.056V150.403c0-5.554,4.502-10.056,10.056-10.056h42.806 c5.554,0,10.056,4.502,10.056,10.056V329.844z M86.748,123.432c-22.459,0-40.666-18.207-40.666-40.666S64.289,42.1,86.748,42.1 s40.666,18.207,40.666,40.666S109.208,123.432,86.748,123.432z M341.91,330.654c0,5.106-4.14,9.246-9.246,9.246H286.73 c-5.106,0-9.246-4.14-9.246-9.246v-84.168c0-12.556,3.683-55.021-32.813-55.021c-28.309,0-34.051,29.066-35.204,42.11v97.079 c0,5.106-4.139,9.246-9.246,9.246h-44.426c-5.106,0-9.246-4.14-9.246-9.246V149.593c0-5.106,4.14-9.246,9.246-9.246h44.426 c5.106,0,9.246,4.14,9.246,9.246v15.655c10.497-15.753,26.097-27.912,59.312-27.912c73.552,0,73.131,68.716,73.131,106.472 L341.91,330.654L341.91,330.654z" />
-        </svg>
+        {{template "partials/icons/linkedin" ""}}
+        {{else if eq .Thread.Channel "handshake"}}
+        {{template "partials/icons/handshake" ""}}
         {{else if eq .Thread.Channel "email"}}
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75" />
-        </svg>
+        {{template "partials/icons/email" ""}}
         {{else}}
         <span>{{.Thread.Channel}}</span>
         {{end}}
@@ -34,17 +32,17 @@
         <h2 class="text-lg font-semibold text-slate-900">Generate message</h2>
         <p class="text-sm text-slate-500">Draft outreach or a reply using this thread.</p>
       </div>
-      {{if .GenerateError}}<p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{.GenerateError}}</p>{{end}}
+      {{if .GenerateError}}{{template "partials/alert" dict "Variant" "error" "Message" .GenerateError}}{{end}}
       <div class="flex flex-wrap gap-3">
         <form method="post" action="/communication-threads/{{.Thread.ID}}/generate">
           <input type="hidden" name="goal" value="outreach">
           <input type="hidden" name="return_to" value="entry-form">
-          <button class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" type="submit">Draft outreach</button>
+          {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Draft outreach" "Variant" "secondary" "Size" "compact"}}
         </form>
         <form method="post" action="/communication-threads/{{.Thread.ID}}/generate">
           <input type="hidden" name="goal" value="reply">
           <input type="hidden" name="return_to" value="entry-form">
-          <button class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" type="submit">Draft reply</button>
+          {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Draft reply" "Variant" "secondary" "Size" "compact"}}
         </form>
       </div>
       {{if .GeneratedMessage}}
@@ -54,7 +52,7 @@
         <form method="post" action="/communication-threads/{{.Thread.ID}}/generated-entry">
           <input type="hidden" name="generated_message" value="{{.GeneratedMessage}}">
           <input type="hidden" name="return_to" value="entry-form">
-          <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Add to thread</button>
+          {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Add to thread" "Variant" "primary" "Size" "compact"}}
         </form>
       </div>
       {{end}}
@@ -62,7 +60,7 @@
   </div>
 
   <div class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-    {{if .EntryError}}<p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{{.EntryError}}</p>{{end}}
+    {{if .EntryError}}{{template "partials/alert" dict "Variant" "error" "Message" .EntryError}}{{end}}
     <form method="post" action="/communication-threads/{{.Thread.ID}}/entries" class="space-y-4">
       <div class="grid gap-2">
         <label class="text-sm font-medium text-slate-900" for="direction">Direction</label>
@@ -81,8 +79,8 @@
         <textarea class="min-h-40 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="content" name="content" required>{{.EntryContent}}</textarea>
       </div>
       <div class="flex flex-wrap gap-3">
-        <button class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" type="submit">Save</button>
-        <a class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" href="/communication-threads/{{.Thread.ID}}">Cancel</a>
+        {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Save" "Variant" "primary"}}
+        {{template "partials/button" dict "Kind" "link" "Href" (printf "/communication-threads/%d" .Thread.ID) "Label" "Cancel" "Variant" "secondary"}}
       </div>
     </form>
   </div>

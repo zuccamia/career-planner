@@ -3,22 +3,55 @@ package http
 // Loads templates and injects shared layout data.
 
 import (
+	"errors"
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 )
 
-// parseTemplates loads the base layout together with the requested page templates.
-func parseTemplates(names ...string) (*template.Template, error) {
-	paths := make([]string, 0, len(names))
+func templateFuncs() template.FuncMap {
+	return template.FuncMap{
+		"applicationStatusClasses": applicationStatusClasses,
+		"dict":                     templateDict,
+	}
+}
+
+func templatePaths(names ...string) ([]string, error) {
+	paths := make([]string, 0, len(names)+16)
 	for _, name := range names {
 		paths = append(paths, filepath.Join("web", "templates", name))
 	}
-	tmpl, err := template.New("base").Funcs(template.FuncMap{
-		"applicationStatusClasses": applicationStatusClasses,
-	}).ParseFiles(paths...)
+
+	err := filepath.Walk(filepath.Join("web", "templates", "partials"), func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) == ".html" {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return paths, nil
+}
+
+// parseTemplates loads the base layout together with the requested page templates.
+func parseTemplates(names ...string) (*template.Template, error) {
+	paths, err := templatePaths(names...)
+	if err != nil {
+		return nil, err
+	}
+
+	tmpl, err := template.New("base").Funcs(templateFuncs()).ParseFiles(paths...)
 	if err != nil {
 		return nil, err
 	}
@@ -42,6 +75,21 @@ func applicationStatusClasses(status string) string {
 	default:
 		return "bg-slate-100 text-slate-700"
 	}
+}
+
+func templateDict(values ...any) (map[string]any, error) {
+	if len(values)%2 != 0 {
+		return nil, errors.New("dict requires an even number of arguments")
+	}
+	data := make(map[string]any, len(values)/2)
+	for i := 0; i < len(values); i += 2 {
+		key, ok := values[i].(string)
+		if !ok {
+			return nil, errors.New("dict keys must be strings")
+		}
+		data[key] = values[i+1]
+	}
+	return data, nil
 }
 
 // render fills shared layout data and executes the requested page template.

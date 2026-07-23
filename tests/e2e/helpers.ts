@@ -68,7 +68,7 @@ export async function createPerson(
     await page.getByLabel('Title').fill(input.title);
   }
   if (input.companyName !== undefined) {
-    await page.getByLabel('Company').selectOption({ label: input.companyName });
+    await page.getByLabel('Company', { exact: true }).selectOption({ label: input.companyName });
   }
   if (input.linkedInURL !== undefined) {
     await page.getByLabel('LinkedIn URL').fill(input.linkedInURL);
@@ -93,9 +93,9 @@ export async function createApplication(
   },
 ) {
   await page.goto('/applications/new');
-  await page.getByLabel('Company').selectOption({ label: input.companyName });
+  await page.getByLabel('Company', { exact: true }).selectOption({ label: input.companyName });
   if (input.personName !== undefined) {
-    await page.getByLabel('Person').selectOption({ label: input.personName });
+    await page.getByLabel('Person', { exact: true }).selectOption({ label: input.personName });
   }
   await page.getByLabel('Role title').fill(input.roleTitle);
   if (input.status !== undefined) {

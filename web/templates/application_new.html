@@ -8,11 +8,11 @@
 
 <section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
   {{if .Error}}
-  <p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">{{.Error}}</p>
+  {{template "partials/alert" dict "Variant" "error" "Message" .Error}}
   {{end}}
 
   {{if not .HasCompanies}}
-  <p class="rounded-2xl bg-slate-50 px-4 py-4 text-slate-500">Add a company first before creating an application.</p>
+  {{template "partials/empty_state" dict "Message" "Add a company first before creating an application."}}
   {{else}}
   <form method="post" action="{{.FormAction}}" class="space-y-4">
     <div class="grid gap-2">

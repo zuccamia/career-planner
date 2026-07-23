@@ -64,8 +64,8 @@
           <p class="text-sm font-semibold text-slate-900">Quick start</p>
           <p class="mt-1 text-sm text-slate-500">Start by adding a company, then track applications against it.</p>
           <div class="mt-4 flex flex-wrap gap-3">
-            <a class="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700" href="/companies/new"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg><span>Company</span></a>
-            <a class="inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50" href="/applications/new"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg><span>Application</span></a>
+            {{template "partials/button" dict "Kind" "link" "Href" "/companies/new" "Label" "Company" "Variant" "primary" "Size" "compact" "Icon" "add" "AriaLabel" "Add company"}}
+            {{template "partials/button" dict "Kind" "link" "Href" "/applications/new" "Label" "Application" "Variant" "secondary" "Size" "compact" "Icon" "add" "AriaLabel" "Add application"}}
           </div>
         </div>
       </div>

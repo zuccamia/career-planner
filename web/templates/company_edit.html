@@ -8,7 +8,7 @@
 
 <section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
   {{if .Error}}
-  <p class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">{{.Error}}</p>
+  {{template "partials/alert" dict "Variant" "error" "Message" .Error}}
   {{end}}
 
   <form method="post" action="/companies/{{.Company.ID}}/edit" class="space-y-4">

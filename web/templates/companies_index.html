@@ -7,7 +7,7 @@
   </div>
 
   <div>
-    <a class="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700" href="/companies/new"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg><span>Company</span></a>
+    {{template "partials/button" dict "Kind" "link" "Href" "/companies/new" "Label" "Company" "Variant" "primary" "Icon" "add" "AriaLabel" "Add company"}}
   </div>
 </section>
 
@@ -52,10 +52,7 @@
     {{end}}
   </ul>
   {{else}}
-  <div class="rounded-2xl bg-slate-50 px-4 py-5 text-slate-500">
-    <p>No saved companies yet.</p>
-    <a class="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700" href="/companies/new"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg><span>Company</span></a>
-  </div>
+  {{template "partials/empty_state" dict "Message" "No saved companies yet."}}
   {{end}}
 </section>
 {{end}}

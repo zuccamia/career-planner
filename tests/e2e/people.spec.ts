@@ -18,7 +18,7 @@ test('user can create a person linked to a company', async ({ page }) => {
   await page.goto('/people/new');
   await page.getByLabel('Full name').fill(personName);
   await page.getByLabel('Title').fill('Engineering Manager');
-  await page.getByLabel('Company').selectOption({ label: companyName });
+  await page.getByLabel('Company', { exact: true }).selectOption({ label: companyName });
   await page.getByLabel('LinkedIn URL').fill('https://www.linkedin.com/in/ada-lovelace-e2e');
   await page.getByLabel('Notes').fill('Met through a recruiting intro.');
   await page.getByRole('button', { name: 'Save' }).click();
@@ -56,7 +56,7 @@ test('user can edit and delete a person', async ({ page }) => {
   await page.goto('/people/new');
   await page.getByLabel('Full name').fill(personName);
   await page.getByLabel('Title').fill('Staff Engineer');
-  await page.getByLabel('Company').selectOption({ label: companyName });
+  await page.getByLabel('Company', { exact: true }).selectOption({ label: companyName });
   await page.getByLabel('LinkedIn URL').fill('https://www.linkedin.com/in/grace-hopper-e2e');
   await page.getByLabel('Notes').fill('Original notes.');
   await page.getByRole('button', { name: 'Save' }).click();
@@ -69,7 +69,7 @@ test('user can edit and delete a person', async ({ page }) => {
   await expect(page).toHaveURL(/\/people\/\d+\/edit$/);
   await page.getByLabel('Full name').fill(updatedPersonName);
   await page.getByLabel('Title').fill('Distinguished Engineer');
-  await page.getByLabel('Company').selectOption({ label: updatedCompanyName });
+  await page.getByLabel('Company', { exact: true }).selectOption({ label: updatedCompanyName });
   await page.getByLabel('LinkedIn URL').fill('https://www.linkedin.com/in/grace-brewster-hopper-e2e');
   await page.getByLabel('Notes').fill('Updated notes.');
   await page.getByRole('button', { name: 'Save' }).click();
@@ -108,13 +108,30 @@ test('user can create and view communication threads for a person', async ({ pag
 
   await page.getByLabel('Subject').fill('Initial outreach');
   await page.getByLabel('Channel').selectOption('email');
-  await page.getByRole('button', { name: 'Create thread' }).click();
+  await page.getByRole('button', { name: 'Add thread' }).click();
 
   await expect(page).toHaveURL(/\/communication-threads\/\d+$/);
   await expect(page.getByRole('heading', { name: 'Initial outreach' })).toBeVisible();
   await expect(page.getByText('No entries yet.')).toBeVisible();
 
-  await page.getByRole('link', { name: 'Entry' }).click();
+  await page.goto('/people');
+  await page.locator('li', { hasText: personName }).first().click({ position: { x: 40, y: 40 } });
+  const threadCard = page.locator('li', { hasText: 'Initial outreach' }).first();
+  await expect(threadCard).toContainText('Initial outreach');
+  await expect(threadCard).toContainText('Last activity');
+  await expect(page.getByRole('heading', { name: 'Start a thread' })).toBeVisible();
+  await expect(page.getByLabel('Subject')).toBeVisible();
+  const createThreadButton = page.getByRole('button', { name: 'Add thread' });
+  await expect(createThreadButton).toBeVisible();
+  await expect(createThreadButton).toContainText('Thread');
+  await expect(createThreadButton.locator('svg')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Open communication thread Initial outreach' }).click();
+  const addEntryLink = page.getByRole('link', { name: 'Add entry' });
+  await expect(addEntryLink).toBeVisible();
+  await expect(addEntryLink).toContainText('Entry');
+  await expect(addEntryLink.locator('svg')).toBeVisible();
+  await addEntryLink.click();
   await expect(page).toHaveURL(/\/communication-threads\/\d+\/entries\/new$/);
   await page.getByLabel('Direction').selectOption('outbound');
   await page.getByLabel('Content').fill('Hi Katherine, enjoyed meeting you and would love to stay in touch.');
@@ -183,7 +200,7 @@ test('user can add a generated message to the thread', async ({ page }) => {
 
   await page.locator('li', { hasText: personName }).first().click({ position: { x: 40, y: 40 } });
   await page.getByLabel('Subject').fill('Follow-up');
-  await page.getByRole('button', { name: 'Create thread' }).click();
+  await page.getByRole('button', { name: 'Add thread' }).click();
 
   const threadPath = new URL(page.url()).pathname;
   const response = await page.request.post(`http://127.0.0.1:8081${threadPath}/generated-entry`, {
