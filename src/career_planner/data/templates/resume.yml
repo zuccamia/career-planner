@@ -1,0 +1,46 @@
+# resume.yml — master content for resume generation.
+#
+# Edit by hand with `career resume edit`.
+# Render to markdown:
+#   career resume render              # untailored (your master resume)
+#   career resume render --for <opp>  # AI-tailored to a specific opportunity
+# To save: career resume render --for acme > resumes/acme.md
+
+# Header — shown at the top of every rendered resume.
+header:
+  name: ""
+  email: ""
+  phone: ""
+  location: ""           # e.g. "Boston, MA" or "Remote"
+  links: []              # list of {label, url}, e.g. {label: "GitHub", url: "https://..."}
+
+# Forward-looking anchor. Used by AI features (criteria check, resume render
+# --for) as planning context. NOT rendered onto the resume.
+target: ""               # e.g. "Backend SWE internship, summer 2026"
+
+# Resume summary / objective. Rendered as the "Objective" section.
+objective: ""            # 1-2 sentences
+
+# Work and project experience. Most recent first when rendered.
+experience: []           # list of:
+                         #   role: ""               # e.g. "Software Engineer Intern"
+                         #   company: ""
+                         #   location: ""
+                         #   start: ""              # YYYY-MM
+                         #   end: ""                # YYYY-MM or "present"
+                         #   bullets: []            # XYZ format: "Accomplished X by doing Z"
+                         #   tags: []               # optional — pulls matching brag entries
+
+education: []            # list of:
+                         #   school: ""
+                         #   degree: ""             # e.g. "BSc Computer Science"
+                         #   start: ""
+                         #   end: ""
+                         #   location: ""
+                         #   details: []            # GPA, honors, coursework
+
+# Free-form sections rendered after experience and education.
+# Useful for projects, publications, talks, certifications.
+extras: []               # list of:
+                         #   title: ""              # e.g. "Selected projects"
+                         #   bullets: []
