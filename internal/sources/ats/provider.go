@@ -57,6 +57,11 @@ func (r *Registry) Fetch(ctx context.Context, rawURL string) (Posting, error) {
 		return Posting{}, fmt.Errorf("ats registry is not configured")
 	}
 	canonical := Canonicalize(rawURL)
+	parsed, err := ValidateFetchURL(canonical)
+	if err != nil {
+		return Posting{}, err
+	}
+	canonical = parsed.String()
 	for _, p := range r.providers {
 		if p != nil && p.Supports(canonical) {
 			return p.Fetch(ctx, canonical)

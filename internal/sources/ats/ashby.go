@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 const ashbyPageBase = "https://jobs.ashbyhq.com"
@@ -25,7 +24,7 @@ type Ashby struct {
 // NewAshby returns an Ashby provider with a sensible HTTP client.
 func NewAshby() *Ashby {
 	return &Ashby{
-		client:   &http.Client{Timeout: 15 * time.Second},
+		client:   safeClient(),
 		pageBase: ashbyPageBase,
 	}
 }
@@ -56,7 +55,7 @@ func (a *Ashby) Fetch(ctx context.Context, rawURL string) (Posting, error) {
 
 	client := a.client
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = safeClient()
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -114,10 +113,10 @@ func parseAshbyURL(rawURL string) (org, id string, ok bool) {
 
 // schemaJobPosting mirrors the schema.org JobPosting subset we care about.
 type schemaJobPosting struct {
-	Type               string          `json:"@type"`
-	Title              string          `json:"title"`
-	Description        string          `json:"description"`
-	EmploymentType     string          `json:"employmentType"`
+	Type               string `json:"@type"`
+	Title              string `json:"title"`
+	Description        string `json:"description"`
+	EmploymentType     string `json:"employmentType"`
 	HiringOrganization struct {
 		Name string `json:"name"`
 	} `json:"hiringOrganization"`

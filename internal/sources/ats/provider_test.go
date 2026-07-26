@@ -22,12 +22,12 @@ func (s *stubProvider) Fetch(_ context.Context, _ string) (Posting, error) {
 func TestRegistryPicksFirstSupportingProvider(t *testing.T) {
 	greenhouse := &stubProvider{
 		name:     "greenhouse",
-		supports: func(u string) bool { return u == "gh" },
+		supports: func(u string) bool { return u == "https://gh.example/job" },
 		posting:  Posting{Provider: "greenhouse", Title: "Engineer"},
 	}
 	lever := &stubProvider{
 		name:     "lever",
-		supports: func(u string) bool { return u == "lever" },
+		supports: func(u string) bool { return u == "https://lever.example/job" },
 		posting:  Posting{Provider: "lever"},
 	}
 	fallback := &stubProvider{
@@ -37,7 +37,7 @@ func TestRegistryPicksFirstSupportingProvider(t *testing.T) {
 	}
 	reg := NewRegistry(fallback, greenhouse, lever)
 
-	got, err := reg.Fetch(context.Background(), "gh")
+	got, err := reg.Fetch(context.Background(), "https://gh.example/job")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRegistryPropagatesProviderError(t *testing.T) {
 		err:      boom,
 	}
 	reg := NewRegistry(fallback)
-	_, err := reg.Fetch(context.Background(), "x")
+	_, err := reg.Fetch(context.Background(), "https://x.example/job")
 	if !errors.Is(err, boom) {
 		t.Fatalf("got %v, want %v", err, boom)
 	}

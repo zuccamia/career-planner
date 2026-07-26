@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 const greenhouseAPIBase = "https://boards-api.greenhouse.io"
@@ -24,7 +23,7 @@ type Greenhouse struct {
 // NewGreenhouse returns a Greenhouse provider with a sensible HTTP client.
 func NewGreenhouse() *Greenhouse {
 	return &Greenhouse{
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  safeClient(),
 		apiBase: greenhouseAPIBase,
 	}
 }
@@ -56,7 +55,7 @@ func (g *Greenhouse) Fetch(ctx context.Context, rawURL string) (Posting, error) 
 
 	client := g.client
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = safeClient()
 	}
 	resp, err := client.Do(req)
 	if err != nil {

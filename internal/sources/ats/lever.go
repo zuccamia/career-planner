@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
 const leverAPIBase = "https://api.lever.co"
@@ -23,7 +22,7 @@ type Lever struct {
 // NewLever returns a Lever provider with a sensible HTTP client.
 func NewLever() *Lever {
 	return &Lever{
-		client:  &http.Client{Timeout: 15 * time.Second},
+		client:  safeClient(),
 		apiBase: leverAPIBase,
 	}
 }
@@ -55,7 +54,7 @@ func (l *Lever) Fetch(ctx context.Context, rawURL string) (Posting, error) {
 
 	client := l.client
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = safeClient()
 	}
 	resp, err := client.Do(req)
 	if err != nil {

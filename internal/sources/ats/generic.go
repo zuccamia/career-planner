@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-	"time"
 )
 
 // Generic is the fallback provider: it fetches an arbitrary URL, prefers
@@ -22,11 +21,11 @@ type Generic struct {
 
 // NewGeneric returns a Generic provider with a sensible default HTTP client.
 func NewGeneric() *Generic {
-	return &Generic{client: &http.Client{Timeout: 15 * time.Second}}
+	return &Generic{client: safeClient()}
 }
 
-func (g *Generic) Name() string              { return "generic" }
-func (g *Generic) Supports(_ string) bool    { return true }
+func (g *Generic) Name() string           { return "generic" }
+func (g *Generic) Supports(_ string) bool { return true }
 
 func (g *Generic) Fetch(ctx context.Context, rawURL string) (Posting, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -37,7 +36,7 @@ func (g *Generic) Fetch(ctx context.Context, rawURL string) (Posting, error) {
 
 	client := g.client
 	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
+		client = safeClient()
 	}
 	resp, err := client.Do(req)
 	if err != nil {
