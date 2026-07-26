@@ -1,0 +1,236 @@
+{{define "application_show.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<section class="space-y-2">
+  <div class="flex flex-wrap items-center justify-between gap-4">
+    <p><a class="text-sm text-slate-500 transition hover:text-slate-900" href="/applications">← Back to applications</a></p>
+    <div class="flex items-center gap-3">
+      {{if or .HasJobDescriptionRaw .HasJobPostingURL}}
+      <form method="post" action="/applications/{{.Application.ID}}/extract-job-description">
+        {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Extract description" "Variant" "primary" "Size" "compact"}}
+      </form>
+      {{end}}
+      {{if .HasJobPostingURL}}
+      {{template "partials/button" dict "Kind" "link" "Href" .Application.JobPostingURL "Label" "View original posting" "Variant" "secondary-link" "NewTab" true}}
+      {{end}}
+      {{template "partials/button" dict "Kind" "link" "Href" (printf "/applications/%d/edit" .Application.ID) "Variant" "icon" "Size" "large" "Icon" "edit" "IconOnly" true "AriaLabel" "Edit application"}}
+      <form method="post" action="/applications/{{.Application.ID}}/delete" onsubmit="return confirm('Delete this application? This will remove its timeline events and artifacts.');">
+        {{template "partials/button" dict "Kind" "button" "Type" "submit" "Variant" "danger-icon" "Size" "large" "Icon" "delete" "IconOnly" true "AriaLabel" "Delete application"}}
+      </form>
+    </div>
+  </div>
+  <div class="space-y-2">
+    <div class="space-y-2">
+      <div class="flex flex-wrap items-center gap-3">
+        <h1 class="text-3xl font-semibold tracking-tight text-slate-900">{{.Application.RoleTitle}}</h1>
+        <span class="inline-flex items-center rounded-full px-3 py-1 text-sm font-semibold {{applicationStatusClasses .Application.Status}}">{{humanizeSnakeCase .Application.Status}}</span>
+      </div>
+      <p class="text-slate-600">{{.Application.CompanyName}}{{if .HasPerson}} · {{.Application.PersonName}}{{end}}</p>
+      <form method="post" action="/applications/{{.Application.ID}}/status" class="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 pt-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] sm:items-end">
+        <div class="grid gap-2">
+          <label class="text-sm font-medium text-slate-900" for="quick-status">Status</label>
+          <select class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="quick-status" name="status">
+            {{range .Statuses}}
+            <option value="{{.}}" {{if eq $.Application.Status .}}selected{{end}}>{{humanizeSnakeCase .}}</option>
+            {{end}}
+          </select>
+        </div>
+        <div class="grid gap-2">
+          <label class="text-sm font-medium text-slate-900" for="quick-occurred-at">Datetime</label>
+          <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="quick-occurred-at" name="occurred_at" type="datetime-local">
+        </div>
+        <div class="grid gap-2">
+          <label class="text-sm font-medium text-slate-900" for="quick-notes">Short notes</label>
+          <input class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" id="quick-notes" name="notes" type="text" maxlength="255" placeholder="Optional context for the timeline">
+        </div>
+        <div>
+          {{template "partials/button" dict "Kind" "button" "Type" "submit" "Label" "Update" "Variant" "primary" "Size" "compact"}}
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+
+{{if or .HasPerson .HasNotes}}
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  <dl class="grid gap-4 sm:grid-cols-2">
+    {{if .HasPerson}}
+    <div class="grid gap-1">
+      <dt class="text-sm font-semibold text-slate-500">Point of contact</dt>
+      <dd>{{.Application.PersonName}}</dd>
+    </div>
+    {{end}}
+    <div class="grid gap-1 sm:col-span-2">
+      <dt class="text-sm font-semibold text-slate-500">Notes</dt>
+      <dd>{{if .HasNotes}}{{.Application.Notes}}{{else}}<span class="text-slate-500">No notes yet.</span>{{end}}</dd>
+    </div>
+  </dl>
+</section>
+{{end}}
+
+<section>
+  <article class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <div class="flex items-center justify-between gap-3">
+      <h2 class="text-lg font-semibold text-slate-900">Job description</h2>
+    </div>
+    {{if .HasStructured}}
+    <div class="space-y-6">
+      <section class="space-y-4">
+        <div class="flex flex-wrap gap-2">
+          {{if .Structured.RoleLevel}}<span class="inline-flex items-center rounded-full bg-violet-100 px-3 py-1 text-sm font-semibold text-violet-700">{{.RoleLevelLabel}}</span>{{end}}
+          {{if .Structured.EmploymentType}}<span class="inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.EmploymentTypeLabel}}</span>{{end}}
+          {{if .Structured.Season}}<span class="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">{{.SeasonLabel}}{{if gt .Structured.Year 0}} {{.Structured.Year}}{{end}}</span>{{else if gt .Structured.Year 0}}<span class="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">{{.Structured.Year}}</span>{{end}}
+          {{if .HasDeadline}}<span class="inline-flex items-center gap-2 rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-700"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="size-4"><path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 0 0 5.636 5.636m12.728 12.728A9 9 0 0 1 5.636 5.636m12.728 12.728L5.636 5.636" /></svg><span>{{.Structured.ApplicationDeadline}}</span></span>{{end}}
+          {{if .HasSalary}}<span class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">{{.SalaryLabel}}</span>{{end}}
+          {{if and (not .Structured.Season) (not .Structured.RoleLevel) (not .Structured.EmploymentType) (le .Structured.Year 0) (not .HasDeadline) (not .HasSalary)}}<span class="text-slate-500">No normalized role metadata identified.</span>{{end}}
+        </div>
+        <div class="grid gap-1">
+          <dt class="text-sm font-semibold text-slate-500">Summary</dt>
+          <dd>{{if .HasSummary}}{{.Structured.Summary}}{{else}}<span class="text-slate-500">No summary yet.</span>{{end}}</dd>
+        </div>
+      </section>
+
+      <section class="grid gap-6 lg:grid-cols-2">
+        <div class="space-y-3">
+          <h3 class="text-base font-semibold text-slate-900">Minimum qualifications</h3>
+          {{if .HasMinQualifications}}
+          <ul class="list-disc space-y-2 pl-5 text-sm text-slate-700">{{range .Structured.MinimumQualifications}}<li>{{.}}</li>{{end}}</ul>
+          {{else}}
+          <p class="text-sm text-slate-500">No minimum qualifications identified.</p>
+          {{end}}
+        </div>
+        <div class="space-y-3">
+          <h3 class="text-base font-semibold text-slate-900">Preferred qualifications</h3>
+          {{if .HasPrefQualifications}}
+          <ul class="list-disc space-y-2 pl-5 text-sm text-slate-700">{{range .Structured.PreferredQualifications}}<li>{{.}}</li>{{end}}</ul>
+          {{else}}
+          <p class="text-sm text-slate-500">No preferred qualifications identified.</p>
+          {{end}}
+        </div>
+      </section>
+
+      <section class="grid gap-6 lg:grid-cols-2">
+        <div class="space-y-3">
+          <h3 class="text-base font-semibold text-slate-900">Responsibilities</h3>
+          {{if .HasResponsibilities}}
+          <ul class="list-disc space-y-2 pl-5 text-sm text-slate-700">{{range .Structured.Responsibilities}}<li>{{.}}</li>{{end}}</ul>
+          {{else}}
+          <p class="text-sm text-slate-500">No responsibilities identified.</p>
+          {{end}}
+        </div>
+        <div class="space-y-3">
+          <h3 class="text-base font-semibold text-slate-900">Requirements</h3>
+          <dl class="space-y-3">
+            <div class="flex flex-wrap gap-2">
+              {{if .Structured.Requirements.TranscriptRequired}}<span class="inline-flex items-center rounded-full bg-rose-100 px-3 py-1 text-sm font-semibold text-rose-700">Transcript required</span>{{end}}
+              {{if .HasEducation}}{{range .Structured.Requirements.Education}}<span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">{{.}}</span>{{end}}{{end}}
+              {{if .HasMajors}}{{range .Structured.Requirements.Majors}}<span class="inline-flex items-center rounded-full bg-indigo-100 px-3 py-1 text-sm font-semibold text-indigo-700">{{.}}</span>{{end}}{{end}}
+            </div>
+            <div class="grid gap-1">
+              <dt class="text-sm font-semibold text-slate-500">Work authorization</dt>
+              <dd class="text-sm text-slate-700">{{if .HasWorkAuthorization}}{{.Structured.Requirements.WorkAuthorization}}{{else}}<span class="text-slate-500">Not identified</span>{{end}}</dd>
+            </div>
+            <div class="grid gap-1">
+              <dt class="text-sm font-semibold text-slate-500">Availability</dt>
+              <dd class="text-sm text-slate-700">{{if .HasAvailability}}<div class="space-y-1">{{range .Structured.Requirements.Availability}}<p>{{.}}</p>{{end}}</div>{{else}}<span class="text-slate-500">Not identified</span>{{end}}</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="grid gap-6 lg:grid-cols-3">
+        <div class="space-y-3">
+          <h3 class="text-base font-semibold text-slate-900">Languages</h3>
+          <div>{{if .HasLanguages}}{{range .Structured.Languages}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">{{.}}</span>{{end}}{{else}}<span class="text-sm text-slate-500">Not identified</span>{{end}}</div>
+        </div>
+        <div class="space-y-3">
+          <h3 class="text-base font-semibold text-slate-900">Skills</h3>
+          <div>{{if .HasSkills}}{{range .Structured.Skills}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">{{.}}</span>{{end}}{{else}}<span class="text-sm text-slate-500">Not identified</span>{{end}}</div>
+        </div>
+        <div class="space-y-3">
+          <h3 class="text-base font-semibold text-slate-900">Domains</h3>
+          <div>{{if .HasDomains}}{{range .Structured.Domains}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">{{.}}</span>{{end}}{{else}}<span class="text-sm text-slate-500">Not identified</span>{{end}}</div>
+        </div>
+      </section>
+
+      <section class="space-y-3">
+        <h3 class="text-base font-semibold text-slate-900">Logistics</h3>
+        <dl class="grid gap-4 sm:grid-cols-2">
+          <div class="grid gap-1 sm:col-span-2">
+            <dt class="text-sm font-semibold text-slate-500">Locations</dt>
+            <dd>{{if .HasLocations}}{{range .Structured.Locations}}<span class="mb-2 mr-2 inline-flex items-center rounded-full bg-blue-100 px-3 py-1 text-sm font-semibold text-blue-700">{{.}}</span>{{end}}{{else}}<span class="text-slate-500">Not identified</span>{{end}}</dd>
+          </div>
+          <div class="grid gap-1 sm:col-span-2">
+            <dt class="text-sm font-semibold text-slate-500">Location notes</dt>
+            <dd>{{if .HasLocationNotes}}{{.Structured.LocationNotes}}{{else}}<span class="text-slate-500">No additional notes.</span>{{end}}</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+    {{else if .StructuredParseError}}
+    {{template "partials/alert" dict "Variant" "warning" "Message" "Structured job description could not be loaded. Re-extract to replace the saved data."}}
+    {{else}}
+    {{template "partials/empty_state" dict "Message" "No structured job description yet."}}
+    {{end}}
+  </article>
+</section>
+<section class="grid gap-4 lg:grid-cols-2">
+  <article class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="text-lg font-semibold text-slate-900">Timeline</h2>
+    {{if .HasEvents}}
+    <ul class="space-y-3">
+      {{range .Events}}
+      <li class="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
+        <span class="text-slate-500">{{.OccurredAt.Format "2006-01-02 15:04"}}</span>
+        <span aria-hidden="true"> — </span>
+        <span>{{applicationEventSummary .Type .Content .FromStatus .ToStatus}}</span>
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    {{template "partials/empty_state" dict "Message" "No application events yet."}}
+    {{end}}
+  </article>
+
+  <article class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <h2 class="text-lg font-semibold text-slate-900">Artifacts</h2>
+    {{if .HasArtifacts}}
+    <ul class="space-y-3">
+      {{range .Artifacts}}
+      <li class="rounded-2xl bg-slate-50 px-4 py-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <span class="font-semibold text-slate-900">{{.Kind}}</span>
+          <span class="text-sm text-slate-500">{{.StorageType}}</span>
+        </div>
+        {{if .Label}}<p class="mt-2 text-sm text-slate-700">{{.Label}}</p>{{end}}
+        {{if .FilePath}}<p class="mt-2 break-all text-xs text-slate-500">{{.FilePath}}</p>{{end}}
+      </li>
+      {{end}}
+    </ul>
+    {{else}}
+    {{template "partials/empty_state" dict "Message" "No artifacts yet."}}
+    {{end}}
+  </article>
+</section>
+
+<section>
+  <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <details class="group">
+      <summary class="cursor-pointer list-none text-lg font-semibold text-slate-900">
+        <span class="inline-flex items-center gap-2">
+          <span>Raw job description</span>
+          <span class="text-sm font-normal text-slate-500 group-open:hidden">Show</span>
+          <span class="hidden text-sm font-normal text-slate-500 group-open:inline">Hide</span>
+        </span>
+      </summary>
+      <div class="mt-4">
+        {{if .HasJobDescriptionRaw}}
+        <pre class="overflow-x-auto rounded-2xl bg-slate-50 p-4 text-sm whitespace-pre-wrap text-slate-700">{{.Application.JobDescriptionRaw}}</pre>
+        {{else}}
+        {{template "partials/empty_state" dict "Message" "No raw job description saved yet."}}
+        {{end}}
+      </div>
+    </details>
+  </article>
+</section>
+{{end}}

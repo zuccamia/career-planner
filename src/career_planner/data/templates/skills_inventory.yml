@@ -1,6 +1,0 @@
-# Skills Inventory
-# Add skills with `career skills add` or `career skills browse`.
-# Each entry is mapped to an ESCO skill code where possible, with a
-# self-rating (1-5) and a one-line real-world example.
-
-skills: []

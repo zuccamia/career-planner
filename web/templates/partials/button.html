@@ -1,0 +1,65 @@
+{{define "partials/button"}}
+{{$variant := .Variant}}
+{{$kind := .Kind}}
+{{$type := .Type}}
+{{$href := .Href}}
+{{$label := .Label}}
+{{$ariaLabel := .AriaLabel}}
+{{$icon := .Icon}}
+{{$iconOnly := .IconOnly}}
+{{$newTab := .NewTab}}
+{{$size := .Size}}
+{{$classes := ""}}
+
+{{if eq $variant "primary"}}
+  {{if eq $size "compact"}}
+    {{$classes = "inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"}}
+  {{else}}
+    {{$classes = "inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"}}
+  {{end}}
+{{else if eq $variant "secondary"}}
+  {{if eq $size "compact"}}
+    {{$classes = "inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"}}
+  {{else}}
+    {{$classes = "inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"}}
+  {{end}}
+{{else if eq $variant "secondary-link"}}
+  {{$classes = "inline-flex items-center justify-center rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-900"}}
+{{else if eq $variant "icon"}}
+  {{if eq $size "large"}}
+    {{$classes = "inline-flex items-center justify-center rounded-full border border-slate-300 bg-white p-2.5 text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"}}
+  {{else}}
+    {{$classes = "inline-flex items-center justify-center rounded-full border border-slate-300 bg-white p-2 text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"}}
+  {{end}}
+{{else if eq $variant "danger-icon"}}
+  {{if eq $size "large"}}
+    {{$classes = "inline-flex items-center justify-center rounded-full border border-red-200 bg-white p-2.5 text-red-600 transition hover:border-red-300 hover:bg-red-50"}}
+  {{else}}
+    {{$classes = "inline-flex items-center justify-center rounded-full border border-red-200 bg-white p-2 text-red-600 transition hover:border-red-300 hover:bg-red-50"}}
+  {{end}}
+{{else if eq $variant "icon-primary"}}
+  {{$classes = "inline-flex items-center justify-center rounded-full bg-blue-600 p-3 text-white transition hover:bg-blue-700"}}
+{{end}}
+
+{{if eq $kind "link"}}
+<a class="{{$classes}}" href="{{$href}}"{{if $ariaLabel}} aria-label="{{$ariaLabel}}"{{end}}{{if $newTab}} target="_blank" rel="noreferrer"{{end}}>
+  {{if $icon}}
+    {{if eq $icon "add"}}{{template "partials/icons/add" .}}{{end}}
+    {{if eq $icon "edit"}}{{template "partials/icons/edit" .}}{{end}}
+    {{if eq $icon "delete"}}{{template "partials/icons/delete" .}}{{end}}
+    {{if eq $icon "search"}}{{template "partials/icons/search" .}}{{end}}
+  {{end}}
+  {{if not $iconOnly}}<span>{{$label}}</span>{{end}}
+</a>
+{{else}}
+<button class="{{$classes}}" type="{{if $type}}{{$type}}{{else}}button{{end}}"{{if $ariaLabel}} aria-label="{{$ariaLabel}}"{{end}}>
+  {{if $icon}}
+    {{if eq $icon "add"}}{{template "partials/icons/add" .}}{{end}}
+    {{if eq $icon "edit"}}{{template "partials/icons/edit" .}}{{end}}
+    {{if eq $icon "delete"}}{{template "partials/icons/delete" .}}{{end}}
+    {{if eq $icon "search"}}{{template "partials/icons/search" .}}{{end}}
+  {{end}}
+  {{if not $iconOnly}}<span>{{$label}}</span>{{end}}
+</button>
+{{end}}
+{{end}}

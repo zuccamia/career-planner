@@ -1,0 +1,45 @@
+{{define "people_index.html"}}{{template "base" .}}{{end}}
+
+{{define "content"}}
+<section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+  <div class="space-y-2">
+    <p class="text-sm font-semibold uppercase tracking-[0.14em] text-blue-700">People</p>
+  </div>
+
+  <div>
+    {{template "partials/button" dict "Kind" "link" "Href" "/people/new" "Label" "Person" "Variant" "primary" "Icon" "add" "AriaLabel" "Add person"}}
+  </div>
+</section>
+
+<section class="space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+  {{if .HasPeople}}
+  <ul class="space-y-3">
+    {{range .People}}
+    <li class="relative rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-slate-300 hover:bg-white">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div class="relative min-w-0 flex-1">
+          <a class="absolute inset-0 z-10 rounded-xl" href="/people/{{.ID}}" aria-label="Open person {{.FullName}}"></a>
+          <div class="relative z-0">
+            <span class="block font-semibold text-blue-700">{{.FullName}}</span>
+            {{if or .Title .CompanyName}}
+            <span class="block text-sm text-slate-500">{{if .Title}}{{.Title}}{{end}}{{if and .Title .CompanyName}} - {{end}}{{if .CompanyName}}{{.CompanyName}}{{end}}</span>
+            {{end}}
+            {{if .Notes}}<p class="mt-2 overflow-hidden text-sm leading-6 text-slate-600" style="display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">{{.Notes}}</p>{{end}}
+          </div>
+        </div>
+        <div class="relative z-20 flex items-center gap-3">
+          <span class="text-sm text-slate-500">Updated {{if .LatestThreadLastActivityAt.IsZero}}{{.UpdatedAt.Format "2006-01-02"}}{{else}}{{.LatestThreadLastActivityAt.Format "2006-01-02"}}{{end}}</span>
+          {{template "partials/button" dict "Kind" "link" "Href" (printf "/people/%d/edit" .ID) "Variant" "icon" "Icon" "edit" "IconOnly" true "AriaLabel" (printf "Edit person %s" .FullName)}}
+          <form class="relative z-20" method="post" action="/people/{{.ID}}/delete" onsubmit="return confirm('Delete this person?');">
+            {{template "partials/button" dict "Kind" "button" "Type" "submit" "Variant" "danger-icon" "Icon" "delete" "IconOnly" true "AriaLabel" (printf "Delete person %s" .FullName)}}
+          </form>
+        </div>
+      </div>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  {{template "partials/empty_state" dict "Message" "No people yet."}}
+  {{end}}
+</section>
+{{end}}
