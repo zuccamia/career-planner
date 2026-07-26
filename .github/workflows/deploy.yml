@@ -1,0 +1,115 @@
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+env:
+  GCP_REGION: us-central1
+  AR_REPO: career-planner
+  SERVICE: career-planner
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE }}:${{ github.sha }}
+            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Sync GitHub Secrets to Secret Manager
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+
+          upsert_secret() {
+            local name="$1"
+            local value="$2"
+            if [ -z "$value" ]; then
+              echo "skip $name (empty)"
+              return
+            fi
+            if ! gcloud secrets describe "$name" --project="$PROJECT_ID" >/dev/null 2>&1; then
+              gcloud secrets create "$name" --project="$PROJECT_ID" --replication-policy=automatic
+            fi
+            printf '%s' "$value" | gcloud secrets versions add "$name" --project="$PROJECT_ID" --data-file=-
+          }
+
+          upsert_secret cp-llm-provider              "$LLM_PROVIDER"
+          upsert_secret cp-llm-model                 "$LLM_MODEL"
+          upsert_secret cp-llm-base-url              "$LLM_BASE_URL"
+          upsert_secret cp-llm-api-key               "$LLM_API_KEY"
+          upsert_secret cp-google-oauth-client-id     "$GOOGLE_OAUTH_CLIENT_ID"
+          upsert_secret cp-google-oauth-client-secret "$GOOGLE_OAUTH_CLIENT_SECRET"
+
+      - name: Deploy to Cloud Run
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          HAS_OAUTH_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID != '' }}
+          HAS_OAUTH_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET != '' }}
+        run: |
+          set -euo pipefail
+
+          SECRETS="LLM_PROVIDER=cp-llm-provider:latest"
+          SECRETS+=",LLM_MODEL=cp-llm-model:latest"
+          SECRETS+=",LLM_BASE_URL=cp-llm-base-url:latest"
+          SECRETS+=",LLM_API_KEY=cp-llm-api-key:latest"
+          if [ "$HAS_OAUTH_ID" = "true" ]; then
+            SECRETS+=",GOOGLE_OAUTH_CLIENT_ID=cp-google-oauth-client-id:latest"
+          fi
+          if [ "$HAS_OAUTH_SECRET" = "true" ]; then
+            SECRETS+=",GOOGLE_OAUTH_CLIENT_SECRET=cp-google-oauth-client-secret:latest"
+          fi
+
+          gcloud run deploy "$SERVICE" \
+            --image "${GCP_REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${GITHUB_SHA}" \
+            --project "$PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080 \
+            --cpu 1 \
+            --memory 512Mi \
+            --min-instances 0 \
+            --max-instances 2 \
+            --service-account "cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --set-secrets="$SECRETS"
+
+      - name: Show service URL
+        run: gcloud run services describe "$SERVICE" --project "${{ secrets.GCP_PROJECT_ID }}" --region "$GCP_REGION" --format='value(status.url)'

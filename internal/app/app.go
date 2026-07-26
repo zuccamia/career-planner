@@ -23,7 +23,11 @@ type App struct {
 func New() App {
 	addr := strings.TrimSpace(os.Getenv("APP_ADDR"))
 	if addr == "" {
-		addr = ":8080"
+		if port := strings.TrimSpace(os.Getenv("PORT")); port != "" {
+			addr = ":" + port
+		} else {
+			addr = ":8080"
+		}
 	}
 
 	llmClient := newLLMClient()

@@ -1,0 +1,13 @@
+.git
+.github
+bin
+tmp
+test-results
+tests
+node_modules
+playwright-report
+.env
+.env.*
+!.env.example
+*.md
+.DS_Store

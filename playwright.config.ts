@@ -3,7 +3,8 @@ import path from 'node:path';
 
 const testPort = 8081;
 const testBaseURL = `http://127.0.0.1:${testPort}`;
-const chromeExecutablePath = process.env.PLAYWRIGHT_CHROME_EXECUTABLE ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const chromeExecutablePath = process.env.PLAYWRIGHT_CHROME_EXECUTABLE
+  ?? (process.env.CI ? undefined : '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
 
 export default defineConfig({
   testDir: path.join(__dirname, 'tests', 'e2e'),
