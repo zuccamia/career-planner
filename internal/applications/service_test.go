@@ -4,17 +4,21 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/zuccamia/career-planner/internal/sources/ats"
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
 type fakeClient struct {
-	payload string
-	err     error
+	payload    string
+	err        error
+	lastPrompt llm.Prompt
 }
 
-func (f *fakeClient) GenerateJSON(_ context.Context, _ llm.Prompt, out any) error {
+func (f *fakeClient) GenerateJSON(_ context.Context, p llm.Prompt, out any) error {
+	f.lastPrompt = p
 	if f.err != nil {
 		return f.err
 	}
@@ -42,12 +46,12 @@ func TestExtractJobDescriptionTextRequiresRawOrURL(t *testing.T) {
 func TestExtractJobDescriptionTextFetchesWhenRawEmpty(t *testing.T) {
 	fetched := "Fetched JD body about Go engineering."
 	svc := &Service{
-		client:  &fakeClient{payload: `{"role_title":"Engineer"}`},
-		fetchURL: func(_ context.Context, url string) (string, error) {
+		client: &fakeClient{payload: `{"role_title":"Engineer"}`},
+		fetchPosting: func(_ context.Context, url string) (ats.Posting, error) {
 			if url != "https://acme.example/jobs/1" {
 				t.Errorf("unexpected fetch url: %q", url)
 			}
-			return fetched, nil
+			return ats.Posting{Provider: "generic", DescriptionText: fetched}, nil
 		},
 	}
 	_, raw, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
@@ -58,16 +62,16 @@ func TestExtractJobDescriptionTextFetchesWhenRawEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if raw != fetched {
-		t.Errorf("raw = %q, want %q", raw, fetched)
+	if !strings.Contains(raw, fetched) {
+		t.Errorf("raw = %q, want to contain fetched body %q", raw, fetched)
 	}
 }
 
 func TestExtractJobDescriptionTextPropagatesFetchError(t *testing.T) {
 	boom := errors.New("network down")
 	svc := &Service{
-		client:   &fakeClient{payload: `{}`},
-		fetchURL: func(_ context.Context, _ string) (string, error) { return "", boom },
+		client:       &fakeClient{payload: `{}`},
+		fetchPosting: func(_ context.Context, _ string) (ats.Posting, error) { return ats.Posting{}, boom },
 	}
 	_, _, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
 		JobPostingURL: "https://acme.example/jobs/1",
@@ -95,6 +99,227 @@ func TestExtractJobDescriptionTextPropagatesClientError(t *testing.T) {
 	})
 	if err == nil || !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped llm error, got %v", err)
+	}
+}
+
+func TestExtractJobDescriptionTextErrorsWhenFetchReturnsEmpty(t *testing.T) {
+	svc := &Service{
+		client: &fakeClient{payload: `{}`},
+		fetchPosting: func(_ context.Context, _ string) (ats.Posting, error) {
+			return ats.Posting{Provider: "generic", DescriptionText: "   "}, nil
+		},
+	}
+	_, _, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
+		JobPostingURL: "https://acme.example/jobs/1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "no job description text found") {
+		t.Fatalf("expected empty-extraction error, got %v", err)
+	}
+}
+
+func TestExtractJobDescriptionTextInjectsATSHints(t *testing.T) {
+	client := &fakeClient{payload: `{"role_title":"SWE"}`}
+	svc := &Service{
+		client: client,
+		fetchPosting: func(_ context.Context, _ string) (ats.Posting, error) {
+			return ats.Posting{
+				Provider:        "ashby",
+				Title:           "Software Engineer Intern",
+				Company:         "Serval",
+				Location:        "San Francisco",
+				Compensation:    "USD 11000/month",
+				DescriptionText: "body text",
+			}, nil
+		},
+	}
+	_, _, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
+		JobPostingURL: "https://jobs.ashbyhq.com/serval/x",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	user := client.lastPrompt.User
+	for _, want := range []string{
+		"ATS-verified facts (source: ashby)",
+		"Role title: Software Engineer Intern",
+		"Company: Serval",
+		"Location: San Francisco",
+		"Compensation: USD 11000/month",
+	} {
+		if !strings.Contains(user, want) {
+			t.Errorf("prompt missing %q; got:\n%s", want, user)
+		}
+	}
+}
+
+func TestExtractJobDescriptionTextOmitsHintsBlockWhenATSEmpty(t *testing.T) {
+	client := &fakeClient{payload: `{}`}
+	svc := &Service{client: client}
+	_, _, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
+		JobDescriptionRaw: "raw pasted body",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if strings.Contains(client.lastPrompt.User, "(use verbatim, do not infer):") {
+		t.Errorf("expected no ATS hints block for raw paste; got:\n%s", client.lastPrompt.User)
+	}
+}
+
+func TestExtractJobDescriptionTextOverlaysATSFields(t *testing.T) {
+	svc := &Service{
+		client: &fakeClient{payload: `{"role_title":"SWE","company_name":"acme","locations":[]}`},
+		fetchPosting: func(_ context.Context, _ string) (ats.Posting, error) {
+			return ats.Posting{
+				Provider:        "greenhouse",
+				Title:           "Senior Software Engineer",
+				Company:         "Acme Inc.",
+				Location:        "Remote - US",
+				DescriptionText: "body",
+			}, nil
+		},
+	}
+	got, _, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
+		JobPostingURL: "https://boards.greenhouse.io/acme/jobs/1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.RoleTitle != "Senior Software Engineer" {
+		t.Errorf("RoleTitle = %q, want ATS override", got.RoleTitle)
+	}
+	if got.CompanyName != "Acme Inc." {
+		t.Errorf("CompanyName = %q, want ATS override", got.CompanyName)
+	}
+	if len(got.Locations) != 1 || got.Locations[0] != "Remote - US" {
+		t.Errorf("Locations = %v, want ATS location", got.Locations)
+	}
+}
+
+func TestExtractJobDescriptionTextEnrichesRawWithATSMetadata(t *testing.T) {
+	svc := &Service{
+		client: &fakeClient{payload: `{}`},
+		fetchPosting: func(_ context.Context, _ string) (ats.Posting, error) {
+			return ats.Posting{
+				Provider:        "ashby",
+				Title:           "Software Engineer Intern",
+				Company:         "Serval",
+				Location:        "San Francisco",
+				Compensation:    "USD 11000/month",
+				DescriptionText: "WHO WE ARE\n\nServal builds things.",
+			}, nil
+		},
+	}
+	_, raw, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
+		JobPostingURL: "https://jobs.ashbyhq.com/serval/x",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, want := range []string{
+		"Job details:",
+		"- Source: https://jobs.ashbyhq.com/serval/x (via ashby)",
+		"- Role title: Software Engineer Intern",
+		"- Compensation: USD 11000/month",
+		"WHO WE ARE",
+	} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("raw missing %q; got:\n%s", want, raw)
+		}
+	}
+	// Preamble must come first so LLM re-extraction sees the facts up front.
+	if !strings.HasPrefix(raw, "Job details:") {
+		t.Errorf("raw should start with Job details preamble; got:\n%s", raw)
+	}
+}
+
+func TestExtractJobDescriptionTextDoesNotEnrichWhenATSEmpty(t *testing.T) {
+	svc := &Service{
+		client: &fakeClient{payload: `{}`},
+		fetchPosting: func(_ context.Context, _ string) (ats.Posting, error) {
+			return ats.Posting{Provider: "generic", DescriptionText: "just a description body"}, nil
+		},
+	}
+	_, raw, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
+		JobPostingURL: "https://x/y",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.HasPrefix(raw, "Job details:") {
+		t.Errorf("expected source preamble even without structured facts; got:\n%s", raw)
+	}
+	if !strings.Contains(raw, "- Source: https://x/y (via generic)") {
+		t.Errorf("expected source line; got:\n%s", raw)
+	}
+}
+
+func TestExtractJobDescriptionTextOverlaysSalaryFromATSCompensation(t *testing.T) {
+	cases := []struct {
+		name         string
+		comp         string
+		wantCurrency string
+		wantAmount   string
+	}{
+		{"currency + amount + period", "USD 11000/month", "USD", "11000/month"},
+		{"currency + range", "USD 98000-131000/year", "USD", "98000-131000/year"},
+		{"amount only", "50-60/hour", "", "50-60/hour"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := &Service{
+				client: &fakeClient{payload: `{}`},
+				fetchPosting: func(_ context.Context, _ string) (ats.Posting, error) {
+					return ats.Posting{Provider: "ashby", Compensation: tc.comp, DescriptionText: "body"}, nil
+				},
+			}
+			got, _, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
+				JobPostingURL: "https://x/y",
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Salary.Currency != tc.wantCurrency {
+				t.Errorf("Currency = %q, want %q", got.Salary.Currency, tc.wantCurrency)
+			}
+			if got.Salary.Amount != tc.wantAmount {
+				t.Errorf("Amount = %q, want %q", got.Salary.Amount, tc.wantAmount)
+			}
+		})
+	}
+}
+
+func TestExtractJobDescriptionTextATSSalaryDoesNotOverrideLLM(t *testing.T) {
+	svc := &Service{
+		client: &fakeClient{payload: `{"salary":{"currency":"EUR","amount":"80000"}}`},
+		fetchPosting: func(_ context.Context, _ string) (ats.Posting, error) {
+			return ats.Posting{Provider: "ashby", Compensation: "USD 11000/month", DescriptionText: "body"}, nil
+		},
+	}
+	got, _, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
+		JobPostingURL: "https://x/y",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Salary.Currency != "EUR" || got.Salary.Amount != "80000" {
+		t.Errorf("Salary = %+v, want LLM values preserved when non-empty", got.Salary)
+	}
+}
+
+func TestExtractJobDescriptionTextAcceptsBoolWorkAuthorization(t *testing.T) {
+	svc := &Service{client: &fakeClient{payload: `{
+		"role_title": "Engineer",
+		"requirements": {"work_authorization": true}
+	}`}}
+	got, _, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
+		JobDescriptionRaw: "body",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Requirements.WorkAuthorization != "required (details unclear from posting)" {
+		t.Errorf("WorkAuthorization = %q, want the details-unclear placeholder", got.Requirements.WorkAuthorization)
 	}
 }
 

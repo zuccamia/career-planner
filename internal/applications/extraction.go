@@ -7,6 +7,42 @@ import (
 	"strings"
 )
 
+// flexString accepts a string, bool, or number from JSON and normalizes to a
+// string. LLMs sometimes coerce short free-text fields (e.g. work_authorization)
+// into a boolean when they intend "yes"/"no".
+type flexString string
+
+func (s *flexString) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*s = ""
+		return nil
+	}
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		*s = flexString(str)
+		return nil
+	}
+	var b bool
+	if err := json.Unmarshal(data, &b); err == nil {
+		// A boolean here means the LLM under-specified — the schema expects a
+		// descriptive string (e.g. sponsorship / OPT-CPT nuance). Preserve that
+		// the posting said *something* while flagging that details are missing;
+		// false collapses to empty so the user isn't misled.
+		if b {
+			*s = "required (details unclear from posting)"
+		} else {
+			*s = ""
+		}
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(data, &n); err == nil {
+		*s = flexString(n.String())
+		return nil
+	}
+	return fmt.Errorf("decode flex string: expected string, bool, or number")
+}
+
 type stringList []string
 
 func (l *stringList) UnmarshalJSON(data []byte) error {
@@ -58,8 +94,8 @@ type JobDescriptionStructured struct {
 	Skills                  stringList `json:"skills"`
 	Domains                 stringList `json:"domains"`
 	Requirements            struct {
-		TranscriptRequired bool     `json:"transcript_required"`
-		WorkAuthorization  string   `json:"work_authorization"`
+		TranscriptRequired bool       `json:"transcript_required"`
+		WorkAuthorization  flexString `json:"work_authorization"`
 		Education          stringList `json:"education"`
 		Majors             stringList `json:"majors"`
 		Availability       stringList `json:"availability"`
@@ -71,14 +107,16 @@ type JobDescriptionStructured struct {
 const extractJobDescriptionSystemPrompt = `Extract structured facts from a job posting.
 Return one valid JSON object only.
 No markdown, code fences, or commentary.
-Do not infer unsupported facts.
-Use empty string, false, 0, or [] when unknown.
+Extract every fact the posting actually states, even briefly — do not skip a field just because it is stated tersely.
+Do not fabricate facts that are absent from the posting.
+Use empty string, false, 0, or [] when the posting truly says nothing about a field.
 Keep arrays concise and deduplicated.
 Use only these normalized values:
 - role_level: "intern", "new_grad", "junior", "mid", "senior", "staff", "principal", or ""
 - employment_type: "full_time", "part_time", "contract", or ""
 - season: "spring", "summer", "fall", "winter", or ""
 - requirements.education entries: short canonical labels only, such as "High school diploma", "Associate degree", "Bachelor's degree", "Master's degree", "MBA", "JD", "PhD", or ""
+- requirements.work_authorization: descriptive free-text string capturing exactly what the posting says about eligibility. Include nuance when present: whether sponsorship is offered, whether OPT/CPT is accepted, citizenship/security-clearance requirements, or country-specific rules. Examples: "Must be authorized to work in the US; sponsorship not available", "US citizens or permanent residents only; OPT/CPT not eligible", "Open to candidates with OPT/CPT (case-by-case)", "Sponsorship available for H-1B", or "" if the posting says nothing. Never a boolean, number, or bare "yes"/"no".
 Rules:
 - languages means programming/query/markup/configuration languages only, such as "Python", "Go", "Java", "JavaScript", "TypeScript", "SQL", "HTML", "CSS", or "Bash"
 - never use spoken or human languages in languages, such as "English", "Spanish", or "Mandarin"
@@ -117,11 +155,12 @@ const extractJobDescriptionUserPrompt = `Extract this job posting into exactly o
 - reasoning
 
 Use application metadata only if the posting omits company_name or role_title.
+When ATS-verified facts are provided below, prefer them over anything you would infer from the raw description. Map hint keys to the schema fields you output: "Role title" -> role_title, "Company" -> company_name, "Location" -> locations (as a one-item array), "Compensation" -> salary.currency and salary.amount.
 
 Application company: %s
 Application role title: %s
 Job posting URL: %s
-
+%s
 Raw job description:
 %s`
 
@@ -167,7 +206,7 @@ func sanitizeJobDescriptionStructured(result JobDescriptionStructured, ctx extra
 	result.Languages = sanitizeStringList(result.Languages)
 	result.Skills = sanitizeStringList(result.Skills)
 	result.Domains = sanitizeStringList(result.Domains)
-	result.Requirements.WorkAuthorization = strings.TrimSpace(result.Requirements.WorkAuthorization)
+	result.Requirements.WorkAuthorization = flexString(strings.TrimSpace(string(result.Requirements.WorkAuthorization)))
 	result.Requirements.Education = sanitizeEducationList(result.Requirements.Education)
 	result.Requirements.Majors = sanitizeStringList(result.Requirements.Majors)
 	result.Requirements.Availability = sanitizeStringList(result.Requirements.Availability)

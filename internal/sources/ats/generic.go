@@ -1,4 +1,4 @@
-package applications
+package ats
 
 import (
 	"context"
@@ -12,37 +12,56 @@ import (
 	"time"
 )
 
-func fetchJobPostingText(ctx context.Context, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// Generic is the fallback provider: it fetches an arbitrary URL, prefers
+// schema.org JobPosting JSON-LD if present, and otherwise strips HTML into
+// plain text. It supports every URL and is used when no ATS-specific provider
+// recognizes the host.
+type Generic struct {
+	client *http.Client
+}
+
+// NewGeneric returns a Generic provider with a sensible default HTTP client.
+func NewGeneric() *Generic {
+	return &Generic{client: &http.Client{Timeout: 15 * time.Second}}
+}
+
+func (g *Generic) Name() string              { return "generic" }
+func (g *Generic) Supports(_ string) bool    { return true }
+
+func (g *Generic) Fetch(ctx context.Context, rawURL string) (Posting, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return "", fmt.Errorf("build request: %w", err)
+		return Posting{}, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("User-Agent", "career-planner/1.0")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := g.client
+	if client == nil {
+		client = &http.Client{Timeout: 15 * time.Second}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("request job posting: %w", err)
+		return Posting{}, fmt.Errorf("request job posting: %w", err)
 	}
 	defer resp.Body.Close()
 	if loginRedirectURL(resp.Request.URL.String()) {
-		return "", fmt.Errorf("job posting requires sign-in or access protection; paste the raw description instead")
+		return Posting{}, fmt.Errorf("job posting requires sign-in or access protection; paste the raw description instead")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("unexpected status %d", resp.StatusCode)
+		return Posting{}, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
-		return "", fmt.Errorf("read response body: %w", err)
+		return Posting{}, fmt.Errorf("read response body: %w", err)
 	}
 	text := extractStructuredJobPostingText(string(body))
 	if text == "" {
 		text = htmlToText(string(body))
 	}
 	if text == "" {
-		return "", fmt.Errorf("no readable job description text found")
+		return Posting{}, fmt.Errorf("no readable job description text found")
 	}
-	return text, nil
+	return Posting{Provider: g.Name(), DescriptionText: text}, nil
 }
 
 func loginRedirectURL(url string) bool {
@@ -51,19 +70,19 @@ func loginRedirectURL(url string) bool {
 }
 
 var (
-	ldJSONScriptRE = regexp.MustCompile(`(?is)<script[^>]*type=["']application/ld\+json["'][^>]*>(.*?)</script>`)
-	scriptRE = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
-	styleRE  = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
-	commentRE = regexp.MustCompile(`(?s)<!--.*?-->`)
+	ldJSONScriptRE       = regexp.MustCompile(`(?is)<script[^>]*type=["']application/ld\+json["'][^>]*>(.*?)</script>`)
+	scriptRE             = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
+	styleRE              = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
+	commentRE            = regexp.MustCompile(`(?s)<!--.*?-->`)
 	boilerplateSectionRE = regexp.MustCompile(`(?is)<(nav|footer|aside|noscript)[^>]*>.*?</(nav|footer|aside|noscript)>`)
-	cookieBannerRE = regexp.MustCompile(`(?is)<[^>]*(cookie|consent|gdpr)[^>]*>.*?</[^>]+>`)
-	lineBreakRE = regexp.MustCompile(`(?i)<br\s*/?>`)
-	blockCloseRE = regexp.MustCompile(`(?i)</(p|div|section|article|main|header|h1|h2|h3|h4|h5|h6|li|ul|ol|table|tr)>`)
-	listItemOpenRE = regexp.MustCompile(`(?i)<li[^>]*>`)
-	tagRE    = regexp.MustCompile(`(?s)<[^>]+>`)
-	newlineSpaceRE = regexp.MustCompile(`[ \t\f\v\r]+\n`)
-	multiNewlineRE = regexp.MustCompile(`\n{3,}`)
-	spaceRE  = regexp.MustCompile(`[ \t\f\v]+`)
+	cookieBannerRE       = regexp.MustCompile(`(?is)<[^>]*(cookie|consent|gdpr)[^>]*>.*?</[^>]+>`)
+	lineBreakRE          = regexp.MustCompile(`(?i)<br\s*/?>`)
+	blockCloseRE         = regexp.MustCompile(`(?i)</(p|div|section|article|main|header|h1|h2|h3|h4|h5|h6|li|ul|ol|table|tr)>`)
+	listItemOpenRE       = regexp.MustCompile(`(?i)<li[^>]*>`)
+	tagRE                = regexp.MustCompile(`(?s)<[^>]+>`)
+	newlineSpaceRE       = regexp.MustCompile(`[ \t\f\v\r]+\n`)
+	multiNewlineRE       = regexp.MustCompile(`\n{3,}`)
+	spaceRE              = regexp.MustCompile(`[ \t\f\v]+`)
 )
 
 type ldJobPosting struct {
@@ -122,7 +141,7 @@ func htmlToText(input string) string {
 	cleaned = tagRE.ReplaceAllString(cleaned, " ")
 	cleaned = html.UnescapeString(cleaned)
 	cleaned = htmlEntityReplacer.Replace(cleaned)
-	cleaned = strings.ReplaceAll(cleaned, "\u00a0", " ")
+	cleaned = strings.ReplaceAll(cleaned, " ", " ")
 	cleaned = newlineSpaceRE.ReplaceAllString(cleaned, "\n")
 	cleaned = spaceRE.ReplaceAllString(cleaned, " ")
 	cleaned = strings.ReplaceAll(cleaned, " \n", "\n")

@@ -85,7 +85,7 @@ func TestSanitizeJobDescriptionStructuredNormalizesEducation(t *testing.T) {
 	result = sanitizeJobDescriptionStructured(JobDescriptionStructured{
 		Requirements: struct {
 			TranscriptRequired bool       `json:"transcript_required"`
-			WorkAuthorization  string     `json:"work_authorization"`
+			WorkAuthorization  flexString `json:"work_authorization"`
 			Education          stringList `json:"education"`
 			Majors             stringList `json:"majors"`
 			Availability       stringList `json:"availability"`

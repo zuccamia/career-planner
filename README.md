@@ -1,163 +1,78 @@
 # Career Planner
 
-Career Planner is a local-first web app for organizing company research, building lightweight dossiers, and tracking outreach during a job search.
+Local-first web app for tracking a job search — companies, applications, people, and
+outreach threads — with LLM-assisted research and drafting.
 
-All application data lives in your browser (SQLite-in-WebAssembly, persisted to OPFS). The Go server holds no user data — it serves the static browser bundle, proxies OAuth for optional Google Drive snapshots, and runs stateless LLM prompts on behalf of the browser client.
+Your data lives in your browser (SQLite-WASM on OPFS). The Go server holds nothing:
+it serves the bundle, proxies Google OAuth for optional Drive snapshots, and relays
+LLM calls.
 
 ## Features
 
-- **Local-first storage** — SQLite runs in the browser via WebAssembly and persists to OPFS
-- **Company tracking** with LLM-assisted candidate suggestions
-- **Dossier generation** — company summaries, product signals, internship notes, tech stack clues
-- **Engineering blog notes** to collect and organize technical writing from companies
-- **People tracking** for recruiters, hiring managers, and other contacts
-- **Communication threads** with LLM-assisted summaries and message drafts
-- **Optional snapshots** to Google Drive or a picked local folder
-- **Sample dataset** loadable from the settings page (50 apps / 12 companies / 24 people)
+- **Companies** — from a rough name, the LLM back-fills canonical name, website,
+  and ATS/tech-blog links, then researches product signals, tech stack, and
+  engineering-blog activity onto the company view.
+- **Applications** — LLM extracts role/level/stack from a pasted job description
+  or a link (link extraction is best-effort, not yet ATS-aware)
+- **People** — recruiters, hiring managers, referrals
+- **Threads** — communication log with LLM summaries and reply drafts
+- **Snapshots** — optional export to Google Drive or a picked local folder
+- **Sample data** — one-click 50-app / 12-company / 24-person seed from Settings
 
-## Tech Stack
+## Stack
 
-- **Server:** Go — static file serving + stateless LLM RPC
-- **Client:** vanilla JS modules + Tailwind CSS
-- **Client-side database:** sqlite-wasm on OPFS
-- **End-to-end testing:** Playwright (fresh browser context per test)
-- **Build tooling:** Make, npm
+Go server · vanilla JS + Tailwind · sqlite-wasm on OPFS · Playwright for E2E.
 
-## Local Development Setup
+## Run it
 
-### Prerequisites
-
-- Go `1.25.0` or compatible
-- Node.js and npm
-
-### Getting started
+Requires Go 1.25+ and Node.
 
 ```bash
-git clone https://github.com/zuccamia/career-planner.git
+git clone git@github.com:zuccamia/career-planner.git
 cd career-planner
 npm install
-cp .env.example .env
-make dev
+cp .env.example .env   # fill in LLM + optional Google OAuth creds
+make dev               # → http://localhost:8080
 ```
-
-Then open:
-
-```text
-http://localhost:8080
-```
-
-The root path redirects to `/local/dashboard`. First load bootstraps the in-browser SQLite schema from `/api/db/schema.sql`.
-
-### How local development works
-
-- `make dev` builds Tailwind CSS assets, compiles `cmd/dev`, and runs it
-- `cmd/dev` loads `.env`, builds `cmd/web`, and starts the app on port `8080`
 
 ## Configuration
 
-The server reads configuration from environment variables.
+All via env vars.
 
-### App configuration
+| Var | Purpose |
+|---|---|
+| `APP_ADDR` | bind address (default `:8080`) |
+| `LLM_PROVIDER` | `anthropic` or `openai-compatible` |
+| `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY` | LLM endpoint |
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | required only for Drive snapshots |
+| `GOOGLE_OAUTH_SCOPES` | override Drive scopes (defaults to appdata + file) |
 
-- `APP_ADDR` — server bind address (default: `:8080`)
+Missing LLM config disables generation endpoints; the UI degrades gracefully.
 
-### LLM configuration
+## Commands
 
-- `LLM_PROVIDER` — supported values: `anthropic`, `openai-compatible`
-- `LLM_MODEL` — model name
-- `LLM_BASE_URL` — API base URL (defaults to `https://api.anthropic.com/v1` for `anthropic`)
-- `LLM_API_KEY` — API key (may be optional for local OpenAI-compatible providers)
+- `make dev` — build CSS, build, run on `:8080`
+- `make test` — Go tests
+- `npm run test:e2e` — Playwright (runs on `:8081`, LLM disabled, fresh OPFS per test)
+- `go run ./cmd/seed` — regenerate `web/static/local/samples/sample.sqlite` (add `-append` to keep existing rows)
 
-If LLM configuration is missing or blank, generation/summarization endpoints return an error and the UI falls back accordingly.
+## Layout
 
-Example `.env.example`:
-
-```env
-LLM_PROVIDER=openai-compatible
-LLM_BASE_URL=http://localhost:11434/v1
-LLM_MODEL=your-model-name
-LLM_API_KEY=your_key_here
 ```
-
-## Available Commands
-
-### Make targets
-
-- `make dev` — build CSS, build the dev binary, and run the local server
-- `make web` — build CSS, build the web binary, and run it
-- `make build` — build both development and web binaries
-- `make css` — build Tailwind CSS assets
-- `make test` — run Go tests
-- `make clean` — remove compiled binaries
-
-### npm scripts
-
-- `npm run build:css` — build minified Tailwind CSS output
-- `npm run watch:css` — rebuild Tailwind CSS on changes
-- `npm run test:e2e` — run Playwright end-to-end tests
-- `npm run test:e2e:headed` — run Playwright tests in headed mode
-
-### Regenerating the sample dataset
-
-The "Load sample" button on the Settings page fetches `web/static/local/samples/sample.sqlite`. To rebuild it:
-
-```bash
-go run ./cmd/seed
-```
-
-Seed wipes existing rows by default. Pass `-append` if you want to add on top of the current sample DB instead.
-
-Then commit the updated file.
-
-## Testing
-
-### Go tests
-
-```bash
-make test
-```
-
-### End-to-end tests
-
-```bash
-npm run test:e2e
-```
-
-Playwright launches the app on port `8081` with the LLM disabled. Each test gets a fresh browser context, so OPFS starts empty — no server-side reset is needed.
-
-## Project Structure
-
-```text
-cmd/dev/                      # local development runner
-cmd/web/                      # web server entrypoint
-cmd/seed/                     # regenerates web/static/local/samples/sample.sqlite
-internal/app/                 # app wiring
-internal/applications/        # LLM-backed job description extraction
-internal/communications/      # LLM-backed thread summaries + message drafts
-internal/companies/           # LLM-backed company candidate suggestions
-internal/db/                  # embedded schema.sql (served to the browser)
-internal/dossiers/            # LLM-backed dossier generation
-internal/http/                # HTTP router, RPC handlers, local page shells
-internal/shared/              # small shared helpers
-internal/sources/llm/         # LLM client abstraction
-web/static/local/js/          # browser modules (pages, db, storage, ui, entities)
-web/static/local/samples/     # checked-in sample.sqlite dataset
-web/templates/local/          # thin HTML shells for the local-first pages
-tests/e2e/                    # Playwright end-to-end tests
+cmd/{dev,web,seed}          entrypoints
+internal/{applications,communications,companies,dossiers,people}
+                            LLM-backed RPC handlers
+internal/{app,db,http,shared,sources/llm}
+                            wiring, schema, router, LLM client
+web/static/local/js/        browser: pages, db, storage, ui, entities
+web/templates/local/        HTML shells
+tests/e2e/                  Playwright
 ```
 
 ## Contributing
 
-Contributions are welcome.
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests locally
-5. Open a pull request with a clear description of the change
-
-For substantial changes, it is helpful to open an issue first to discuss the approach.
+Fork, branch, test, PR. Open an issue first for anything substantial.
 
 ## License
 
-License: **TBD**.
+TBD.
