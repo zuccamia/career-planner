@@ -1,0 +1,86 @@
+{{define "local_layout"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} — Career Planner</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
+  <div class="mx-auto flex min-h-screen w-full max-w-7xl flex-col lg:flex-row">
+    <aside class="border-b border-slate-200 bg-white lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r">
+      <div class="flex h-full flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
+        <div class="space-y-2">
+          <a class="inline-flex text-base font-semibold text-slate-900" href="/local/dashboard">Career Planner</a>
+          <p class="text-xs uppercase tracking-[0.14em] text-slate-400">local-first</p>
+        </div>
+
+        <nav class="flex flex-col gap-2">
+          {{$app := "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}}
+          {{$set := "bg-blue-50 text-blue-700"}}
+          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "dashboard"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/dashboard">
+            <span data-icon="chartBar"></span>
+            <span>Dashboard</span>
+          </a>
+          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "companies"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/companies">
+            <span data-icon="companies"></span>
+            <span>Companies</span>
+            <span data-sidebar-count="companies" class="ml-auto hidden rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700"></span>
+          </a>
+          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "people"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/people">
+            <span data-icon="people"></span>
+            <span>People</span>
+            <span data-sidebar-count="people" class="ml-auto hidden rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700"></span>
+          </a>
+          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "applications"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/applications">
+            <span data-icon="applications"></span>
+            <span>Applications</span>
+            <span data-sidebar-count="applications" class="ml-auto hidden rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700"></span>
+          </a>
+          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "settings"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/settings">
+            <span data-icon="settings"></span>
+            <span>Settings</span>
+          </a>
+        </nav>
+
+        <div id="current-snapshot" class="hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-3 shadow-sm">
+          <div class="flex items-center gap-1.5 text-blue-700">
+            <span data-icon="camera" data-icon-size="4"></span>
+            <p class="text-[10px] font-semibold uppercase tracking-[0.14em]">Current snapshot</p>
+          </div>
+          <p id="current-snapshot-name" class="mt-1.5 truncate text-sm font-semibold text-slate-900" title=""></p>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-sm font-semibold text-slate-900">Quick start</p>
+          <p class="mt-1 text-sm text-slate-500">Add a company, then track applications against it.</p>
+          <div class="mt-4 flex flex-wrap gap-3">
+            <a href="/local/companies?new=1" aria-label="Add company"
+               class="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700">
+              <span data-icon="plus"></span>
+              <span>Company</span>
+            </a>
+            <a href="/local/applications?new=1" aria-label="Add application"
+               class="inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50">
+              <span data-icon="plus"></span>
+              <span>Application</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="min-w-0 flex-1 py-8 sm:py-10 lg:py-12">
+      <div class="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 sm:px-6 lg:px-8">
+        <div id="online-banner" class="hidden rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"></div>
+        <div id="app" data-page="{{.Page}}">
+          <p class="text-sm text-slate-500">Loading…</p>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script type="module" src="/static/local/js/main.mjs"></script>
+</body>
+</html>
+{{end}}

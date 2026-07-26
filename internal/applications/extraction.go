@@ -64,7 +64,8 @@ type JobDescriptionStructured struct {
 		Majors             stringList `json:"majors"`
 		Availability       stringList `json:"availability"`
 	} `json:"requirements"`
-	Summary string `json:"summary"`
+	Summary   string `json:"summary"`
+	Reasoning string `json:"reasoning"`
 }
 
 const extractJobDescriptionSystemPrompt = `Extract structured facts from a job posting.
@@ -90,7 +91,8 @@ Rules:
 - role_level and employment_type can both be set
 - requirements.education must never include majors, explanations, eligibility wording, or full sentence fragments
 - Example: use "Master's degree", not "Master's degree program in Computer Science or a related field"
-- salary.amount must exclude currency, e.g. "98,000-131,000" or "30-40/hour"`
+- salary.amount must exclude currency, e.g. "98,000-131,000" or "30-40/hour"
+- reasoning should be 1 to 3 concise sentences explaining the strongest signals behind the extracted fields and any notable uncertainty or fields left empty`
 
 const extractJobDescriptionUserPrompt = `Extract this job posting into exactly one JSON object with these fields:
 - schema_version
@@ -112,6 +114,7 @@ const extractJobDescriptionUserPrompt = `Extract this job posting into exactly o
 - domains
 - requirements { transcript_required, work_authorization, education, majors, availability }
 - summary
+- reasoning
 
 Use application metadata only if the posting omits company_name or role_title.
 
@@ -122,23 +125,32 @@ Job posting URL: %s
 Raw job description:
 %s`
 
-func sanitizeJobDescriptionStructured(result JobDescriptionStructured, application Application) JobDescriptionStructured {
+// extractionContext carries the fields sanitizeJobDescriptionStructured falls
+// back to when the LLM omits them (company/role) or when we need extra text to
+// infer level/employment type.
+type extractionContext struct {
+	CompanyName       string
+	RoleTitle         string
+	JobDescriptionRaw string
+}
+
+func sanitizeJobDescriptionStructured(result JobDescriptionStructured, ctx extractionContext) JobDescriptionStructured {
 	result.SchemaVersion = "job_description.v1"
 	result.CompanyName = strings.TrimSpace(result.CompanyName)
 	if result.CompanyName == "" {
-		result.CompanyName = strings.TrimSpace(application.CompanyName)
+		result.CompanyName = strings.TrimSpace(ctx.CompanyName)
 	}
 	result.RoleTitle = strings.TrimSpace(result.RoleTitle)
 	if result.RoleTitle == "" {
-		result.RoleTitle = strings.TrimSpace(application.RoleTitle)
+		result.RoleTitle = strings.TrimSpace(ctx.RoleTitle)
 	}
 	result.RoleLevel = normalizeRoleLevel(result.RoleLevel)
 	if result.RoleLevel == "" {
-		result.RoleLevel = inferRoleLevel(application.RoleTitle, application.JobDescriptionRaw, result.RoleTitle, result.Summary, result.LocationNotes, result.ApplicationDeadline, strings.Join(result.MinimumQualifications, " "), strings.Join(result.PreferredQualifications, " "), strings.Join(result.Responsibilities, " "))
+		result.RoleLevel = inferRoleLevel(ctx.RoleTitle, ctx.JobDescriptionRaw, result.RoleTitle, result.Summary, result.LocationNotes, result.ApplicationDeadline, strings.Join(result.MinimumQualifications, " "), strings.Join(result.PreferredQualifications, " "), strings.Join(result.Responsibilities, " "))
 	}
 	result.EmploymentType = normalizeEmploymentType(result.EmploymentType)
 	if result.EmploymentType == "" {
-		result.EmploymentType = inferEmploymentType(application.RoleTitle, application.JobDescriptionRaw, result.RoleTitle, result.Summary, result.LocationNotes, result.ApplicationDeadline, strings.Join(result.MinimumQualifications, " "), strings.Join(result.PreferredQualifications, " "), strings.Join(result.Responsibilities, " "))
+		result.EmploymentType = inferEmploymentType(ctx.RoleTitle, ctx.JobDescriptionRaw, result.RoleTitle, result.Summary, result.LocationNotes, result.ApplicationDeadline, strings.Join(result.MinimumQualifications, " "), strings.Join(result.PreferredQualifications, " "), strings.Join(result.Responsibilities, " "))
 	}
 	result.Season = normalizeSeason(result.Season)
 	if result.Year < 0 {
@@ -160,6 +172,7 @@ func sanitizeJobDescriptionStructured(result JobDescriptionStructured, applicati
 	result.Requirements.Majors = sanitizeStringList(result.Requirements.Majors)
 	result.Requirements.Availability = sanitizeStringList(result.Requirements.Availability)
 	result.Summary = strings.TrimSpace(result.Summary)
+	result.Reasoning = strings.TrimSpace(result.Reasoning)
 	return result
 }
 

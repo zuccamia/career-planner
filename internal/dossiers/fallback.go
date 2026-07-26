@@ -62,6 +62,9 @@ func mergeResult(base, override llmResult) llmResult {
 		base.InternshipSummary = override.InternshipSummary
 	}
 	base.MajorTechStacks = mergeTechStacks(base.MajorTechStacks, override.MajorTechStacks)
+	if override.Reasoning != "" {
+		base.Reasoning = override.Reasoning
+	}
 	return base
 }
 

@@ -25,7 +25,7 @@ type applicationPlan struct {
 
 func main() {
 	count := flag.Int("count", 50, "number of applications to seed")
-	dbPath := flag.String("db", "", "SQLite database path (defaults to DATABASE_PATH or career-planner.sqlite3)")
+	dbPath := flag.String("db", "web/static/local/samples/sample.sqlite", "SQLite database path to write; defaults to the checked-in sample dataset")
 	reset := flag.Bool("reset", false, "delete existing companies/applications/application events before seeding")
 	seedValue := flag.Int64("seed", 42, "random seed for deterministic data generation")
 	flag.Parse()
@@ -53,6 +53,10 @@ func main() {
 	insertedEvents := 0
 	statusCounts := map[string]int{}
 
+	// Pre-seed a couple of people per company so applications can reference them
+	// and communication threads have somewhere to hang off.
+	companyPeople := map[int64][]int64{}
+
 	for i := 0; i < *count; i++ {
 		company := companies[i%len(companies)]
 		companyID, err := ensureCompany(ctx, database, company, now)
@@ -60,12 +64,26 @@ func main() {
 			log.Fatalf("ensure company %q: %v", company.Name, err)
 		}
 
+		if _, ok := companyPeople[companyID]; !ok {
+			ids, err := ensurePeople(ctx, database, companyID, company, now, rng)
+			if err != nil {
+				log.Fatalf("ensure people for %q: %v", company.Name, err)
+			}
+			companyPeople[companyID] = ids
+		}
+
 		plan := plans[rng.Intn(len(plans))]
 		role := roles[(i+rng.Intn(len(roles)))%len(roles)]
 		createdAt := seededApplicationCreatedAt(now, rng)
 		finalStatus := plan.Path[len(plan.Path)-1]
 
-		applicationID, err := createApplication(ctx, database, companyID, role, company, finalStatus, createdAt, i)
+		var personID *int64
+		if people := companyPeople[companyID]; len(people) > 0 && rng.Intn(100) < 60 {
+			pid := people[rng.Intn(len(people))]
+			personID = &pid
+		}
+
+		applicationID, err := createApplication(ctx, database, companyID, role, company, finalStatus, createdAt, i, personID)
 		if err != nil {
 			log.Fatalf("create application %d: %v", i+1, err)
 		}
@@ -79,7 +97,30 @@ func main() {
 		insertedEvents += eventsCreated
 	}
 
+	insertedThreads := 0
+	insertedEntries := 0
+	for _, ids := range companyPeople {
+		for _, personID := range ids {
+			if rng.Intn(100) >= 65 {
+				continue
+			}
+			threadID, entryCount, err := createThreadWithEntries(ctx, database, personID, now, rng)
+			if err != nil {
+				log.Fatalf("create thread for person %d: %v", personID, err)
+			}
+			_ = threadID
+			insertedThreads++
+			insertedEntries += entryCount
+		}
+	}
+
+	totalPeople := 0
+	for _, ids := range companyPeople {
+		totalPeople += len(ids)
+	}
+
 	fmt.Printf("Seeded %d applications with %d status-change events\n", insertedApplications, insertedEvents)
+	fmt.Printf("Seeded %d people, %d communication threads with %d entries\n", totalPeople, insertedThreads, insertedEntries)
 	for _, status := range []string{"wishlist", "applied", "online_assessment", "first_interview", "second_interview", "additional_interview", "offer", "rejected", "withdrawn"} {
 		if statusCounts[status] == 0 {
 			continue
@@ -90,7 +131,6 @@ func main() {
 
 func resetApplicationData(ctx context.Context, database *sql.DB) error {
 	statements := []string{
-		`DELETE FROM application_artifacts`,
 		`DELETE FROM application_events`,
 		`DELETE FROM applications`,
 		`DELETE FROM communication_entries`,
@@ -99,7 +139,7 @@ func resetApplicationData(ctx context.Context, database *sql.DB) error {
 		`DELETE FROM people`,
 		`DELETE FROM dossiers`,
 		`DELETE FROM companies`,
-		`DELETE FROM sqlite_sequence WHERE name IN ('application_artifacts', 'application_events', 'applications', 'communication_entries', 'communication_threads', 'engineering_blog_notes', 'people', 'dossiers', 'companies')`,
+		`DELETE FROM sqlite_sequence WHERE name IN ('application_events', 'applications', 'communication_entries', 'communication_threads', 'engineering_blog_notes', 'people', 'dossiers', 'companies')`,
 	}
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement); err != nil {
@@ -128,7 +168,11 @@ func ensureCompany(ctx context.Context, database *sql.DB, company companySeed, n
 	return result.LastInsertId()
 }
 
-func createApplication(ctx context.Context, database *sql.DB, companyID int64, roleTitle string, company companySeed, finalStatus string, createdAt time.Time, idx int) (int64, error) {
+func createApplication(ctx context.Context, database *sql.DB, companyID int64, roleTitle string, company companySeed, finalStatus string, createdAt time.Time, idx int, personID *int64) (int64, error) {
+	var personArg interface{}
+	if personID != nil {
+		personArg = *personID
+	}
 	result, err := database.ExecContext(ctx, `
 		INSERT INTO applications (
 			company_id,
@@ -141,9 +185,10 @@ func createApplication(ctx context.Context, database *sql.DB, companyID int64, r
 			notes,
 			created_at,
 			updated_at
-		) VALUES (?, NULL, ?, ?, ?, '{}', ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, '{}', ?, ?, ?, ?)
 	`,
 		companyID,
+		personArg,
 		roleTitle,
 		fmt.Sprintf("%s/careers/%d", company.Website, idx+1),
 		fmt.Sprintf("%s role at %s focused on backend systems, product collaboration, and shipping reliable features.", roleTitle, company.Name),
@@ -156,6 +201,162 @@ func createApplication(ctx context.Context, database *sql.DB, companyID int64, r
 		return 0, err
 	}
 	return result.LastInsertId()
+}
+
+type personSeed struct {
+	FullName string
+	Title    string
+}
+
+func ensurePeople(ctx context.Context, database *sql.DB, companyID int64, company companySeed, now time.Time, rng *rand.Rand) ([]int64, error) {
+	pool := personSeeds()
+	// pick 2 distinct people per company from the pool
+	idxA := rng.Intn(len(pool))
+	idxB := (idxA + 1 + rng.Intn(len(pool)-1)) % len(pool)
+	picks := []personSeed{pool[idxA], pool[idxB]}
+	ids := make([]int64, 0, len(picks))
+	for _, p := range picks {
+		linkedin := fmt.Sprintf("https://www.linkedin.com/in/%s-%s",
+			slugify(p.FullName), slugify(company.Name))
+		result, err := database.ExecContext(ctx, `
+			INSERT INTO people (full_name, title, company_id, linkedin_url, notes, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`,
+			p.FullName, p.Title, companyID, linkedin,
+			fmt.Sprintf("Met via %s recruiting outreach.", company.Name),
+			now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
+		)
+		if err != nil {
+			return nil, err
+		}
+		id, err := result.LastInsertId()
+		if err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+func createThreadWithEntries(ctx context.Context, database *sql.DB, personID int64, now time.Time, rng *rand.Rand) (int64, int, error) {
+	channels := []string{"email", "linkedin", "phone", "general"}
+	subjects := []string{
+		"Intro chat scheduling",
+		"Follow-up on OA",
+		"Onsite logistics",
+		"Referral question",
+		"Recruiter check-in",
+	}
+	channel := channels[rng.Intn(len(channels))]
+	subject := subjects[rng.Intn(len(subjects))]
+	daysAgo := rng.Intn(45)
+	createdAt := now.AddDate(0, 0, -daysAgo).Add(-time.Duration(rng.Intn(24)) * time.Hour)
+
+	// build entries first to know last activity
+	entryCount := 2 + rng.Intn(3) // 2-4 entries
+	entries := make([]struct {
+		direction string
+		content   string
+		at        time.Time
+	}, 0, entryCount)
+	cursor := createdAt
+	for i := 0; i < entryCount; i++ {
+		dir := "note"
+		switch i % 3 {
+		case 0:
+			dir = "incoming"
+		case 1:
+			dir = "outgoing"
+		}
+		entries = append(entries, struct {
+			direction string
+			content   string
+			at        time.Time
+		}{
+			direction: dir,
+			content:   entryContentFor(dir, subject, i),
+			at:        cursor,
+		})
+		cursor = cursor.Add(time.Duration(4+rng.Intn(30)) * time.Hour)
+	}
+	lastActivity := entries[len(entries)-1].at
+
+	result, err := database.ExecContext(ctx, `
+		INSERT INTO communication_threads (
+			person_id, channel, subject, status, summary,
+			last_activity_at, created_at, updated_at
+		) VALUES (?, ?, ?, 'open', '', ?, ?, ?)
+	`,
+		personID, channel, subject,
+		lastActivity.Format(time.RFC3339Nano),
+		createdAt.Format(time.RFC3339Nano),
+		lastActivity.Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		return 0, 0, err
+	}
+	threadID, err := result.LastInsertId()
+	if err != nil {
+		return 0, 0, err
+	}
+
+	for _, e := range entries {
+		if _, err := database.ExecContext(ctx, `
+			INSERT INTO communication_entries (thread_id, direction, content, occurred_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`,
+			threadID, e.direction, e.content,
+			e.at.Format(time.RFC3339Nano),
+			e.at.Format(time.RFC3339Nano),
+			e.at.Format(time.RFC3339Nano),
+		); err != nil {
+			return threadID, 0, err
+		}
+	}
+	return threadID, len(entries), nil
+}
+
+func entryContentFor(direction, subject string, idx int) string {
+	switch direction {
+	case "incoming":
+		return fmt.Sprintf("Recruiter: quick note on %q — sharing availability and next steps.", subject)
+	case "outgoing":
+		return fmt.Sprintf("Me: replied re: %q, confirmed times and shared resume link.", subject)
+	default:
+		return fmt.Sprintf("Note %d: keeping context on %q for later follow-up.", idx+1, subject)
+	}
+}
+
+func slugify(s string) string {
+	out := make([]rune, 0, len(s))
+	for _, r := range s {
+		switch {
+		case r >= 'A' && r <= 'Z':
+			out = append(out, r+('a'-'A'))
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			out = append(out, r)
+		case r == ' ':
+			out = append(out, '-')
+		}
+	}
+	return string(out)
+}
+
+func personSeeds() []personSeed {
+	return []personSeed{
+		{FullName: "Alex Chen", Title: "Technical Recruiter"},
+		{FullName: "Priya Nair", Title: "Engineering Manager"},
+		{FullName: "Jordan Smith", Title: "Senior Recruiter"},
+		{FullName: "Maya Patel", Title: "Staff Engineer"},
+		{FullName: "Ethan Brown", Title: "University Recruiter"},
+		{FullName: "Sana Ali", Title: "Recruiting Coordinator"},
+		{FullName: "Liam Garcia", Title: "Principal Engineer"},
+		{FullName: "Noor Ibrahim", Title: "Head of Talent"},
+		{FullName: "Ravi Kumar", Title: "Engineering Director"},
+		{FullName: "Chloe Nguyen", Title: "Senior Recruiter"},
+		{FullName: "Diego Lopez", Title: "Staff Engineer"},
+		{FullName: "Hana Kim", Title: "Recruiting Partner"},
+	}
 }
 
 func createStatusHistory(ctx context.Context, database *sql.DB, applicationID int64, path []string, createdAt time.Time, rng *rand.Rand) (int, error) {

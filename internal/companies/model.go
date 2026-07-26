@@ -1,16 +1,13 @@
 package companies
 
-// Defines company domain types and service dependencies.
+// Domain types and service handle for the company LLM helpers used by the
+// local-first RPC surface. The browser owns persistence — this package no
+// longer talks to a database.
 
-import (
-	"context"
-	"errors"
-	"time"
+import "github.com/ngochoang/career-planner/internal/sources/llm"
 
-	"github.com/ngochoang/career-planner/internal/sources/llm"
-)
-
-// Candidate holds the tentative company details suggested before a record is saved.
+// Candidate is the LLM's tentative company inference, returned to the browser
+// before the user confirms and stores it locally.
 type Candidate struct {
 	OfficialName string `json:"official_name"`
 	Website      string `json:"website"`
@@ -20,20 +17,10 @@ type Candidate struct {
 	Reasoning    string `json:"reasoning"`
 }
 
-// Company is the persisted company record used throughout the application.
+// Company carries the identifying fields other packages need when composing
+// LLM prompts (e.g. dossiers). It intentionally omits IDs and timestamps —
+// those live in the browser DB.
 type Company struct {
-	ID           int64
-	OfficialName string
-	Website      string
-	TechBlogURL  string
-	ATSURL       string
-	ATSProvider  string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-}
-
-// CreateCompanyInput contains the validated fields required to create a company.
-type CreateCompanyInput struct {
 	OfficialName string
 	Website      string
 	TechBlogURL  string
@@ -41,38 +28,13 @@ type CreateCompanyInput struct {
 	ATSProvider  string
 }
 
-// UpdateCompanyInput contains the editable fields for an existing company.
-type UpdateCompanyInput struct {
-	ID           int64
-	OfficialName string
-	Website      string
-	TechBlogURL  string
-	ATSURL       string
-	ATSProvider  string
-}
-
-var ErrCompanyNotFound = errors.New("company not found")
-
-// Repository defines the storage operations required by the companies service.
-type Repository interface {
-	Count(ctx context.Context) (int, error)
-	Create(ctx context.Context, input CreateCompanyInput) (Company, error)
-	Delete(ctx context.Context, id int64) error
-	GetByID(ctx context.Context, id int64) (Company, error)
-	List(ctx context.Context) ([]Company, error)
-	Update(ctx context.Context, input UpdateCompanyInput) (Company, error)
-}
-
-// Service applies validation and LLM-assisted enrichment before delegating to the repository.
+// Service exposes LLM-backed helpers for the local-first company flow.
 type Service struct {
 	client llm.Client
-	repo   Repository
 }
 
-// NewService constructs a companies service with the required repository dependency.
-func NewService(client llm.Client, repo Repository) *Service {
-	if repo == nil {
-		panic("companies repository is required")
-	}
-	return &Service{client: client, repo: repo}
+// NewService constructs a companies service. A nil client is allowed and
+// causes candidate helpers to return unenriched fallbacks.
+func NewService(client llm.Client) *Service {
+	return &Service{client: client}
 }

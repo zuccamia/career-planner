@@ -1,6 +1,7 @@
 package dossiers
 
-// Generates dossiers from company data and persists the results.
+// Generates dossiers from company data. No persistence — the browser stores
+// the result locally after receiving it from the RPC layer.
 
 import (
 	"context"
@@ -10,29 +11,25 @@ import (
 	"github.com/ngochoang/career-planner/internal/sources/llm"
 )
 
-// Build generates a dossier for a company, merging fallback values with any LLM result.
-func (s *Service) Build(ctx context.Context, input BuildInput) (Dossier, error) {
-	if input.Company.ID <= 0 {
-		return Dossier{}, companies.ErrCompanyNotFound
-	}
-
-	result := fallbackResult(input.Company)
+// BuildText generates a dossier for a company without persisting it. The RPC
+// handler forwards the returned Dossier to the browser, which owns storage.
+func (s *Service) BuildText(ctx context.Context, company companies.Company) Dossier {
+	result := fallbackResult(company)
 	if s.client != nil {
 		prompt := llm.Prompt{System: dossierSystemPrompt, User: fmt.Sprintf(dossierUserPrompt,
-			input.Company.OfficialName,
-			input.Company.Website,
-			input.Company.ATSURL,
-			input.Company.ATSProvider,
+			company.OfficialName,
+			company.Website,
+			company.ATSURL,
+			company.ATSProvider,
 		)}
 
 		var generated llmResult
 		if err := s.client.GenerateJSON(ctx, prompt, &generated); err == nil {
-			result = mergeResult(result, sanitizeResult(generated, input.Company))
+			result = mergeResult(result, sanitizeResult(generated, company))
 		}
 	}
 
-	return s.repo.Create(ctx, Dossier{
-		CompanyID:             input.Company.ID,
+	return Dossier{
 		Status:                "completed",
 		CareersURL:            result.CareersURL,
 		CompanySummary:        result.CompanySummary,
@@ -46,13 +43,6 @@ func (s *Service) Build(ctx context.Context, input BuildInput) (Dossier, error) 
 		InternshipSeasons:     result.InternshipSeasons,
 		InternshipSummary:     result.InternshipSummary,
 		MajorTechStacks:       result.MajorTechStacks,
-	})
-}
-
-// GetLatestByCompanyID returns the newest dossier stored for a company.
-func (s *Service) GetLatestByCompanyID(ctx context.Context, companyID int64) (Dossier, error) {
-	if companyID <= 0 {
-		return Dossier{}, companies.ErrCompanyNotFound
+		Reasoning:             result.Reasoning,
 	}
-	return s.repo.GetLatestByCompanyID(ctx, companyID)
 }

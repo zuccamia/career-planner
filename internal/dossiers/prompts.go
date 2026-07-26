@@ -23,6 +23,7 @@ const dossierUserPrompt = `Generate exactly one JSON object with these keys:
 - internship_seasons
 - internship_summary
 - major_tech_stacks
+- reasoning
 
 Company details:
 - official_name: %q
@@ -43,4 +44,5 @@ Rules:
 - internship_summary should be 2 to 3 sentences summarizing whether internships exist, which seasons appear supported, and the strength/source of evidence; leave empty rather than guess
 - major_tech_stacks must be an object with keys: languages, frontend, backend, infrastructure, data, tooling
 - only include URLs if they are plausible official URLs
+- reasoning should be 1 to 3 concise sentences explaining the strongest signals behind the dossier content, the sources you relied on, and any notable uncertainty or fields left empty
 - leave fields empty rather than guess`

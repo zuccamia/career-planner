@@ -81,7 +81,7 @@ func TestSanitizeEducationListNormalizesVerboseDegreeLabels(t *testing.T) {
 }
 
 func TestSanitizeJobDescriptionStructuredNormalizesEducation(t *testing.T) {
-	result := sanitizeJobDescriptionStructured(JobDescriptionStructured{}, Application{})
+	result := sanitizeJobDescriptionStructured(JobDescriptionStructured{}, extractionContext{})
 	result = sanitizeJobDescriptionStructured(JobDescriptionStructured{
 		Requirements: struct {
 			TranscriptRequired bool       `json:"transcript_required"`
@@ -92,7 +92,7 @@ func TestSanitizeJobDescriptionStructuredNormalizesEducation(t *testing.T) {
 		}{
 			Education: stringList{"Master's degree program in Computer Science or a related field."},
 		},
-	}, Application{})
+	}, extractionContext{})
 
 	if len(result.Requirements.Education) != 1 || result.Requirements.Education[0] != "Master's degree" {
 		t.Fatalf("unexpected sanitized education: %#v", result.Requirements.Education)

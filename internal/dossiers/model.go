@@ -1,17 +1,14 @@
 package dossiers
 
-// Defines stored research data and service dependencies.
+// Dossier types and service handle. Persistence lives in the browser now —
+// this package composes LLM output + fallbacks and returns the result for
+// the RPC layer to pass back.
 
 import (
-	"context"
-	"errors"
 	"time"
 
-	"github.com/ngochoang/career-planner/internal/companies"
 	"github.com/ngochoang/career-planner/internal/sources/llm"
 )
-
-var ErrDossierNotFound = errors.New("dossier not found")
 
 // MajorTechStacks groups the main technologies evidenced for a company by category.
 type MajorTechStacks struct {
@@ -23,30 +20,27 @@ type MajorTechStacks struct {
 	Tooling        []string `json:"tooling"`
 }
 
-// Dossier stores a generated company research summary linked to a company record.
+// Dossier stores a generated company research summary. The browser fills in
+// ID/CompanyID/timestamps after receiving the RPC response.
 type Dossier struct {
-	ID                    int64
-	CompanyID             int64
-	Status                string
-	CareersURL            string
-	CompanySummary        string
-	WhatTheCompanyDoes    string
-	TargetCustomers       []string
-	ProductAreas          []string
-	BusinessModelClues    []string
-	RecentProductLaunches []string
-	CompanyCultureNotes   []string
-	HasInternships        bool
-	InternshipSeasons     []string
-	InternshipSummary     string
-	MajorTechStacks       MajorTechStacks
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
-}
-
-// BuildInput identifies the company to research when generating a dossier.
-type BuildInput struct {
-	Company companies.Company
+	ID                    int64           `json:"id"`
+	CompanyID             int64           `json:"company_id"`
+	Status                string          `json:"status"`
+	CareersURL            string          `json:"careers_url"`
+	CompanySummary        string          `json:"company_summary"`
+	WhatTheCompanyDoes    string          `json:"what_the_company_does"`
+	TargetCustomers       []string        `json:"target_customers"`
+	ProductAreas          []string        `json:"product_areas"`
+	BusinessModelClues    []string        `json:"business_model_clues"`
+	RecentProductLaunches []string        `json:"recent_product_launches"`
+	CompanyCultureNotes   []string        `json:"company_culture_notes"`
+	HasInternships        bool            `json:"has_internships"`
+	InternshipSeasons     []string        `json:"internship_seasons"`
+	InternshipSummary     string          `json:"internship_summary"`
+	MajorTechStacks       MajorTechStacks `json:"major_tech_stacks"`
+	Reasoning             string          `json:"reasoning"`
+	CreatedAt             time.Time       `json:"created_at"`
+	UpdatedAt             time.Time       `json:"updated_at"`
 }
 
 type llmResult struct {
@@ -62,24 +56,16 @@ type llmResult struct {
 	InternshipSeasons     []string        `json:"internship_seasons"`
 	InternshipSummary     string          `json:"internship_summary"`
 	MajorTechStacks       MajorTechStacks `json:"major_tech_stacks"`
+	Reasoning             string          `json:"reasoning"`
 }
 
-// Repository defines the persistence operations needed by the dossier service.
-type Repository interface {
-	Create(ctx context.Context, dossier Dossier) (Dossier, error)
-	GetLatestByCompanyID(ctx context.Context, companyID int64) (Dossier, error)
-}
-
-// Service generates dossiers from company records and stores the results.
+// Service composes fallback + LLM-augmented dossiers for the local-first client.
 type Service struct {
 	client llm.Client
-	repo   Repository
 }
 
-// NewService constructs a dossier service with optional LLM generation and required storage.
-func NewService(client llm.Client, repo Repository) *Service {
-	if repo == nil {
-		panic("dossiers repository is required")
-	}
-	return &Service{client: client, repo: repo}
+// NewService constructs a dossier service. A nil client falls back to the
+// derived-only dossier (no LLM enrichment).
+func NewService(client llm.Client) *Service {
+	return &Service{client: client}
 }

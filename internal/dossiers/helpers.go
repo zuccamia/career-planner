@@ -24,6 +24,7 @@ func sanitizeResult(result llmResult, company companies.Company) llmResult {
 	result.InternshipSeasons = sanitizeList(result.InternshipSeasons)
 	result.InternshipSummary = sanitizeParagraph(result.InternshipSummary)
 	result.MajorTechStacks = sanitizeTechStacks(result.MajorTechStacks)
+	result.Reasoning = sanitizeParagraph(result.Reasoning)
 	if result.CareersURL == "" {
 		result.CareersURL = deriveCareersURL(company)
 	}

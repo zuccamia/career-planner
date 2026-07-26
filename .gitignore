@@ -3,13 +3,14 @@ bin/
 .DS_Store
 .idea/
 .vscode/
-bin/
 dist/
 tmp/
 node_modules/
+
 *.db
 *.sqlite
 *.sqlite3
+!web/static/local/samples/*.sqlite
 test-results/
 playwright-report/
 .playwright/

@@ -13,17 +13,19 @@ const summarizeUserPrompt = `Update the communication thread summary.
 Return exactly one JSON object with this key:
 - summary
 
-Rules:
-- summary should be 1 to 2 sentences
-- prioritize the most recent activity and the clearest context for the next action
-- include only the most important relationship context, current status, and next-step if any
+Length: at most 2 short sentences. Fewer is better. No preamble.
+
+Style:
+- state facts directly; do not narrate the source of information
+- forbidden preambles include "I recorded", "I noted", "I logged", "According to a note", "Note that", "It was mentioned that", "Most recently", "Earlier"
+- omit anything not essential to the current status or next step
 - do not invent facts
-- treat notes as private internal context
-- attribute actions and statements to the correct party based on entry direction
-- inbound entries are messages from the person named in the thread to me
-- outbound entries are messages from me to the person named in the thread
-- note entries are private internal notes, not messages sent by either party
-- entries are listed newest first, so do not assume the first listed entry started the thread
+
+Attribution — use the label on each entry:
+- "from <name> to me" — that person said or wrote it
+- "from me to <name>" — I said or wrote it
+- "my personal note" — private context I already know; integrate silently. NEVER phrase a note as sent, delivered, or communicated to anyone
+- entries are newest first; do not assume the first-listed one started the thread
 
 Thread details:
 %s`

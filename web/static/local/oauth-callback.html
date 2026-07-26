@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>OAuth callback</title>
+</head>
+<body>
+  <p style="font-family: system-ui, sans-serif;">Signing in… this window should close automatically.</p>
+  <script>
+    // Runs in the popup Google redirects back to. Forwards the auth code (or
+    // error) to the opener via postMessage and closes.
+    (function () {
+      const params = new URLSearchParams(location.search);
+      const payload = {
+        source: 'career-planner-oauth',
+        code: params.get('code'),
+        state: params.get('state'),
+        error: params.get('error'),
+        errorDescription: params.get('error_description'),
+      };
+      try {
+        if (window.opener) window.opener.postMessage(payload, location.origin);
+      } catch (e) {
+        document.body.textContent = `Failed to post to opener: ${e.message}`;
+        return;
+      }
+      setTimeout(() => window.close(), 50);
+    })();
+  </script>
+</body>
+</html>

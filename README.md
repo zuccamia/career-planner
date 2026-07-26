@@ -2,42 +2,35 @@
 
 Career Planner is a local-first web app for organizing company research, building lightweight dossiers, and tracking outreach during a job search.
 
-It runs as a Go web application with SQLite-backed storage by default, so you can use it locally without setting up external infrastructure. LLM integrations are supported for research and generation workflows, but the core application is designed around a local-first development experience.
+All application data lives in your browser (SQLite-in-WebAssembly, persisted to OPFS). The Go server holds no user data — it serves the static browser bundle, proxies OAuth for optional Google Drive snapshots, and runs stateless LLM prompts on behalf of the browser client.
 
 ## Features
 
-- **Local-first by default** with SQLite-backed storage
-- **Company tracking** for storing and managing target companies
-- **Dossier generation** for compiling company summaries, product signals, internship notes, and tech stack clues
+- **Local-first storage** — SQLite runs in the browser via WebAssembly and persists to OPFS
+- **Company tracking** with LLM-assisted candidate suggestions
+- **Dossier generation** — company summaries, product signals, internship notes, tech stack clues
 - **Engineering blog notes** to collect and organize technical writing from companies
 - **People tracking** for recruiters, hiring managers, and other contacts
-- **Communication threads** for recording outreach history and follow-up context
-- **Optional LLM-powered workflows** for generation and summarization features
-- **Simple server-rendered UI** using Go templates and Tailwind CSS
+- **Communication threads** with LLM-assisted summaries and message drafts
+- **Optional snapshots** to Google Drive or a picked local folder
+- **Sample dataset** loadable from the settings page (50 apps / 12 companies / 24 people)
 
 ## Tech Stack
 
-- **Backend:** Go
-- **Database:** SQLite (`modernc.org/sqlite`)
-- **Frontend:** HTML templates + Tailwind CSS
-- **End-to-end testing:** Playwright
+- **Server:** Go — static file serving + stateless LLM RPC
+- **Client:** vanilla JS modules + Tailwind CSS
+- **Client-side database:** sqlite-wasm on OPFS
+- **End-to-end testing:** Playwright (fresh browser context per test)
 - **Build tooling:** Make, npm
 
 ## Local Development Setup
 
 ### Prerequisites
 
-Make sure you have the following installed:
-
 - Go `1.25.0` or compatible
 - Node.js and npm
 
 ### Getting started
-
-1. Clone the repository.
-2. Install JavaScript dependencies.
-3. Copy the example environment file.
-4. Start the development server.
 
 ```bash
 git clone https://github.com/zuccamia/career-planner.git
@@ -53,47 +46,29 @@ Then open:
 http://localhost:8080
 ```
 
+The root path redirects to `/local/dashboard`. First load bootstraps the in-browser SQLite schema from `/api/db/schema.sql`.
+
 ### How local development works
 
-- `make dev` builds Tailwind CSS assets
-- compiles the development binary from `cmd/dev`
-- loads environment variables from `.env`
-- builds the web server from `cmd/web`
-- starts the app locally on port `8080` by default
-
-By default, the app stores data in a local SQLite database file:
-
-```text
-career-planner.sqlite3
-```
-
-This makes the project easy to run and evaluate locally without additional services.
+- `make dev` builds Tailwind CSS assets, compiles `cmd/dev`, and runs it
+- `cmd/dev` loads `.env`, builds `cmd/web`, and starts the app on port `8080`
 
 ## Configuration
 
-The application reads configuration from environment variables.
+The server reads configuration from environment variables.
 
 ### App configuration
 
 - `APP_ADDR` — server bind address (default: `:8080`)
-- `APP_ENV` — application environment name
-- `DATABASE_PATH` — path to the SQLite database file (default: `career-planner.sqlite3`)
 
 ### LLM configuration
 
-LLM-backed features are configurable through the following environment variables:
+- `LLM_PROVIDER` — supported values: `anthropic`, `openai-compatible`
+- `LLM_MODEL` — model name
+- `LLM_BASE_URL` — API base URL (defaults to `https://api.anthropic.com/v1` for `anthropic`)
+- `LLM_API_KEY` — API key (may be optional for local OpenAI-compatible providers)
 
-- `LLM_PROVIDER` — supported values include `anthropic` and `openai-compatible`
-- `LLM_MODEL` — model name to use
-- `LLM_BASE_URL` — API base URL
-- `LLM_API_KEY` — API key when required by the selected provider
-
-Notes:
-
-- For `anthropic`, `LLM_BASE_URL` defaults to `https://api.anthropic.com/v1`
-- For `openai-compatible`, set `LLM_BASE_URL` explicitly
-- For local OpenAI-compatible providers, `LLM_API_KEY` may be optional
-- If LLM configuration is missing or intentionally left blank, some generation features may be unavailable
+If LLM configuration is missing or blank, generation/summarization endpoints return an error and the UI falls back accordingly.
 
 Example `.env.example`:
 
@@ -122,6 +97,16 @@ LLM_API_KEY=your_key_here
 - `npm run test:e2e` — run Playwright end-to-end tests
 - `npm run test:e2e:headed` — run Playwright tests in headed mode
 
+### Regenerating the sample dataset
+
+The "Load sample" button on the Settings page fetches `web/static/local/samples/sample.sqlite`. To rebuild it:
+
+```bash
+go run ./cmd/seed -reset
+```
+
+Then commit the updated file.
+
 ## Testing
 
 ### Go tests
@@ -136,32 +121,32 @@ make test
 npm run test:e2e
 ```
 
-The Playwright test configuration starts the app against a dedicated SQLite database under `tmp/playwright` and uses a test-only reset endpoint to keep runs isolated.
+Playwright launches the app on port `8081` with the LLM disabled. Each test gets a fresh browser context, so OPFS starts empty — no server-side reset is needed.
 
 ## Project Structure
 
 ```text
 cmd/dev/                      # local development runner
 cmd/web/                      # web server entrypoint
-internal/app/                 # app wiring and configuration
-internal/communications/      # communication threads and message workflows
-internal/companies/           # company domain logic
-internal/db/                  # database helpers and schema setup
-internal/dossiers/            # dossier generation and storage
-internal/engineering_blogs/   # engineering blog note tracking
-internal/http/                # HTTP router, handlers, and rendering helpers
-internal/people/              # people/contact management
-internal/sources/             # external integrations and source clients
-web/templates/                # HTML templates
-web/static/                   # generated and source static assets
+cmd/seed/                     # regenerates web/static/local/samples/sample.sqlite
+internal/app/                 # app wiring
+internal/applications/        # LLM-backed job description extraction
+internal/communications/      # LLM-backed thread summaries + message drafts
+internal/companies/           # LLM-backed company candidate suggestions
+internal/db/                  # embedded schema.sql (served to the browser)
+internal/dossiers/            # LLM-backed dossier generation
+internal/http/                # HTTP router, RPC handlers, local page shells
+internal/shared/              # small shared helpers
+internal/sources/llm/         # LLM client abstraction
+web/static/local/js/          # browser modules (pages, db, storage, ui, entities)
+web/static/local/samples/     # checked-in sample.sqlite dataset
+web/templates/local/          # thin HTML shells for the local-first pages
 tests/e2e/                    # Playwright end-to-end tests
 ```
 
 ## Contributing
 
 Contributions are welcome.
-
-If you want to contribute:
 
 1. Fork the repository
 2. Create a feature branch
