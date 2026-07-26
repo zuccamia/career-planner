@@ -102,8 +102,10 @@ LLM_API_KEY=your_key_here
 The "Load sample" button on the Settings page fetches `web/static/local/samples/sample.sqlite`. To rebuild it:
 
 ```bash
-go run ./cmd/seed -reset
+go run ./cmd/seed
 ```
+
+Seed wipes existing rows by default. Pass `-append` if you want to add on top of the current sample DB instead.
 
 Then commit the updated file.
 

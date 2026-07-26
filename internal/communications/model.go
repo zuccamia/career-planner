@@ -7,8 +7,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ngochoang/career-planner/internal/people"
-	"github.com/ngochoang/career-planner/internal/sources/llm"
+	"github.com/zuccamia/career-planner/internal/people"
+	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
 // Thread carries the identifying and status fields the browser sends in a

@@ -57,16 +57,19 @@ func TestOpenAppliesAllMigrationsOnFreshDB(t *testing.T) {
 		t.Fatalf("user_version after fresh Open = %d, want %d", got, want)
 	}
 
-	// Sanity-check that the migrations actually produced the expected schema:
-	// each of these tables is created in 001_init.sql, and 002 adds a column
-	// to dossiers. If either failed silently we'd see an error here.
-	for _, table := range []string{"applications", "companies", "people", "dossiers", "communication_threads"} {
+	// Sanity-check the expected schema after every migration: core tables
+	// exist and 003 has folded the dossier columns into companies (and
+	// dropped the dossiers table).
+	for _, table := range []string{"applications", "companies", "people", "communication_threads"} {
 		if _, err := db.Exec("SELECT 1 FROM " + table + " LIMIT 0"); err != nil {
 			t.Fatalf("query %s: %v", table, err)
 		}
 	}
-	if _, err := db.Exec("SELECT reasoning FROM dossiers LIMIT 0"); err != nil {
-		t.Fatalf("dossiers.reasoning column missing after migrations: %v", err)
+	if _, err := db.Exec("SELECT dossier_reasoning, company_summary FROM companies LIMIT 0"); err != nil {
+		t.Fatalf("merged dossier columns missing on companies: %v", err)
+	}
+	if _, err := db.Exec("SELECT 1 FROM dossiers LIMIT 0"); err == nil {
+		t.Fatal("dossiers table should be dropped after migration 003")
 	}
 }
 
@@ -95,17 +98,20 @@ func TestOpenResumesFromExistingUserVersion(t *testing.T) {
 		t.Skip("need at least 2 migrations to test resume behavior")
 	}
 
+	ms := Migrations()
 	path := filepath.Join(t.TempDir(), "resume.sqlite")
-	// First Open brings the DB to the latest version.
-	first, err := Open(context.Background(), path)
+	// Simulate an old install by manually applying only migration 001 —
+	// don't reuse Open (which would fast-forward past v1 and destroy the
+	// dossiers table that later migrations expect to exist).
+	first, err := sql.Open("sqlite", path)
 	if err != nil {
-		t.Fatalf("first Open: %v", err)
+		t.Fatalf("sql.Open: %v", err)
 	}
-	// Roll user_version back to 1 to simulate a DB that only applied
-	// migration 001 in the past. The schema itself is a superset — 002+
-	// should either no-op or hit the benign duplicate-column path.
+	if _, err := first.Exec(ms[0].SQL); err != nil {
+		t.Fatalf("apply migration 001: %v", err)
+	}
 	if _, err := first.Exec(`PRAGMA user_version = 1`); err != nil {
-		t.Fatalf("rollback user_version: %v", err)
+		t.Fatalf("set user_version: %v", err)
 	}
 	first.Close()
 
@@ -122,10 +128,10 @@ func TestOpenResumesFromExistingUserVersion(t *testing.T) {
 
 func TestOpenToleratesDuplicateColumnOnLegacySnapshot(t *testing.T) {
 	// Simulates a DB seeded from a pre-migrations snapshot: the full schema
-	// (including dossiers.reasoning, which 002 adds) already exists but
-	// user_version is still 0. The runner should replay 001 as a no-op (all
-	// CREATE TABLE IF NOT EXISTS) and treat 002's ALTER TABLE ADD COLUMN as
-	// a benign duplicate-column error rather than failing the boot.
+	// already exists but user_version is still 0. The runner should replay
+	// 001 as a no-op (all CREATE TABLE IF NOT EXISTS) and treat later
+	// ALTER TABLE ADD COLUMN statements as benign duplicate-column errors
+	// rather than failing the boot.
 	path := filepath.Join(t.TempDir(), "legacy.sqlite")
 	first, err := Open(context.Background(), path)
 	if err != nil {

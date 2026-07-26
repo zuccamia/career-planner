@@ -4,7 +4,7 @@ package companies
 // local-first RPC surface. The browser owns persistence — this package no
 // longer talks to a database.
 
-import "github.com/ngochoang/career-planner/internal/sources/llm"
+import "github.com/zuccamia/career-planner/internal/sources/llm"
 
 // Candidate is the LLM's tentative company inference, returned to the browser
 // before the user confirms and stores it locally.

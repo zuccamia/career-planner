@@ -4,7 +4,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/ngochoang/career-planner/internal/app"
+	"github.com/zuccamia/career-planner/internal/app"
 )
 
 func main() {

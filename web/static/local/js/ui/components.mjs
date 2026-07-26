@@ -149,6 +149,28 @@ export const setInlineError = (elOrId, message) => {
   }
 };
 
+// inlineNote is the success/info sibling of inlineError — a persistent inline
+// banner for messages that are too long for a toast (e.g. LLM reasoning after
+// a successful build/extract). Same show/hide API as setInlineError.
+export const inlineNote = ({ id = '', message = '', extraClass = '' } = {}) => {
+  const base = 'rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800';
+  const cls = `${base}${message ? '' : ' hidden'}${extraClass ? ' ' + extraClass : ''}`;
+  const idAttr = id ? ` id="${id}"` : '';
+  return `<p${idAttr} class="${cls}" role="status">${escapeHtml(message)}</p>`;
+};
+
+export const setInlineNote = (elOrId, message) => {
+  const el = typeof elOrId === 'string' ? document.getElementById(elOrId) : elOrId;
+  if (!el) return;
+  if (message) {
+    el.textContent = message;
+    el.classList.remove('hidden');
+  } else {
+    el.textContent = '';
+    el.classList.add('hidden');
+  }
+};
+
 // emptyState renders the shared "no data yet" box used across list panels,
 // details sub-sections, and the dashboard. Callers pass id when they need to
 // swap the message later without re-rendering the parent.

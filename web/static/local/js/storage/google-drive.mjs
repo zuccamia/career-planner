@@ -8,7 +8,7 @@
 
 import { idbGet, idbSet, idbDel } from './idb.mjs';
 import {
-  GOOGLE_CLIENT_ID, GOOGLE_TOKEN_ENDPOINT, GOOGLE_REDIRECT_URI, GOOGLE_SCOPES,
+  getGoogleOAuthConfig, GOOGLE_TOKEN_ENDPOINT, GOOGLE_REDIRECT_URI,
   ATTACHMENTS_FOLDER_NAME, snapshotFilename,
   driveFileURL, driveFilesListURL, driveMultipartUploadURL,
 } from './config.mjs';
@@ -60,15 +60,16 @@ export class GoogleDriveBackend {
   }
 
   async connect() {
+    const { clientID, scopes } = await getGoogleOAuthConfig();
     const verifier = randomVerifier();
     const challenge = await sha256B64Url(verifier);
     const state = randomVerifier().slice(0, 24);
 
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+    authUrl.searchParams.set('client_id', clientID);
     authUrl.searchParams.set('redirect_uri', GOOGLE_REDIRECT_URI);
     authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('scope', GOOGLE_SCOPES);
+    authUrl.searchParams.set('scope', scopes);
     authUrl.searchParams.set('code_challenge', challenge);
     authUrl.searchParams.set('code_challenge_method', 'S256');
     authUrl.searchParams.set('access_type', 'offline');

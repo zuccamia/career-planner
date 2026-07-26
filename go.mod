@@ -1,4 +1,4 @@
-module github.com/ngochoang/career-planner
+module github.com/zuccamia/career-planner
 
 go 1.25.0
 

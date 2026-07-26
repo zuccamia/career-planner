@@ -37,9 +37,9 @@ const CHANNEL_BADGE_COLOR = {
   general: 'slate',
 };
 
-// email / handshake / linkedin render as brand icons instead of pills so the
-// thread list scans quickly. Other channels fall back to a color-coded badge.
-const CHANNEL_ICONS = new Set(['email', 'handshake', 'linkedin']);
+// All supported channels render as icons instead of pills so the thread list
+// scans quickly.
+const CHANNEL_ICONS = new Set(['email', 'handshake', 'linkedin', 'phone', 'meeting', 'text']);
 
 const channelBadge = (channel) => {
   if (CHANNEL_ICONS.has(channel)) {

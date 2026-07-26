@@ -47,3 +47,24 @@ export const exec = async (sql, bind) => (await call('exec', { sql, bind })).row
 export const exportDb = () => call('export');
 export const importDb = (bytes) => call('import', { bytes }, [bytes.buffer]);
 export const wipeDb = () => call('wipe');
+
+// Runs `fn` inside a SQLite transaction. Commits on success, rolls back on
+// throw. Single-writer (one worker per tab, OPFS holds an exclusive lock),
+// so BEGIN is safe. Nesting is not supported — SQLite will throw "cannot
+// start a transaction within a transaction" if called re-entrantly.
+let inTx = false;
+export const transaction = async (fn) => {
+  if (inTx) throw new Error('transaction: nesting not supported');
+  inTx = true;
+  await call('exec', { sql: 'BEGIN' });
+  try {
+    const result = await fn();
+    await call('exec', { sql: 'COMMIT' });
+    return result;
+  } catch (err) {
+    try { await call('exec', { sql: 'ROLLBACK' }); } catch {}
+    throw err;
+  } finally {
+    inTx = false;
+  }
+};

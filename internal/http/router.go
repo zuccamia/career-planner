@@ -5,10 +5,10 @@ package http
 import (
 	"net/http"
 
-	"github.com/ngochoang/career-planner/internal/applications"
-	"github.com/ngochoang/career-planner/internal/communications"
-	"github.com/ngochoang/career-planner/internal/companies"
-	"github.com/ngochoang/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/communications"
+	"github.com/zuccamia/career-planner/internal/companies"
+	"github.com/zuccamia/career-planner/internal/dossiers"
 )
 
 // Server bundles the services needed by remaining HTTP handlers. All are
@@ -31,6 +31,7 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", server.rootRedirect)
+	mux.HandleFunc("GET /oauth/google/config", server.googleOAuthConfig)
 	mux.HandleFunc("POST /oauth/google/token", server.googleTokenExchange)
 	mux.HandleFunc("GET /api/db/migrations.json", server.migrationsJSON)
 	mux.HandleFunc("GET /api/db/enums.json", server.schemaEnums)

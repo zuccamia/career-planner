@@ -41,7 +41,7 @@ export const createAttachment = async ({
   return rows[0].id;
 };
 
-// deleteAttachment removes only the metadata row. Blob GC is deferred per
-// Phase 5 — a scheduled reconciliation pass sweeps orphaned files later.
+// Removes only the metadata row. The underlying blob file is left in place
+// and becomes orphaned — no GC sweep exists yet.
 export const deleteAttachment = (id) =>
   exec('DELETE FROM attachments WHERE id = ?', [id]);

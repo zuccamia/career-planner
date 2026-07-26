@@ -15,8 +15,12 @@ const ENUMS_URL = '/api/db/enums.json';
 const CACHE_MIGRATIONS_KEY = 'schemaMigrationsCache';
 const CACHE_ENUMS_KEY = 'schemaEnumsCache';
 
-// Populated once ensureSchema resolves — importers can read these
-// synchronously after boot. Empty arrays before that.
+// Mirrors the Go-side enums (applications.Statuses, communications.Channels/
+// Directions/Statuses) fetched from /api/db/enums.json so dropdowns and
+// normalizers stay in sync with the server without duplicating the lists.
+// Start empty because ES modules can't await at import time; ensureSchema
+// populates them during boot. Import as `let`-backed live bindings — read
+// them after ensureSchema resolves.
 export let APPLICATION_STATUSES = [];
 export let COMMUNICATION_CHANNELS = [];
 export let COMMUNICATION_DIRECTIONS = [];

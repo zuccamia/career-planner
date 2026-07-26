@@ -339,8 +339,3 @@ func normalizeEducationLabel(value string) string {
 		return ""
 	}
 }
-
-func formatStructuredJobDescription(input JobDescriptionStructured) string {
-	return fmt.Sprintf("%s | %s", input.CompanyName, input.RoleTitle)
-}
-

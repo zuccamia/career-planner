@@ -3,17 +3,14 @@ package dossiers
 // Sanitizes and normalizes generated dossier content.
 
 import (
-	"encoding/json"
+	"net/url"
 	"sort"
 	"strings"
-
-	"github.com/ngochoang/career-planner/internal/companies"
-	"github.com/ngochoang/career-planner/internal/shared"
 )
 
-// sanitizeResult normalizes the full LLM dossier payload and fills derived fallbacks.
-func sanitizeResult(result llmResult, company companies.Company) llmResult {
-	result.CareersURL = shared.SanitizeURL(result.CareersURL)
+// sanitizeResult normalizes the LLM dossier payload.
+func sanitizeResult(result llmResult) llmResult {
+	result.CareersURL = sanitizeURL(result.CareersURL)
 	result.CompanySummary = sanitizeParagraph(result.CompanySummary)
 	result.WhatCompanyDoes = sanitizeParagraph(result.WhatCompanyDoes)
 	result.TargetCustomers = sanitizeList(result.TargetCustomers)
@@ -25,9 +22,6 @@ func sanitizeResult(result llmResult, company companies.Company) llmResult {
 	result.InternshipSummary = sanitizeParagraph(result.InternshipSummary)
 	result.MajorTechStacks = sanitizeTechStacks(result.MajorTechStacks)
 	result.Reasoning = sanitizeParagraph(result.Reasoning)
-	if result.CareersURL == "" {
-		result.CareersURL = deriveCareersURL(company)
-	}
 	return result
 }
 
@@ -78,11 +72,16 @@ func sanitizeTechStacks(stacks MajorTechStacks) MajorTechStacks {
 	return stacks
 }
 
-// marshalJSON safely encodes slices and structs for JSON database columns.
-func marshalJSON(value any) string {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return "[]"
+// sanitizeURL returns the input only if it parses with a scheme and host.
+func sanitizeURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
 	}
-	return string(encoded)
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	return parsed.String()
 }
+

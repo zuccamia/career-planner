@@ -4,19 +4,15 @@
 
 import {
   listCompanies, getCompany, createCompany, updateCompany, deleteCompany,
-  findCompanyByName, countEngineeringBlogsByCompany,
+  findCompanyByName, countEngineeringBlogsByCompany, updateCompanyDossier,
 } from '../entities/companies.mjs';
 import { countApplicationsByCompany } from '../entities/applications.mjs';
 import { countPeopleByCompany } from '../entities/people.mjs';
-import {
-  getLatestDossierByCompanyID, upsertDossierByCompanyID,
-  deleteDossiersByCompanyID, listLatestDossiersByCompany,
-} from '../entities/dossiers.mjs';
 import { guessCompanyCandidate, buildDossier } from '../rpc.mjs';
 import { escapeHtml, formatDate } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { button, badge, emptyState, inlineError, setInlineError, pageHeader, setPageCount } from '../ui/components.mjs';
+import { button, badge, emptyState, inlineError, setInlineError, inlineNote, setInlineNote, pageHeader, setPageCount } from '../ui/components.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
 
@@ -124,14 +120,13 @@ const countPill = (color, iconName, n, href, title) => {
              class="inline-flex transition hover:brightness-95 hover:ring-2 hover:ring-offset-1 hover:ring-slate-300 rounded-full">${pill}</a>`;
 };
 
-const listHtml = (companies, dossiers, blogCounts, peopleCounts, appCounts) => {
+const listHtml = (companies, blogCounts, peopleCounts, appCounts) => {
   if (!companies.length) {
     return emptyState({ message: 'No companies yet.' });
   }
   return `
     <ul class="space-y-3">
       ${companies.map(c => {
-        const dossier = dossiers.get(c.id);
         const nameHtml = c.website
           ? `<a href="${escapeHtml(c.website)}" target="_blank" rel="noopener noreferrer"
                 class="font-semibold text-slate-900 hover:text-blue-700 hover:underline">${escapeHtml(c.official_name)}</a>`
@@ -148,7 +143,7 @@ const listHtml = (companies, dossiers, blogCounts, peopleCounts, appCounts) => {
                     ${countPill('emerald', 'people',        peopleCounts.get(c.id) || 0, `/local/people?company_id=${c.id}`,       `People at ${c.official_name}`)}
                     ${countPill('amber',   'applications',  appCounts.get(c.id)    || 0, `/local/applications?company_id=${c.id}`, `Applications at ${c.official_name}`)}
                   </div>
-                  ${dossier?.has_internships ? `<div>${internshipsPill()}</div>` : ''}
+                  ${c.has_internships ? `<div>${internshipsPill()}</div>` : ''}
                 </div>
                 <div class="flex items-center gap-3 shrink-0">
                   <span class="text-sm text-slate-500">Updated ${formatDate(c.updated_at)}</span>
@@ -167,9 +162,8 @@ const listHtml = (companies, dossiers, blogCounts, peopleCounts, appCounts) => {
 let editorMode = null;
 
 const refreshList = async () => {
-  const [companies, dossiers, blogCounts, peopleCounts, appCounts] = await Promise.all([
+  const [companies, blogCounts, peopleCounts, appCounts] = await Promise.all([
     listCompanies(),
-    listLatestDossiersByCompany(),
     countEngineeringBlogsByCompany(),
     countPeopleByCompany(),
     countApplicationsByCompany(),
@@ -177,7 +171,7 @@ const refreshList = async () => {
   // Move panels back to their anchors before wiping list-content so their
   // DOM (and any in-progress form input) survives the re-render.
   restoreAllPanels(PANEL_IDS);
-  document.getElementById('list-content').innerHTML = listHtml(companies, dossiers, blogCounts, peopleCounts, appCounts);
+  document.getElementById('list-content').innerHTML = listHtml(companies, blogCounts, peopleCounts, appCounts);
   // Reattach any open panel to its (possibly re-rendered) row.
   if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
   if (openDossierCompany) mountInlinePanel('dossier-panel', openDossierCompany.id);
@@ -192,13 +186,9 @@ const refreshList = async () => {
 };
 
 const deleteCompanyFromList = async (companyID, companyName) => {
-  if (!confirm(`Delete "${companyName}"? This also removes its dossier. Applications linked to this company will block the delete.`)) return;
+  if (!confirm(`Delete "${companyName}"? Applications linked to this company will block the delete.`)) return;
   setInlineError('list-error', '');
   try {
-    // Manually cascade the one-to-one dossier — the FK doesn't have ON DELETE
-    // CASCADE, so SQLite would refuse the company delete if a dossier row
-    // still points at it.
-    await deleteDossiersByCompanyID(companyID);
     await deleteCompany(companyID);
     // Close any open panels for this company.
     if (editorMode && editorMode !== 'new' && editorMode.id === companyID) closeEditor();
@@ -227,10 +217,11 @@ const stackGroup = (label, items) => items?.length
        ${chipRow(items)}
      </div>` : '';
 
-const dossierHtml = (company, dossier) => {
-  const isEmpty = !dossier;
-  const d = dossier || {};
-  const stacks = d.major_tech_stacks || {};
+// The dossier is now part of the company row (see migration 003).
+// dossier_updated_at is the empty string until the LLM has built one.
+const dossierHtml = (company) => {
+  const isEmpty = !company.dossier_updated_at;
+  const stacks = company.major_tech_stacks || {};
   const hasAnyStack = ['languages', 'frontend', 'backend', 'infrastructure', 'data', 'tooling']
     .some(k => (stacks[k] || []).length);
   return `
@@ -240,7 +231,7 @@ const dossierHtml = (company, dossier) => {
           <p class="${CLS.eyebrow}">Research — ${escapeHtml(company.official_name)}</p>
           <p class="text-xs text-slate-500">
             ${isEmpty ? 'No dossier yet. Build one to have the LLM research this company.' :
-              `Last built ${formatDate(d.updated_at || d.created_at)}. Status: ${escapeHtml(d.status || 'completed')}.`}
+              `Last built ${formatDate(company.dossier_updated_at)}.`}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -250,16 +241,17 @@ const dossierHtml = (company, dossier) => {
       </div>
 
       ${inlineError({ id: 'dossier-error' })}
+      ${inlineNote({ id: 'dossier-note' })}
 
       ${isEmpty ? '' : `
         <div class="grid gap-6">
-          ${(d.careers_url || company.ats_provider) ? `
+          ${(company.careers_url || company.ats_provider) ? `
             <div class="grid gap-4 sm:grid-cols-2 items-start">
               <div class="grid gap-1">
                 <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Careers</p>
-                ${d.careers_url
-                  ? `<a href="${escapeHtml(d.careers_url)}" target="_blank" rel="noopener noreferrer"
-                        class="text-sm text-blue-700 underline hover:text-blue-800 break-all">${escapeHtml(d.careers_url)}</a>`
+                ${company.careers_url
+                  ? `<a href="${escapeHtml(company.careers_url)}" target="_blank" rel="noopener noreferrer"
+                        class="text-sm text-blue-700 underline hover:text-blue-800 break-all">${escapeHtml(company.careers_url)}</a>`
                   : '<span class="text-sm text-slate-400 italic">—</span>'}
               </div>
               <div class="grid gap-1">
@@ -270,53 +262,53 @@ const dossierHtml = (company, dossier) => {
               </div>
             </div>` : ''}
 
-          ${d.company_summary ? `
+          ${company.company_summary ? `
             <div class="grid gap-1">
               <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Summary</p>
-              <p class="text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(d.company_summary)}</p>
+              <p class="text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(company.company_summary)}</p>
             </div>` : ''}
 
-          ${d.what_the_company_does ? `
+          ${company.what_the_company_does ? `
             <div class="grid gap-1">
               <p class="text-xs font-medium uppercase tracking-wide text-slate-500">What the company does</p>
-              <p class="text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(d.what_the_company_does)}</p>
+              <p class="text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(company.what_the_company_does)}</p>
             </div>` : ''}
 
           <div class="grid gap-6 sm:grid-cols-2 items-start">
             <div class="grid gap-1">
               <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Target customers</p>
-              ${chipRow(d.target_customers)}
+              ${chipRow(company.target_customers)}
             </div>
             <div class="grid gap-1">
               <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Product areas</p>
-              ${chipRow(d.product_areas)}
+              ${chipRow(company.product_areas)}
             </div>
           </div>
 
           <div class="grid gap-1">
             <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Business model clues</p>
-            ${bulletList(d.business_model_clues)}
+            ${bulletList(company.business_model_clues)}
           </div>
 
           <div class="grid gap-6 sm:grid-cols-2 items-start">
             <div class="grid gap-1">
               <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Recent launches</p>
-              ${bulletList(d.recent_product_launches)}
+              ${bulletList(company.recent_product_launches)}
             </div>
             <div class="grid gap-1">
               <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Culture notes</p>
-              ${bulletList(d.company_culture_notes)}
+              ${bulletList(company.company_culture_notes)}
             </div>
           </div>
 
           <div class="grid gap-1">
             <p class="text-xs font-medium uppercase tracking-wide text-slate-500">Internships</p>
-            ${d.has_internships
+            ${company.has_internships
               ? `<p class="text-sm text-slate-700">
                    <span class="font-medium">Yes.</span>
-                   ${d.internship_seasons?.length ? ` Seasons: ${d.internship_seasons.map(s => escapeHtml(s)).join(', ')}.` : ''}
+                   ${company.internship_seasons?.length ? ` Seasons: ${company.internship_seasons.map(s => escapeHtml(s)).join(', ')}.` : ''}
                  </p>
-                 ${d.internship_summary ? `<p class="text-sm text-slate-600 whitespace-pre-wrap">${escapeHtml(d.internship_summary)}</p>` : ''}`
+                 ${company.internship_summary ? `<p class="text-sm text-slate-600 whitespace-pre-wrap">${escapeHtml(company.internship_summary)}</p>` : ''}`
               : `<p class="text-sm text-slate-500">No evidence of internships.</p>`}
           </div>
 
@@ -352,8 +344,10 @@ const closeDossier = () => {
 const renderDossier = async () => {
   if (!openDossierCompany) return;
   const panel = document.getElementById('dossier-panel');
-  const dossier = await getLatestDossierByCompanyID(openDossierCompany.id);
-  panel.innerHTML = dossierHtml(openDossierCompany, dossier);
+  // Re-fetch so a just-built dossier's fields land on the panel.
+  const fresh = await getCompany(openDossierCompany.id);
+  if (fresh) openDossierCompany = fresh;
+  panel.innerHTML = dossierHtml(openDossierCompany);
   wireDossier();
 };
 
@@ -383,6 +377,7 @@ const wireDossier = () => {
     const originalHTML = buildBtn.innerHTML;
     buildBtn.innerHTML = '<span>Building…</span>';
     setInlineError('dossier-error', '');
+    setInlineNote('dossier-note', '');
     try {
       const c = openDossierCompany;
       const generated = await buildDossier({
@@ -391,10 +386,11 @@ const wireDossier = () => {
         ats_url: c.ats_url,
         ats_provider: c.ats_provider,
       });
-      await upsertDossierByCompanyID({ ...generated, company_id: c.id });
+      await updateCompanyDossier(c.id, generated);
       const reason = (generated?.reasoning || '').trim();
-      toast(reason ? `Dossier built. ${reason}` : 'Dossier built', 'ok');
       await renderDossier();
+      // renderDossier re-renders the panel; re-apply the note after paint.
+      setInlineNote('dossier-note', reason ? `Dossier built. ${reason}` : 'Dossier built');
     } catch (err) {
       setInlineError('dossier-error', `Build failed: ${err.message}`);
       buildBtn.disabled = false;

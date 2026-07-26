@@ -10,6 +10,37 @@ import (
 	"strings"
 )
 
+// defaultGoogleOAuthScopes is what the browser gets when GOOGLE_OAUTH_SCOPES
+// isn't overridden. drive.appdata holds hidden snapshots; drive.file limits
+// attachment access to files the app creates.
+const defaultGoogleOAuthScopes = "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file"
+
+// googleTokenURL is Google's OAuth token endpoint. Exposed as a package
+// variable so tests can point it at an httptest.Server.
+var googleTokenURL = "https://oauth2.googleapis.com/token"
+
+// googleOAuthConfig returns the browser-safe OAuth config from the same env
+// vars the token-exchange handler uses, so browser and server stay in sync
+// without hardcoding values in the JS bundle. Neither the client ID nor the
+// scope string is a secret (both are visible in the OAuth redirect URL) —
+// this is config hygiene, not a security boundary.
+func (s *Server) googleOAuthConfig(w http.ResponseWriter, r *http.Request) {
+	clientID := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID"))
+	if clientID == "" {
+		http.Error(w, "GOOGLE_OAUTH_CLIENT_ID not configured", http.StatusServiceUnavailable)
+		return
+	}
+	scopes := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_SCOPES"))
+	if scopes == "" {
+		scopes = defaultGoogleOAuthScopes
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"client_id": clientID,
+		"scopes":    scopes,
+	})
+}
+
 // googleTokenExchange proxies Google's OAuth token endpoint so that the
 // client_secret stays server-side rather than shipping in the browser.
 // The browser POSTs JSON like {"grant_type":"authorization_code","code":"...",
@@ -52,7 +83,7 @@ func (s *Server) googleTokenExchange(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	req, err := http.NewRequestWithContext(r.Context(), "POST", "https://oauth2.googleapis.com/token", strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(r.Context(), "POST", googleTokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		http.Error(w, fmt.Sprintf("build request: %v", err), http.StatusInternalServerError)
 		return

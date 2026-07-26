@@ -10,7 +10,7 @@
 // the base CRUD so callers get consistent auto-emit behavior from
 // create/update — mirroring internal/applications/service.go.
 
-import { exec } from '../db/client.mjs';
+import { exec, transaction } from '../db/client.mjs';
 import { APPLICATION_STATUSES } from '../db/schema.mjs';
 
 export { APPLICATION_STATUSES };
@@ -64,15 +64,17 @@ export const createApplication = async (data) => {
   const n = normalize(data);
   if (!n.company_id) throw new Error('company_id required');
   const values = EDITABLE_COLS.map(c => n[c]);
-  await exec(
-    `INSERT INTO applications (${EDITABLE_COLS.join(', ')})
-     VALUES (${EDITABLE_COLS.map(() => '?').join(', ')})`,
-    values,
-  );
-  const rows = await exec('SELECT last_insert_rowid() AS id');
-  const id = rows[0].id;
-  await createEvent({ application_id: id, type: 'created', to_status: n.status });
-  return id;
+  return transaction(async () => {
+    await exec(
+      `INSERT INTO applications (${EDITABLE_COLS.join(', ')})
+       VALUES (${EDITABLE_COLS.map(() => '?').join(', ')})`,
+      values,
+    );
+    const rows = await exec('SELECT last_insert_rowid() AS id');
+    const id = rows[0].id;
+    await createEvent({ application_id: id, type: 'created', to_status: n.status });
+    return id;
+  });
 };
 
 // updateApplication persists field changes and emits a status_changed event
@@ -86,24 +88,25 @@ export const updateApplication = async (id, data) => {
   if (!before) throw new Error(`application #${id} not found`);
 
   const values = EDITABLE_COLS.map(c => n[c]);
-  await exec(
-    `UPDATE applications
-     SET ${EDITABLE_COLS.map(c => `${c} = ?`).join(', ')},
-         updated_at = datetime('now')
-     WHERE id = ?`,
-    [...values, id],
-  );
-  const after = await getApplication(id);
-
-  if (before.status !== after.status) {
-    await createEvent({
-      application_id: id,
-      type: 'status_changed',
-      from_status: before.status,
-      to_status: after.status,
-      occurred_at: after.updated_at,
-    });
-  }
+  await transaction(async () => {
+    await exec(
+      `UPDATE applications
+       SET ${EDITABLE_COLS.map(c => `${c} = ?`).join(', ')},
+           updated_at = datetime('now')
+       WHERE id = ?`,
+      [...values, id],
+    );
+    const after = await getApplication(id);
+    if (before.status !== after.status) {
+      await createEvent({
+        application_id: id,
+        type: 'status_changed',
+        from_status: before.status,
+        to_status: after.status,
+        occurred_at: after.updated_at,
+      });
+    }
+  });
 };
 
 // updateApplicationStatus flips only the status and records a status_changed
@@ -114,19 +117,21 @@ export const updateApplicationStatus = async ({ id, status, occurred_at, notes }
   if (!before) throw new Error(`application #${id} not found`);
   if (!status || before.status === status) return before;
 
-  await exec(
-    `UPDATE applications
-     SET status = ?, updated_at = datetime('now')
-     WHERE id = ?`,
-    [status, id],
-  );
-  await createEvent({
-    application_id: id,
-    type: 'status_changed',
-    content: notes || '',
-    from_status: before.status,
-    to_status: status,
-    occurred_at: occurred_at || null,
+  await transaction(async () => {
+    await exec(
+      `UPDATE applications
+       SET status = ?, updated_at = datetime('now')
+       WHERE id = ?`,
+      [status, id],
+    );
+    await createEvent({
+      application_id: id,
+      type: 'status_changed',
+      content: notes || '',
+      from_status: before.status,
+      to_status: status,
+      occurred_at: occurred_at || null,
+    });
   });
   return getApplication(id);
 };
@@ -150,8 +155,8 @@ export const deleteApplication = (id) =>
   exec('DELETE FROM applications WHERE id = ?', [id]);
 
 // Wipe every application from the local DB while leaving companies, people,
-// communications, and dossiers intact. Meant for starting a new time-period
-// snapshot on top of the same longer-lived reference data. Order:
+// and communications intact. Meant for starting a new time-period snapshot
+// on top of the same longer-lived reference data. Order:
 //   1. attachments rows for entity_type='application' — polymorphic, no FK
 //      cascade would delete these on their own.
 //   2. applications — application_events cascades via ON DELETE CASCADE.

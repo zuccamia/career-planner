@@ -22,7 +22,7 @@ const normalizeOneOf = (value, allowed, fallback) => {
   return allowed.includes(v) ? v : fallback;
 };
 
-const normalizeChannel = (v) => normalizeOneOf(v, COMMUNICATION_CHANNELS, 'general');
+const normalizeChannel = (v) => normalizeOneOf(v, COMMUNICATION_CHANNELS, 'email');
 const normalizeDirection = (v) => normalizeOneOf(v, COMMUNICATION_DIRECTIONS, 'note');
 const normalizeStatus = (v) => normalizeOneOf(v, COMMUNICATION_STATUSES, 'open');
 

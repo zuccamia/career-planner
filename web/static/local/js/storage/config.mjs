@@ -1,9 +1,8 @@
 // Constants + tiny shared helpers for the storage backends.
 
-export const GOOGLE_CLIENT_ID = '785483279379-dh0lkuae9ncutrhoung43002sf7edf1c.apps.googleusercontent.com';
+export const GOOGLE_CONFIG_ENDPOINT = '/oauth/google/config';
 export const GOOGLE_TOKEN_ENDPOINT = '/oauth/google/token';
 export const GOOGLE_REDIRECT_URI = `${location.origin}/static/local/oauth-callback.html`;
-export const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file';
 
 export const SNAPSHOT_PREFIX = 'snapshot-';
 export const SNAPSHOT_SUFFIX = '.sqlite';
@@ -51,3 +50,26 @@ export const snapshotFilename = (d = new Date(), label = '') => {
 // contains the label separator. Auto-generated snapshots do not.
 export const isLabeledSnapshot = (name) =>
   typeof name === 'string' && name.includes(SNAPSHOT_LABEL_SEP);
+
+// Fetches the OAuth client ID + scopes from the server (which reads them
+// from GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_SCOPES). Cached after the first
+// successful call so subsequent OAuth flows don't re-fetch. Returns
+// { clientID, scopes }.
+let googleOAuthConfigPromise = null;
+export const getGoogleOAuthConfig = () => {
+  if (!googleOAuthConfigPromise) {
+    googleOAuthConfigPromise = fetch(GOOGLE_CONFIG_ENDPOINT).then(async (res) => {
+      if (!res.ok) {
+        googleOAuthConfigPromise = null;
+        throw new Error(`google oauth not configured (HTTP ${res.status})`);
+      }
+      const { client_id, scopes } = await res.json();
+      if (!client_id) {
+        googleOAuthConfigPromise = null;
+        throw new Error('google oauth config missing client_id');
+      }
+      return { clientID: client_id, scopes: scopes || '' };
+    });
+  }
+  return googleOAuthConfigPromise;
+};

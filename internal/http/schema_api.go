@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/ngochoang/career-planner/internal/applications"
-	"github.com/ngochoang/career-planner/internal/communications"
-	"github.com/ngochoang/career-planner/internal/db"
+	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/communications"
+	"github.com/zuccamia/career-planner/internal/db"
 )
 
 // migrationsJSON serves the ordered migration list the browser applies on

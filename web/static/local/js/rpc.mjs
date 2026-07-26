@@ -30,8 +30,8 @@ export const guessCompanyCandidate = (name) =>
 export const extractJobDescription = (input) =>
   post('/api/applications/extract-job-description', input);
 
-// Build a dossier for the given company shape. Returns the Dossier struct
-// (id/company_id/timestamps are zero — the caller assigns them locally).
+// Build a dossier for the given company shape. Returns the Dossier struct;
+// the caller writes it onto the companies row via updateCompanyDossier.
 export const buildDossier = (company) =>
   post('/api/dossiers/build', company);
 

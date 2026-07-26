@@ -151,4 +151,30 @@ test.describe('local settings page', () => {
 
     await expect(page.locator('#current-snapshot-name')).toHaveText('2020-03-15 09:45');
   });
+
+  // Regression for "Wipe failed: deleteDatabase blocked — close other tabs"
+  // reported with no other tabs open. Root cause: idb.mjs helpers used to open
+  // the meta DB and never call db.close(), so this tab's own live connection
+  // made indexedDB.deleteDatabase fire onblocked. Helpers now close after each
+  // call; this test exercises the sequence end-to-end via page.evaluate.
+  test('idbWipe succeeds after idbSet without hitting onblocked', async ({ page }) => {
+    await gotoSettings(page);
+
+    const result = await page.evaluate(async () => {
+      const { idbSet, idbGet, idbWipe } = await import('/static/local/js/storage/idb.mjs');
+      await idbSet('regression-key', 'regression-value');
+      const readBack = await idbGet('regression-key');
+
+      // Guard the wipe with a timeout so a pre-fix regression (which would
+      // hang indefinitely if onblocked never fires) fails fast.
+      const wipe = idbWipe();
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('idbWipe timed out (likely blocked by open connection)')), 3000),
+      );
+      await Promise.race([wipe, timeout]);
+      return { readBack };
+    });
+
+    expect(result.readBack).toBe('regression-value');
+  });
 });

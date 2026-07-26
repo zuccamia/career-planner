@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"os"
 	"time"
 
-	appdb "github.com/ngochoang/career-planner/internal/db"
+	appdb "github.com/zuccamia/career-planner/internal/db"
 )
 
 type companySeed struct {
@@ -24,22 +25,36 @@ type applicationPlan struct {
 }
 
 func main() {
-	count := flag.Int("count", 50, "number of applications to seed")
-	dbPath := flag.String("db", "web/static/local/samples/sample.sqlite", "SQLite database path to write; defaults to the checked-in sample dataset")
-	reset := flag.Bool("reset", false, "delete existing companies/applications/application events before seeding")
-	seedValue := flag.Int64("seed", 42, "random seed for deterministic data generation")
-	flag.Parse()
+	if err := run(os.Args[1:]); err != nil {
+		log.Fatal(err)
+	}
+}
+
+// run parses args and seeds the target DB. Split from main() so tests can
+// invoke it with a temp DB without shelling out to `go run`.
+func run(args []string) error {
+	fs := flag.NewFlagSet("seed", flag.ContinueOnError)
+	count := fs.Int("count", 50, "number of applications to seed")
+	dbPath := fs.String("db", "web/static/local/samples/sample.sqlite", "SQLite database path to write; defaults to the checked-in sample dataset")
+	// Reset defaults to true so re-running seed produces a reproducible DB
+	// with -count rows. Additive runs (which historically produced a 100-row
+	// sample.sqlite by accident) now require an explicit -append.
+	append_ := fs.Bool("append", false, "keep existing rows and add -count more (default: wipe first)")
+	seedValue := fs.Int64("seed", 42, "random seed for deterministic data generation")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	ctx := context.Background()
 	database, err := appdb.Open(ctx, *dbPath)
 	if err != nil {
-		log.Fatalf("open database: %v", err)
+		return fmt.Errorf("open database: %w", err)
 	}
 	defer database.Close()
 
-	if *reset {
+	if !*append_ {
 		if err := resetApplicationData(ctx, database); err != nil {
-			log.Fatalf("reset application data: %v", err)
+			return fmt.Errorf("reset application data: %w", err)
 		}
 	}
 
@@ -61,13 +76,13 @@ func main() {
 		company := companies[i%len(companies)]
 		companyID, err := ensureCompany(ctx, database, company, now)
 		if err != nil {
-			log.Fatalf("ensure company %q: %v", company.Name, err)
+			return fmt.Errorf("ensure company %q: %w", company.Name, err)
 		}
 
 		if _, ok := companyPeople[companyID]; !ok {
 			ids, err := ensurePeople(ctx, database, companyID, company, now, rng)
 			if err != nil {
-				log.Fatalf("ensure people for %q: %v", company.Name, err)
+				return fmt.Errorf("ensure people for %q: %w", company.Name, err)
 			}
 			companyPeople[companyID] = ids
 		}
@@ -85,14 +100,14 @@ func main() {
 
 		applicationID, err := createApplication(ctx, database, companyID, role, company, finalStatus, createdAt, i, personID)
 		if err != nil {
-			log.Fatalf("create application %d: %v", i+1, err)
+			return fmt.Errorf("create application %d: %w", i+1, err)
 		}
 		insertedApplications++
 		statusCounts[finalStatus]++
 
 		eventsCreated, err := createStatusHistory(ctx, database, applicationID, plan.Path, createdAt, rng)
 		if err != nil {
-			log.Fatalf("create status history for application %d: %v", applicationID, err)
+			return fmt.Errorf("create status history for application %d: %w", applicationID, err)
 		}
 		insertedEvents += eventsCreated
 	}
@@ -106,7 +121,7 @@ func main() {
 			}
 			threadID, entryCount, err := createThreadWithEntries(ctx, database, personID, now, rng)
 			if err != nil {
-				log.Fatalf("create thread for person %d: %v", personID, err)
+				return fmt.Errorf("create thread for person %d: %w", personID, err)
 			}
 			_ = threadID
 			insertedThreads++
@@ -127,6 +142,7 @@ func main() {
 		}
 		fmt.Printf("- %-20s %d\n", status, statusCounts[status])
 	}
+	return nil
 }
 
 func resetApplicationData(ctx context.Context, database *sql.DB) error {
@@ -137,9 +153,8 @@ func resetApplicationData(ctx context.Context, database *sql.DB) error {
 		`DELETE FROM communication_threads`,
 		`DELETE FROM engineering_blog_notes`,
 		`DELETE FROM people`,
-		`DELETE FROM dossiers`,
 		`DELETE FROM companies`,
-		`DELETE FROM sqlite_sequence WHERE name IN ('application_events', 'applications', 'communication_entries', 'communication_threads', 'engineering_blog_notes', 'people', 'dossiers', 'companies')`,
+		`DELETE FROM sqlite_sequence WHERE name IN ('application_events', 'applications', 'communication_entries', 'communication_threads', 'engineering_blog_notes', 'people', 'companies')`,
 	}
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement); err != nil {
@@ -239,7 +254,7 @@ func ensurePeople(ctx context.Context, database *sql.DB, companyID int64, compan
 }
 
 func createThreadWithEntries(ctx context.Context, database *sql.DB, personID int64, now time.Time, rng *rand.Rand) (int64, int, error) {
-	channels := []string{"email", "linkedin", "phone", "general"}
+	channels := []string{"email", "linkedin", "phone", "meeting"}
 	subjects := []string{
 		"Intro chat scheduling",
 		"Follow-up on OA",

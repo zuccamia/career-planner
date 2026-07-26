@@ -5,9 +5,7 @@ package dossiers
 // the RPC layer to pass back.
 
 import (
-	"time"
-
-	"github.com/ngochoang/career-planner/internal/sources/llm"
+	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
 // MajorTechStacks groups the main technologies evidenced for a company by category.
@@ -20,11 +18,9 @@ type MajorTechStacks struct {
 	Tooling        []string `json:"tooling"`
 }
 
-// Dossier stores a generated company research summary. The browser fills in
-// ID/CompanyID/timestamps after receiving the RPC response.
+// Dossier is a generated company research summary returned to the browser,
+// which owns persistence (IDs and timestamps live there).
 type Dossier struct {
-	ID                    int64           `json:"id"`
-	CompanyID             int64           `json:"company_id"`
 	Status                string          `json:"status"`
 	CareersURL            string          `json:"careers_url"`
 	CompanySummary        string          `json:"company_summary"`
@@ -39,8 +35,6 @@ type Dossier struct {
 	InternshipSummary     string          `json:"internship_summary"`
 	MajorTechStacks       MajorTechStacks `json:"major_tech_stacks"`
 	Reasoning             string          `json:"reasoning"`
-	CreatedAt             time.Time       `json:"created_at"`
-	UpdatedAt             time.Time       `json:"updated_at"`
 }
 
 type llmResult struct {

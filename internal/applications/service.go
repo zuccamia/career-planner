@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ngochoang/career-planner/internal/sources/llm"
+	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
 // Service composes the extraction prompt, optionally fetches the JD from a

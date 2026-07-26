@@ -1,8 +1,9 @@
 // Applications page: list + inline editor + inline details panel. The details
-// panel mirrors company dossiers — it drops in above the list, replaces the
-// editor if that's open, and holds the parsed job description, timeline
-// events, and raw JD accordion. Companies are managed on a separate page;
-// applications reference them via a dropdown so the FK invariant is explicit.
+// panel mirrors the company research panel — it drops in above the list,
+// replaces the editor if that's open, and holds the parsed job description,
+// timeline events, and raw JD accordion. Companies are managed on a separate
+// page; applications reference them via a dropdown so the FK invariant is
+// explicit.
 
 import {
   APPLICATION_STATUSES,
@@ -22,7 +23,7 @@ import { listPeopleByCompanyID } from '../entities/people.mjs';
 import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { badge, badgeClasses, button, collapsible, emptyState, inlineError, setInlineError, pageHeader, setPageCount } from '../ui/components.mjs';
+import { badge, badgeClasses, button, collapsible, emptyState, inlineError, setInlineError, inlineNote, setInlineNote, pageHeader, setPageCount } from '../ui/components.mjs';
 import { extractJobDescription } from '../rpc.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
@@ -502,6 +503,7 @@ const detailsHtml = (a, events, attachments) => {
       </div>
 
       ${inlineError({ id: 'details-error' })}
+      ${inlineNote({ id: 'details-note' })}
 
       <form id="quick-status-form" class="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 pt-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] sm:items-end">
         <div class="grid gap-2">
@@ -604,11 +606,11 @@ const refreshList = async () => {
 
 // Clear every application (and its events + attachment records) in one shot.
 // Meant for starting a new time-period snapshot with the same longer-lived
-// companies/people/dossiers data intact.
+// companies/people data intact.
 const clearAllApplicationsFromList = async () => {
   const msg = 'Clear ALL applications?\n\n'
     + '• Deletes every application, its timeline events, and its attachment records\n'
-    + '• Keeps companies, people, communications, and dossiers untouched\n'
+    + '• Keeps companies, people, and communications untouched\n'
     + '• Attachment files on Drive/local disk are not deleted (they become orphaned)\n\n'
     + 'This cannot be undone from inside the app. Restore from a snapshot if you need to recover.';
   if (!confirm(msg)) return;
@@ -815,6 +817,7 @@ const wireDetails = (app) => {
     extractBtn.disabled = true;
     extractBtn.setAttribute('aria-busy', 'true');
     setInlineError('details-error', '');
+    setInlineNote('details-note', '');
     try {
       const resp = await extractJobDescription({
         company_name: app.company_name || '',
@@ -827,8 +830,9 @@ const wireDetails = (app) => {
         jobDescriptionRaw: resp.job_description_raw || '',
       });
       const reason = (resp.structured?.reasoning || '').trim();
-      toast(reason ? `Job description extracted. ${reason}` : 'Job description extracted', 'ok');
       await renderDetails();
+      // renderDetails re-renders the panel; re-apply the note after paint.
+      setInlineNote('details-note', reason ? `Job description extracted. ${reason}` : 'Job description extracted');
     } catch (err) {
       setInlineError('details-error', `Extract failed: ${err.message}`);
       extractBtn.disabled = false;

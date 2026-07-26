@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ngochoang/career-planner/internal/applications"
-	"github.com/ngochoang/career-planner/internal/communications"
-	"github.com/ngochoang/career-planner/internal/companies"
-	"github.com/ngochoang/career-planner/internal/people"
+	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/communications"
+	"github.com/zuccamia/career-planner/internal/companies"
+	"github.com/zuccamia/career-planner/internal/people"
 )
 
 // Stateless RPC endpoints for the local-first browser client. These handlers
@@ -77,15 +77,16 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "official_name is required")
 		return
 	}
-	out := s.dossiers.BuildText(r.Context(), companies.Company{
+	out, err := s.dossiers.BuildText(r.Context(), companies.Company{
 		OfficialName: name,
 		Website:      strings.TrimSpace(body.Website),
 		ATSURL:       strings.TrimSpace(body.ATSURL),
 		ATSProvider:  strings.TrimSpace(body.ATSProvider),
 	})
-	// Ignore id/company_id/created/updated — the caller owns those locally.
-	out.ID = 0
-	out.CompanyID = 0
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 

@@ -5,10 +5,10 @@ package companies
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
-	"github.com/ngochoang/career-planner/internal/shared"
-	"github.com/ngochoang/career-planner/internal/sources/llm"
+	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
 // GuessCandidate turns free-form user input into a probable canonical company record for confirmation.
@@ -42,13 +42,30 @@ func (s *Service) GuessCandidate(ctx context.Context, input string) (Candidate, 
 // sanitizeCandidate trims and URL-normalizes guessed company fields while preserving a fallback name.
 func sanitizeCandidate(candidate Candidate, fallbackName string) Candidate {
 	candidate.OfficialName = strings.TrimSpace(candidate.OfficialName)
-	candidate.Website = shared.SanitizeHTTPURL(candidate.Website)
-	candidate.TechBlogURL = shared.SanitizeHTTPURL(candidate.TechBlogURL)
-	candidate.ATSURL = shared.SanitizeHTTPURL(candidate.ATSURL)
+	candidate.Website = sanitizeHTTPURL(candidate.Website)
+	candidate.TechBlogURL = sanitizeHTTPURL(candidate.TechBlogURL)
+	candidate.ATSURL = sanitizeHTTPURL(candidate.ATSURL)
 	candidate.ATSProvider = strings.TrimSpace(candidate.ATSProvider)
 	candidate.Reasoning = strings.TrimSpace(candidate.Reasoning)
 	if candidate.OfficialName == "" {
 		candidate.OfficialName = fallbackName
 	}
 	return candidate
+}
+
+// sanitizeHTTPURL returns the input only if it parses as an http(s) URL.
+func sanitizeHTTPURL(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(parsed.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	return parsed.String()
 }

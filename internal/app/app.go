@@ -5,12 +5,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ngochoang/career-planner/internal/applications"
-	"github.com/ngochoang/career-planner/internal/communications"
-	"github.com/ngochoang/career-planner/internal/companies"
-	"github.com/ngochoang/career-planner/internal/dossiers"
-	apphttp "github.com/ngochoang/career-planner/internal/http"
-	"github.com/ngochoang/career-planner/internal/sources/llm"
+	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/communications"
+	"github.com/zuccamia/career-planner/internal/companies"
+	"github.com/zuccamia/career-planner/internal/dossiers"
+	apphttp "github.com/zuccamia/career-planner/internal/http"
+	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
 type App struct {

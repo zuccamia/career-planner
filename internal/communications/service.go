@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ngochoang/career-planner/internal/sources/llm"
+	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
 // Channels, Directions, Statuses list the supported enum values in display
 // order. Exposed via /api/db/enums.json so the browser matches its dropdowns
 // to the same source.
 var (
-	Channels   = []string{"email", "handshake", "linkedin", "call", "meeting", "text", "general"}
+	Channels   = []string{"email", "handshake", "linkedin", "phone", "meeting", "text"}
 	Directions = []string{"inbound", "outbound", "note"}
 	Statuses   = []string{"open", "closed"}
 )
