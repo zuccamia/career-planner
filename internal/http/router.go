@@ -4,6 +4,9 @@ package http
 
 import (
 	"net/http"
+	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/zuccamia/career-planner/internal/applications"
 	"github.com/zuccamia/career-planner/internal/communications"
@@ -29,17 +32,22 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 		dossiers:       dossiersService,
 	}
 
+	// 5 req/min per IP, burst 3, evict entries idle > 10min. Applied to
+	// LLM-touching routes so the shared demo key cannot be drained by one client.
+	llmLimit := newIPLimiter(rate.Every(12*time.Second), 3, 10*time.Minute)
+	llm := func(h http.HandlerFunc) http.Handler { return llmLimit.middleware(h) }
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", server.rootRedirect)
 	mux.HandleFunc("GET /oauth/google/config", server.googleOAuthConfig)
 	mux.HandleFunc("POST /oauth/google/token", server.googleTokenExchange)
 	mux.HandleFunc("GET /api/db/migrations.json", server.migrationsJSON)
 	mux.HandleFunc("GET /api/db/enums.json", server.schemaEnums)
-	mux.HandleFunc("POST /api/companies/guess-candidate", server.rpcGuessCompanyCandidate)
-	mux.HandleFunc("POST /api/dossiers/build", server.rpcBuildDossier)
-	mux.HandleFunc("POST /api/applications/extract-job-description", server.rpcExtractJobDescription)
-	mux.HandleFunc("POST /api/communications/summarize-thread", server.rpcSummarizeThread)
-	mux.HandleFunc("POST /api/communications/generate-message", server.rpcGenerateMessage)
+	mux.Handle("POST /api/companies/guess-candidate", llm(server.rpcGuessCompanyCandidate))
+	mux.Handle("POST /api/dossiers/build", llm(server.rpcBuildDossier))
+	mux.Handle("POST /api/applications/extract-job-description", llm(server.rpcExtractJobDescription))
+	mux.Handle("POST /api/communications/summarize-thread", llm(server.rpcSummarizeThread))
+	mux.Handle("POST /api/communications/generate-message", llm(server.rpcGenerateMessage))
 	mux.HandleFunc("GET /local/", server.localHome)
 	mux.HandleFunc("GET /local/dashboard", server.localDashboard)
 	mux.HandleFunc("GET /local/companies", server.localCompanies)
