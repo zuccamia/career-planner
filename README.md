@@ -7,6 +7,29 @@ Your data lives in your browser (SQLite-WASM on OPFS). The Go server holds nothi
 it serves the bundle, proxies Google OAuth for optional Drive snapshots, and relays
 LLM calls.
 
+**Try it:** https://career-planner-ecuctbkvkq-uc.a.run.app
+
+## Your data stays yours
+
+The hosted demo is safe to share — the server has no database. Everything you
+enter lives in your browser's private OPFS storage, keyed to your origin and
+profile. Concretely:
+
+- **Nobody else sees your data.** Two people opening the demo URL each get their
+  own empty SQLite file. There is no shared backend to leak from.
+- **Nothing syncs by default.** The Go server only forwards LLM API calls; it
+  does not store, log, or persist your rows. Snapshots to Google Drive are
+  opt-in and go to *your* Drive, not ours.
+- **Clearing browser data wipes it.** OPFS lives with your other site storage.
+  Clearing site data for the domain deletes your database — take a snapshot
+  first from Settings if you want a backup.
+- **Different browsers, browser profiles, and incognito windows have separate
+  databases.** They don't share OPFS.
+
+If you want to guarantee no data ever leaves your machine, run it locally
+([Run it](#run-it)) with `LLM_*` unset — the app degrades gracefully and works
+purely on-device.
+
 ## Features
 
 - **Companies** — from a rough name, the LLM back-fills canonical name, website,
@@ -18,10 +41,6 @@ LLM calls.
 - **Threads** — communication log with LLM summaries and reply drafts
 - **Snapshots** — optional export to Google Drive or a picked local folder
 - **Sample data** — one-click 50-app / 12-company / 24-person seed from Settings
-
-## Stack
-
-Go server · vanilla JS + Tailwind · sqlite-wasm on OPFS · Playwright for E2E.
 
 ## Run it
 
@@ -55,19 +74,6 @@ Missing LLM config disables generation endpoints; the UI degrades gracefully.
 - `make test` — Go tests
 - `npm run test:e2e` — Playwright (runs on `:8081`, LLM disabled, fresh OPFS per test)
 - `go run ./cmd/seed` — regenerate `web/static/local/samples/sample.sqlite` (add `-append` to keep existing rows)
-
-## Layout
-
-```
-cmd/{dev,web,seed}          entrypoints
-internal/{applications,communications,companies,dossiers,people}
-                            LLM-backed RPC handlers
-internal/{app,db,http,shared,sources/llm}
-                            wiring, schema, router, LLM client
-web/static/local/js/        browser: pages, db, storage, ui, entities
-web/templates/local/        HTML shells
-tests/e2e/                  Playwright
-```
 
 ## Contributing
 
