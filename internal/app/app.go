@@ -30,20 +30,28 @@ func New() App {
 		}
 	}
 
-	llmClient := newLLMClient()
+	llmClient, serverLLM := newLLMClient()
 	router := apphttp.NewRouter(
 		companies.NewService(llmClient),
 		dossiers.NewService(llmClient),
 		applications.NewService(llmClient),
 		communications.NewService(llmClient),
+		serverLLM,
 	)
 	return App{Addr: addr, Router: router}
 }
 
-func newLLMClient() llm.Client {
+// newLLMClient loads the server-side LLM config from env vars. Missing/invalid
+// config is not fatal — the server boots BYOK-only and advertises the
+// server-side LLM as unavailable via /api/llm/server-status.
+func newLLMClient() (llm.Client, apphttp.ServerLLM) {
 	config, err := llm.LoadConfig()
 	if err != nil {
-		return nil
+		return nil, apphttp.ServerLLM{}
 	}
-	return llm.NewClient(config)
+	return llm.NewClient(config), apphttp.ServerLLM{
+		Available: true,
+		Provider:  config.Provider,
+		Model:     config.Model,
+	}
 }

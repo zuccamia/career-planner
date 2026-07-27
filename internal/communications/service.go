@@ -31,46 +31,74 @@ func sliceToSet(vals []string) map[string]struct{} {
 	return set
 }
 
-// SummarizeThreadContext runs the summary prompt over a browser-supplied
-// ThreadDetail and returns the summary text.
+// SummaryResult is the raw decoded shape of the summarize prompt response.
+type SummaryResult struct {
+	Summary string `json:"summary"`
+}
+
+// MessageResult is the raw decoded shape of the generate-message prompt response.
+type MessageResult struct {
+	Message string `json:"message"`
+}
+
+// SummarizeThreadContext runs the summary prompt and returns the summary text.
+// Composed from BuildSummaryPrompt + FinalizeSummary.
 func (s *Service) SummarizeThreadContext(ctx context.Context, detail ThreadDetail) (string, error) {
 	if s.client == nil {
 		return "", fmt.Errorf("llm client is not configured")
 	}
-	var out struct {
-		Summary string `json:"summary"`
-	}
-	prompt := llm.Prompt{
-		System: summarizeSystemPrompt,
-		User:   fmt.Sprintf(summarizeUserPrompt, buildThreadContext(detail)),
-	}
-	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
+	var out SummaryResult
+	if err := s.client.GenerateJSON(ctx, s.BuildSummaryPrompt(detail), &out); err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(out.Summary), nil
+	return s.FinalizeSummary(out), nil
 }
 
 // GenerateMessageFromContext drafts a message ("outreach" or "reply") from a
-// browser-supplied ThreadDetail.
+// browser-supplied ThreadDetail. Composed from BuildMessagePrompt + FinalizeMessage.
 func (s *Service) GenerateMessageFromContext(ctx context.Context, detail ThreadDetail, goal string) (string, error) {
-	goal = strings.TrimSpace(strings.ToLower(goal))
-	if goal != "outreach" && goal != "reply" {
-		return "", ErrInvalidGoal
+	prompt, err := s.BuildMessagePrompt(detail, goal)
+	if err != nil {
+		return "", err
 	}
 	if s.client == nil {
 		return "", fmt.Errorf("llm client is not configured")
 	}
-	var out struct {
-		Message string `json:"message"`
-	}
-	prompt := llm.Prompt{
-		System: generateSystemPrompt,
-		User:   fmt.Sprintf(generateUserPrompt, goal, buildThreadContext(detail)),
-	}
+	var out MessageResult
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(out.Message), nil
+	return s.FinalizeMessage(out), nil
+}
+
+// BuildSummaryPrompt assembles the summarize prompt for a ThreadDetail. Pure.
+func (s *Service) BuildSummaryPrompt(detail ThreadDetail) llm.Prompt {
+	return llm.Prompt{
+		System: summarizeSystemPrompt,
+		User:   fmt.Sprintf(summarizeUserPrompt, buildThreadContext(detail)),
+	}
+}
+
+// FinalizeSummary trims a decoded summary result.
+func (s *Service) FinalizeSummary(out SummaryResult) string {
+	return strings.TrimSpace(out.Summary)
+}
+
+// BuildMessagePrompt assembles the message-generation prompt. Validates goal.
+func (s *Service) BuildMessagePrompt(detail ThreadDetail, goal string) (llm.Prompt, error) {
+	goal = strings.TrimSpace(strings.ToLower(goal))
+	if goal != "outreach" && goal != "reply" {
+		return llm.Prompt{}, ErrInvalidGoal
+	}
+	return llm.Prompt{
+		System: generateSystemPrompt,
+		User:   fmt.Sprintf(generateUserPrompt, goal, buildThreadContext(detail)),
+	}, nil
+}
+
+// FinalizeMessage trims a decoded message result.
+func (s *Service) FinalizeMessage(out MessageResult) string {
+	return strings.TrimSpace(out.Message)
 }
 
 // buildThreadContext formats thread, person-note, summary, and entry data for

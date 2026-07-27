@@ -81,20 +81,34 @@ jobs:
       - name: Deploy to Cloud Run
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          HAS_LLM_PROVIDER: ${{ secrets.LLM_PROVIDER != '' }}
+          HAS_LLM_MODEL: ${{ secrets.LLM_MODEL != '' }}
+          HAS_LLM_BASE_URL: ${{ secrets.LLM_BASE_URL != '' }}
+          HAS_LLM_API_KEY: ${{ secrets.LLM_API_KEY != '' }}
           HAS_OAUTH_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID != '' }}
           HAS_OAUTH_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET != '' }}
         run: |
           set -euo pipefail
 
-          SECRETS="LLM_PROVIDER=cp-llm-provider:latest"
-          SECRETS+=",LLM_MODEL=cp-llm-model:latest"
-          SECRETS+=",LLM_BASE_URL=cp-llm-base-url:latest"
-          SECRETS+=",LLM_API_KEY=cp-llm-api-key:latest"
-          if [ "$HAS_OAUTH_ID" = "true" ]; then
-            SECRETS+=",GOOGLE_OAUTH_CLIENT_ID=cp-google-oauth-client-id:latest"
-          fi
-          if [ "$HAS_OAUTH_SECRET" = "true" ]; then
-            SECRETS+=",GOOGLE_OAUTH_CLIENT_SECRET=cp-google-oauth-client-secret:latest"
+          # Only bind secrets that were actually populated in GitHub Secrets.
+          # Missing LLM_* is fine — the server boots BYOK-only in that case
+          # (see internal/app/app.go newLLMClient). Referencing a non-existent
+          # Secret Manager entry would make the revision fail to start.
+          SECRETS=""
+          append_secret() {
+            if [ -n "$SECRETS" ]; then SECRETS+=","; fi
+            SECRETS+="$1"
+          }
+          [ "$HAS_LLM_PROVIDER" = "true" ] && append_secret "LLM_PROVIDER=cp-llm-provider:latest"
+          [ "$HAS_LLM_MODEL"    = "true" ] && append_secret "LLM_MODEL=cp-llm-model:latest"
+          [ "$HAS_LLM_BASE_URL" = "true" ] && append_secret "LLM_BASE_URL=cp-llm-base-url:latest"
+          [ "$HAS_LLM_API_KEY"  = "true" ] && append_secret "LLM_API_KEY=cp-llm-api-key:latest"
+          [ "$HAS_OAUTH_ID"     = "true" ] && append_secret "GOOGLE_OAUTH_CLIENT_ID=cp-google-oauth-client-id:latest"
+          [ "$HAS_OAUTH_SECRET" = "true" ] && append_secret "GOOGLE_OAUTH_CLIENT_SECRET=cp-google-oauth-client-secret:latest"
+
+          SET_SECRETS_ARG=()
+          if [ -n "$SECRETS" ]; then
+            SET_SECRETS_ARG=(--set-secrets="$SECRETS")
           fi
 
           gcloud run deploy "$SERVICE" \
@@ -109,7 +123,7 @@ jobs:
             --min-instances 0 \
             --max-instances 2 \
             --service-account "cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
-            --set-secrets="$SECRETS"
+            "${SET_SECRETS_ARG[@]}"
 
       - name: Show service URL
         run: gcloud run services describe "$SERVICE" --project "${{ secrets.GCP_PROJECT_ID }}" --region "$GCP_REGION" --format='value(status.url)'

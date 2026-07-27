@@ -60,7 +60,18 @@ func (c *HTTPClient) GenerateJSON(ctx context.Context, prompt Prompt, out any) e
 	if err != nil {
 		return err
 	}
+	return DecodeJSONResponse(raw, out)
+}
 
+// DecodeJSONResponse strips markdown fences from a raw model response and
+// unmarshals it into out. Exposed so the BYOK /parse/:name endpoint can
+// apply the exact same fence-stripping the server-side path does — keeping
+// the sanitized shape identical whether the LLM call went through the
+// server's key or the user's browser.
+func DecodeJSONResponse(raw string, out any) error {
+	if out == nil {
+		return &Error{Message: "output target must not be nil"}
+	}
 	cleaned := extractJSON(raw)
 	if err := json.Unmarshal([]byte(cleaned), out); err != nil {
 		return &APIError{Message: fmt.Sprintf("decode JSON response: %v", err)}

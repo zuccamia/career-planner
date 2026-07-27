@@ -11,7 +11,7 @@ LLM calls.
 
 ## Your data stays yours
 
-The hosted demo is safe to share — the server has no database. Everything you
+The public demo is safe to share — the server has no database. Everything you
 enter lives in your browser's private OPFS storage, keyed to your origin and
 profile. Concretely:
 
@@ -29,6 +29,33 @@ profile. Concretely:
 If you want to guarantee no data ever leaves your machine, run it locally
 ([Run it](#run-it)) with `LLM_*` unset — the app degrades gracefully and works
 purely on-device.
+
+### Where the LLM key lives
+
+Two options:
+
+- **Server-side key.** Intended for self-hosters running this app for their
+  own use: set `LLM_*` on the machine you're running and the key persists
+  across browsers, private windows, and IndexedDB wipes — no re-entering it
+  every time. The public demo also happens to use this path (with a per-IP
+  rate limit) so first-time visitors have working AI features immediately,
+  but the primary audience is you-running-it-for-yourself.
+- **Browser-side key (BYOK).** Configured in Settings → AI provider against
+  any OpenAI-compatible endpoint (OpenAI, Groq, Together, Ollama Cloud,
+  MiniMax, self-hosted vLLM/LM Studio, etc.). The key is stored in this
+  browser's IndexedDB and **never sent to the server** — the browser calls
+  the provider directly. BYOK overrides the server-side key when both exist,
+  which is how demo visitors can opt out of the shared key.
+
+Either way the server assembles prompts and sanitizes responses, so results
+are identical across the two paths. With BYOK the server sees the prompt
+text and the raw model response — never the key.
+
+**CORS caveat (BYOK only):** OpenAI, Groq, and Together allow browser calls.
+Some OpenAI-compatible endpoints (notably older self-hosted setups) block
+cross-origin requests — if your test connection fails with a CORS error,
+either self-host the app on the same origin as your provider, or fall back
+to the server-side key path.
 
 ## Features
 
@@ -61,12 +88,16 @@ All via env vars.
 | Var | Purpose |
 |---|---|
 | `APP_ADDR` | bind address (default `:8080`) |
-| `LLM_PROVIDER` | `anthropic` or `openai-compatible` |
-| `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY` | LLM endpoint |
+| `LLM_PROVIDER` | `anthropic` or `openai-compatible` — optional (see below) |
+| `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY` | LLM endpoint — optional (see below) |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | required only for Drive snapshots |
 | `GOOGLE_OAUTH_SCOPES` | override Drive scopes (defaults to appdata + file) |
 
-Missing LLM config disables generation endpoints; the UI degrades gracefully.
+**LLM config is optional.** Set `LLM_*` if you're running the app for your
+own use — the key lives on the server so it survives browser wipes and
+switching browsers. Leave them unset to use the browser-only path: configure
+the key in Settings → AI provider (kept in this browser's IndexedDB). See
+[Where the LLM key lives](#where-the-llm-key-lives) for the tradeoffs.
 
 ## Commands
 

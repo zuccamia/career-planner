@@ -41,59 +41,88 @@ type ExtractJobDescriptionTextInput struct {
 	JobDescriptionRaw string
 }
 
+// JDExtractionContext carries the intermediate results of PrepareJDExtraction
+// so a caller (hosted or BYOK) can call FinalizeJDExtraction later without
+// re-fetching the posting URL. Opaque to the browser — treated as pass-through.
+type JDExtractionContext struct {
+	Prompt         llm.Prompt
+	EnrichedRaw    string
+	Posting        ats.Posting
+}
+
 // ExtractJobDescriptionText runs the JD extraction pipeline on raw text and
 // returns the structured result plus the raw text used (which may have been
-// fetched from JobPostingURL when the caller passed an empty raw).
+// fetched from JobPostingURL when the caller passed an empty raw). Composed
+// from PrepareJDExtraction + FinalizeJDExtraction.
 func (s *Service) ExtractJobDescriptionText(ctx context.Context, input ExtractJobDescriptionTextInput) (JobDescriptionStructured, string, error) {
 	if s.client == nil {
 		return JobDescriptionStructured{}, "", fmt.Errorf("llm client is not configured")
 	}
+	prep, err := s.PrepareJDExtraction(ctx, input)
+	if err != nil {
+		return JobDescriptionStructured{}, "", err
+	}
+	var out JobDescriptionStructured
+	if err := s.client.GenerateJSON(ctx, prep.Prompt, &out); err != nil {
+		return JobDescriptionStructured{}, "", err
+	}
+	return s.FinalizeJDExtraction(out, input, prep), prep.EnrichedRaw, nil
+}
+
+// PrepareJDExtraction assembles the JD extraction prompt. Fetches the ATS
+// posting when input.JobDescriptionRaw is empty. Returns the prompt plus the
+// enriched raw text and posting so FinalizeJDExtraction can reuse them without
+// a second fetch.
+func (s *Service) PrepareJDExtraction(ctx context.Context, input ExtractJobDescriptionTextInput) (JDExtractionContext, error) {
 	raw := strings.TrimSpace(input.JobDescriptionRaw)
 	var posting ats.Posting
 	if raw == "" {
 		if strings.TrimSpace(input.JobPostingURL) == "" {
-			return JobDescriptionStructured{}, "", errors.New("job description raw or posting URL is required")
+			return JDExtractionContext{}, errors.New("job description raw or posting URL is required")
 		}
 		if s.fetchPosting == nil {
-			return JobDescriptionStructured{}, "", errors.New("job posting fetcher is not configured")
+			return JDExtractionContext{}, errors.New("job posting fetcher is not configured")
 		}
 		fetched, err := s.fetchPosting(ctx, input.JobPostingURL)
 		if err != nil {
-			return JobDescriptionStructured{}, "", fmt.Errorf("could not extract job description from %s: %w — paste the description text instead", input.JobPostingURL, err)
+			return JDExtractionContext{}, fmt.Errorf("could not extract job description from %s: %w — paste the description text instead", input.JobPostingURL, err)
 		}
 		posting = fetched
 		raw = strings.TrimSpace(posting.DescriptionText)
 		if raw == "" {
-			return JobDescriptionStructured{}, "", fmt.Errorf("no job description text found at %s — paste the description text instead", input.JobPostingURL)
+			return JDExtractionContext{}, fmt.Errorf("no job description text found at %s — paste the description text instead", input.JobPostingURL)
 		}
 		// Fold structured ATS facts into the raw text so it's a self-contained
 		// record. Otherwise metadata that lived only in JSON-LD (compensation,
 		// department, etc.) would be lost on any later re-extraction from raw.
 		raw = enrichRawWithATSMetadata(posting, input.JobPostingURL, raw)
 	}
+	return JDExtractionContext{
+		Prompt: llm.Prompt{
+			System: extractJobDescriptionSystemPrompt,
+			User: fmt.Sprintf(
+				extractJobDescriptionUserPrompt,
+				input.CompanyName,
+				input.RoleTitle,
+				input.JobPostingURL,
+				buildATSHintsBlock(posting),
+				raw,
+			),
+		},
+		EnrichedRaw: raw,
+		Posting:     posting,
+	}, nil
+}
 
-	var out JobDescriptionStructured
-	prompt := llm.Prompt{
-		System: extractJobDescriptionSystemPrompt,
-		User: fmt.Sprintf(
-			extractJobDescriptionUserPrompt,
-			input.CompanyName,
-			input.RoleTitle,
-			input.JobPostingURL,
-			buildATSHintsBlock(posting),
-			raw,
-		),
-	}
-	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
-		return JobDescriptionStructured{}, "", err
-	}
+// FinalizeJDExtraction sanitizes a decoded LLM result and overlays ATS-verified
+// fields. Pure — no I/O.
+func (s *Service) FinalizeJDExtraction(out JobDescriptionStructured, input ExtractJobDescriptionTextInput, prep JDExtractionContext) JobDescriptionStructured {
 	structured := sanitizeJobDescriptionStructured(out, extractionContext{
 		CompanyName:       input.CompanyName,
 		RoleTitle:         input.RoleTitle,
-		JobDescriptionRaw: raw,
+		JobDescriptionRaw: prep.EnrichedRaw,
 	})
-	structured = overlayATSPosting(structured, posting)
-	return structured, raw, nil
+	return overlayATSPosting(structured, prep.Posting)
 }
 
 // enrichRawWithATSMetadata prepends a "Job details" preamble to the raw

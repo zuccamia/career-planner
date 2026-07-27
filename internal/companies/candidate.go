@@ -11,32 +11,45 @@ import (
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
-// GuessCandidate turns free-form user input into a probable canonical company record for confirmation.
+// GuessCandidate turns free-form user input into a probable canonical company
+// record for confirmation. Composed from BuildCandidatePrompt + FinalizeCandidate
+// so the BYOK path can call each half independently.
 func (s *Service) GuessCandidate(ctx context.Context, input string) (Candidate, error) {
-	trimmed := strings.TrimSpace(input)
-	fallback := Candidate{OfficialName: trimmed}
-	if trimmed == "" {
+	prompt, fallback, skip := s.BuildCandidatePrompt(input)
+	if skip || s == nil || s.client == nil {
 		return fallback, nil
 	}
-	if s == nil || s.client == nil {
-		return fallback, nil
-	}
-
-	prompt := llm.Prompt{
-		System: companyCandidateSystemPrompt,
-		User:   fmt.Sprintf(companyCandidateUserPrompt, trimmed),
-	}
-
 	var candidate Candidate
 	if err := s.client.GenerateJSON(ctx, prompt, &candidate); err != nil {
 		return fallback, err
 	}
+	return s.FinalizeCandidate(candidate, input), nil
+}
 
+// BuildCandidatePrompt assembles the LLM prompt for GuessCandidate along with
+// the fallback to return when the LLM should be skipped (empty input). skip=true
+// means the caller should return fallback without invoking the LLM.
+func (s *Service) BuildCandidatePrompt(input string) (llm.Prompt, Candidate, bool) {
+	trimmed := strings.TrimSpace(input)
+	fallback := Candidate{OfficialName: trimmed}
+	if trimmed == "" {
+		return llm.Prompt{}, fallback, true
+	}
+	return llm.Prompt{
+		System: companyCandidateSystemPrompt,
+		User:   fmt.Sprintf(companyCandidateUserPrompt, trimmed),
+	}, fallback, false
+}
+
+// FinalizeCandidate applies sanitization + fallback logic to a decoded LLM
+// candidate. Pure — no I/O. Runs on both hosted and BYOK paths.
+func (s *Service) FinalizeCandidate(candidate Candidate, input string) Candidate {
+	trimmed := strings.TrimSpace(input)
 	candidate = sanitizeCandidate(candidate, trimmed)
 	if candidate.OfficialName == "" {
 		candidate.OfficialName = trimmed
 	}
-	return candidate, nil
+	return candidate
 }
 
 // sanitizeCandidate trims and URL-normalizes guessed company fields while preserving a fallback name.

@@ -11,26 +11,47 @@ import (
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
+// ParseAndFinalize decodes a raw LLM response into the private llmResult and
+// runs FinalizeDossier. Exposed for the BYOK parse endpoint, which cannot
+// name llmResult directly.
+func (s *Service) ParseAndFinalize(raw string) (Dossier, error) {
+	var generated llmResult
+	if err := llm.DecodeJSONResponse(raw, &generated); err != nil {
+		return Dossier{}, err
+	}
+	return s.FinalizeDossier(generated), nil
+}
+
 // BuildText generates a dossier for a company via the LLM without persisting
-// it. The RPC handler forwards the returned Dossier to the browser, which
-// owns storage. Errors surface when the LLM client is unconfigured or fails.
+// it. Composed from BuildDossierPrompt + FinalizeDossier so the BYOK path can
+// call each half independently.
 func (s *Service) BuildText(ctx context.Context, company companies.Company) (Dossier, error) {
 	if s.client == nil {
 		return Dossier{}, fmt.Errorf("llm client is not configured")
 	}
-	prompt := llm.Prompt{System: dossierSystemPrompt, User: fmt.Sprintf(dossierUserPrompt,
+	prompt := s.BuildDossierPrompt(company)
+	var generated llmResult
+	if err := s.client.GenerateJSON(ctx, prompt, &generated); err != nil {
+		return Dossier{}, fmt.Errorf("generate dossier: %w", err)
+	}
+	return s.FinalizeDossier(generated), nil
+}
+
+// BuildDossierPrompt assembles the LLM prompt for a company dossier. Pure —
+// no I/O, no LLM call.
+func (s *Service) BuildDossierPrompt(company companies.Company) llm.Prompt {
+	return llm.Prompt{System: dossierSystemPrompt, User: fmt.Sprintf(dossierUserPrompt,
 		company.OfficialName,
 		company.Website,
 		company.ATSURL,
 		company.ATSProvider,
 	)}
+}
 
-	var generated llmResult
-	if err := s.client.GenerateJSON(ctx, prompt, &generated); err != nil {
-		return Dossier{}, fmt.Errorf("generate dossier: %w", err)
-	}
+// FinalizeDossier sanitizes a decoded LLM result and maps it into the domain
+// Dossier shape. Pure — no I/O.
+func (s *Service) FinalizeDossier(generated llmResult) Dossier {
 	result := sanitizeResult(generated)
-
 	return Dossier{
 		Status:                "completed",
 		CareersURL:            result.CareersURL,
@@ -46,5 +67,5 @@ func (s *Service) BuildText(ctx context.Context, company companies.Company) (Dos
 		InternshipSummary:     result.InternshipSummary,
 		MajorTechStacks:       result.MajorTechStacks,
 		Reasoning:             result.Reasoning,
-	}, nil
+	}
 }

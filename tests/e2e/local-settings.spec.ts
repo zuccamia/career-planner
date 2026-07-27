@@ -16,8 +16,8 @@ test.describe('local settings page', () => {
   test('renders both backends as not connected and shows snapshot controls', async ({ page }) => {
     await gotoSettings(page);
 
-    await expect(page.getByText('Local disk')).toBeVisible();
-    await expect(page.getByText('Google Drive')).toBeVisible();
+    await expect(page.getByText('Local disk', { exact: true })).toBeVisible();
+    await expect(page.getByText('Google Drive', { exact: true })).toBeVisible();
 
     // Both status pills read "not connected" until the user wires a backend.
     const notConnected = page.locator('.inline-flex', { hasText: 'not connected' });

@@ -14,11 +14,15 @@ import {
   setCurrentSnapshotName, clearCurrentSnapshotName,
 } from '../storage/current-snapshot.mjs';
 import { refreshCurrentSnapshotBadge } from '../ui/current_snapshot.mjs';
+import { refreshAiModeBadge } from '../ui/ai_mode_badge.mjs';
 import { idbWipe } from '../storage/idb.mjs';
+import { getByokConfig, saveByokConfig, clearByokConfig } from '../storage/byok.mjs';
+import { testConnection, getServerLLMStatus } from '../llm-client.mjs';
 import { escapeHtml } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
 import { button, badge, inlineError, setInlineError } from '../ui/components.mjs';
+import { icon } from '../ui/icons.mjs';
 
 const kb = (n) => `${(n/1024).toFixed(1)} KB`;
 
@@ -36,6 +40,49 @@ const render = (root) => {
           Your data lives in this browser. Connect one or more backends below so snapshots
           survive if the browser clears its storage.
         </p>
+      </section>
+
+      <section id="ai-provider" class="${CLS.card}">
+        <header class="space-y-1">
+          <div class="flex items-center gap-2">
+            <p class="${CLS.eyebrow}">AI provider</p>
+            <span id="byok-status"></span>
+          </div>
+          <p class="text-sm text-slate-500">
+            Bring your own OpenAI-compatible key. The browser calls your provider directly;
+            the server assembles prompts and sanitizes responses, but never sees the key.
+            Stored in this browser's IndexedDB.
+          </p>
+        </header>
+        ${inlineError({ id: 'byok-error' })}
+        <div id="byok-fields" class="space-y-3">
+          <label class="block text-sm text-slate-700">
+            Base URL
+            <input id="byok-base-url" type="url" placeholder="https://api.openai.com/v1" class="${CLS.input} mt-1">
+          </label>
+          <label class="block text-sm text-slate-700">
+            Model
+            <input id="byok-model" type="text" placeholder="gpt-4o-mini" class="${CLS.input} mt-1">
+          </label>
+          <label class="block text-sm text-slate-700">
+            API key
+            <span class="ml-1 text-xs text-slate-500">(stored only in this browser)</span>
+            <div class="mt-1 flex items-center gap-2">
+              <input id="byok-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" class="${CLS.input} flex-1">
+              ${button({ id: 'btn-byok-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: 'Show API key' })}
+            </div>
+          </label>
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input id="byok-clear-on-signout" type="checkbox" class="h-4 w-4">
+            <span>Clear my key when I sign out of Google Drive</span>
+          </label>
+          <div class="flex flex-wrap items-center gap-3">
+            ${button({ id: 'btn-byok-save', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: 'Save AI provider settings', disabled: true })}
+            ${button({ id: 'btn-byok-test', variant: 'secondaryCompact', icon: 'link', label: 'Test connection' })}
+            ${button({ id: 'btn-byok-clear', variant: 'dangerCompact', icon: 'trash', label: 'Clear key' })}
+            <span id="byok-test-result" class="text-sm text-slate-600"></span>
+          </div>
+        </div>
       </section>
 
       <section class="${CLS.card}">
@@ -192,6 +239,34 @@ const refreshDrive = () => {
   }
 };
 
+const refreshByokStatus = async () => {
+  const status = document.getElementById('byok-status');
+  const [cfg, serverLLM] = await Promise.all([getByokConfig(), getServerLLMStatus()]);
+  const byokActive = !!(cfg && cfg.enabled && cfg.baseUrl && cfg.apiKey && cfg.model);
+  if (byokActive) {
+    status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: `BYOK · ${cfg.model}` });
+  } else if (!serverLLM.available) {
+    status.innerHTML = badge({ color: 'amber', size: 'xs', icon: 'sparkles', label: 'setup needed' });
+  } else {
+    status.innerHTML = '';
+  }
+  // Sidebar badge tracks the same state — refresh it so saves/clears here
+  // are reflected immediately without a page reload.
+  refreshAiModeBadge();
+};
+
+// readByokForm collects the form values into the persisted shape. Does not
+// validate — callers (test / save) surface field-level errors themselves.
+// enabled is implicitly true: the only way to persist a config through this
+// form is BYOK-on. "Clear key" is the escape hatch back to the server-side LLM.
+const readByokForm = () => ({
+  enabled: true,
+  baseUrl: document.getElementById('byok-base-url').value,
+  model: document.getElementById('byok-model').value,
+  apiKey: document.getElementById('byok-api-key').value,
+  clearOnSignOut: document.getElementById('byok-clear-on-signout').checked,
+});
+
 const refreshOnlineBanner = () => {
   const el = document.getElementById('online-banner');
   if (!el) return;
@@ -268,6 +343,86 @@ const deleteSnapshot = (backend, listEl) => async (id, displayName) => {
   }
 };
 
+const wireByok = async () => {
+  const cfg = await getByokConfig();
+  const baseUrl = document.getElementById('byok-base-url');
+  const model = document.getElementById('byok-model');
+  const apiKey = document.getElementById('byok-api-key');
+  const clearOnSignout = document.getElementById('byok-clear-on-signout');
+  const result = document.getElementById('byok-test-result');
+  const saveBtn = document.getElementById('btn-byok-save');
+
+  baseUrl.value = cfg?.baseUrl || 'https://api.openai.com/v1';
+  model.value = cfg?.model || 'gpt-4o-mini';
+  apiKey.value = cfg?.apiKey || '';
+  clearOnSignout.checked = !!cfg?.clearOnSignOut;
+
+  // Test-before-save gate: Save is disabled until Test connection succeeds
+  // for the current field values. Any edit to baseUrl/model/apiKey clears
+  // the "tested" state so users can't save credentials we haven't verified.
+  // Seeded from persisted cfg on load — a config that was saved previously
+  // must have passed the gate at some point, so we trust it across reloads.
+  const fingerprint = (b, m, k) => `${b}|${m}|${k}`;
+  let lastTestedFingerprint = cfg ? fingerprint(cfg.baseUrl, cfg.model, cfg.apiKey) : null;
+  const currentFingerprint = () => fingerprint(baseUrl.value.trim(), model.value.trim(), apiKey.value.trim());
+  const syncSaveEnabled = () => {
+    saveBtn.disabled = !lastTestedFingerprint || lastTestedFingerprint !== currentFingerprint();
+  };
+  syncSaveEnabled();
+  [baseUrl, model, apiKey].forEach(el => el.addEventListener('input', syncSaveEnabled));
+
+  const revealBtn = document.getElementById('btn-byok-reveal');
+  revealBtn.addEventListener('click', () => {
+    const revealed = apiKey.type === 'password';
+    apiKey.type = revealed ? 'text' : 'password';
+    revealBtn.innerHTML = icon(revealed ? 'eyeSlash' : 'eye');
+    revealBtn.setAttribute('aria-label', revealed ? 'Hide API key' : 'Show API key');
+  });
+
+  document.getElementById('btn-byok-test').addEventListener('click', async () => {
+    setInlineError('byok-error', '');
+    result.textContent = 'Testing…';
+    const form = readByokForm();
+    if (!form.baseUrl || !form.apiKey) {
+      result.textContent = '';
+      setInlineError('byok-error', 'Base URL and API key are required to test.');
+      return;
+    }
+    const res = await testConnection({ baseUrl: form.baseUrl, apiKey: form.apiKey });
+    if (res.ok) {
+      result.textContent = `✓ Reached provider in ${res.latencyMs}ms (${res.modelsCount} models listed)`;
+      lastTestedFingerprint = currentFingerprint();
+      syncSaveEnabled();
+    } else {
+      result.textContent = '';
+      setInlineError('byok-error', `Test failed (${res.latencyMs ?? '—'}ms): ${res.error}`);
+    }
+  });
+
+  document.getElementById('btn-byok-save').addEventListener('click', async () => {
+    setInlineError('byok-error', '');
+    const form = readByokForm();
+    if (!form.baseUrl || !form.apiKey || !form.model) {
+      setInlineError('byok-error', 'Base URL, model, and API key are required to enable BYOK.');
+      return;
+    }
+    await saveByokConfig(form);
+    toast(`BYOK enabled · ${form.model}`, 'ok');
+    await refreshByokStatus();
+  });
+
+  document.getElementById('btn-byok-clear').addEventListener('click', async () => {
+    if (!confirm('Clear the saved API key from this browser?')) return;
+    await clearByokConfig();
+    apiKey.value = '';
+    result.textContent = '';
+    lastTestedFingerprint = null;
+    syncSaveEnabled();
+    toast('BYOK key cleared', 'info');
+    await refreshByokStatus();
+  });
+};
+
 const wireLocalDisk = () => {
   const supportEl = document.getElementById('local-disk-support');
   const connect = document.getElementById('btn-connect-disk');
@@ -319,6 +474,16 @@ const wireDrive = () => {
 
   document.getElementById('btn-signout-drive').addEventListener('click', async () => {
     await googleDrive.signOut();
+    // Respect the BYOK "clear on signout" preference — some users treat the
+    // Drive session as their trust anchor for whether personal creds should
+    // persist on this machine.
+    const cfg = await getByokConfig();
+    if (cfg?.clearOnSignOut) {
+      await clearByokConfig();
+      const apiKey = document.getElementById('byok-api-key');
+      if (apiKey) apiKey.value = '';
+      await refreshByokStatus();
+    }
     listEl.innerHTML = '';
     toast('Signed out of Google Drive', 'info');
     refreshDrive();
@@ -429,6 +594,7 @@ const wireSnapshotActions = () => {
 // ---------- entrypoint ----------
 export const mountSettings = async (root) => {
   render(root);
+  await wireByok();
   wireLocalDisk();
   wireDrive();
   wireSnapshotActions();
@@ -437,6 +603,7 @@ export const mountSettings = async (root) => {
   refreshLocalDisk();
   refreshDrive();
   refreshOnlineBanner();
+  await refreshByokStatus();
 
   window.addEventListener('online', () => { refreshDrive(); refreshOnlineBanner(); });
   window.addEventListener('offline', () => { refreshDrive(); refreshOnlineBanner(); });
