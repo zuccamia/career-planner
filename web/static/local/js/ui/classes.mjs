@@ -5,6 +5,11 @@ export const CLS = {
   card:                 'space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm',
   eyebrow:              'text-sm font-semibold uppercase tracking-[0.14em] text-blue-700',
   label:                'text-sm font-medium text-slate-900',
+  // inputBase carries only the visual styling — border, padding, focus ring.
+  // Use this when you need to control width yourself (flex rows with mixed
+  // sizes). CLS.input adds w-full on top for the common "one field per row"
+  // case that formField() renders.
+  inputBase:            'rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100',
   input:                'w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100',
   inputCompact:         'w-16 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100',
   btnPrimary:           'inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40',

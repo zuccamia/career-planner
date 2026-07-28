@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/brags"
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/sources/ats"
@@ -95,6 +96,21 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			ATSURL:       strings.TrimSpace(body.ATSURL),
 			ATSProvider:  strings.TrimSpace(body.ATSProvider),
 		})
+		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
+
+	case "generate-brag-tags":
+		var body struct {
+			Body string `json:"body"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		if strings.TrimSpace(body.Body) == "" {
+			writeErr(w, http.StatusBadRequest, "body is required")
+			return
+		}
+		prompt := s.brags.BuildGenerateTagsPrompt(body.Body)
 		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
 
 	case "summarize-thread":
@@ -197,6 +213,21 @@ func (s *Server) rpcBYOKParse(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, result)
+
+	case "generate-brag-tags":
+		var body struct {
+			Raw string `json:"raw"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		var out brags.TagResult
+		if err := llm.DecodeJSONResponse(body.Raw, &out); err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, brags.TagResult{Tags: s.brags.FinalizeTags(out)})
 
 	case "summarize-thread":
 		var body struct {

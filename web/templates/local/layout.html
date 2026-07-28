@@ -24,6 +24,10 @@
             <span data-icon="chartBar"></span>
             <span>Dashboard</span>
           </a>
+          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "profile"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/profile">
+            <span data-icon="profileCard"></span>
+            <span>Profile</span>
+          </a>
           <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "companies"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/companies">
             <span data-icon="companies"></span>
             <span>Companies</span>

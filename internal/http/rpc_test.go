@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/brags"
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
@@ -36,12 +37,13 @@ func (f *fakeLLM) GenerateJSON(_ context.Context, _ llm.Prompt, out any) error {
 	return json.Unmarshal([]byte(f.payload), out)
 }
 
-func newTestServer(t *testing.T, cLLM, dLLM, aLLM, commLLM llm.Client) *Server {
+func newTestServer(t *testing.T, cLLM, dLLM, aLLM, bragLLM, commLLM llm.Client) *Server {
 	t.Helper()
 	return &Server{
 		companies:      companies.NewService(cLLM),
 		dossiers:       dossiers.NewService(dLLM),
 		applications:   applications.NewService(aLLM),
+		brags:          brags.NewService(bragLLM),
 		communications: communications.NewService(commLLM),
 	}
 }
@@ -64,7 +66,7 @@ func decodeBody(t *testing.T, rr *httptest.ResponseRecorder, out any) {
 // ---------- rpcGuessCompanyCandidate ----------
 
 func TestRPCGuessCompanyCandidateBadJSON(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, nil)
+	s := newTestServer(t, nil, nil, nil, nil, nil)
 	rr := doJSON(t, s.rpcGuessCompanyCandidate, `{not json`)
 	if rr.Code != nethttp.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
@@ -72,7 +74,7 @@ func TestRPCGuessCompanyCandidateBadJSON(t *testing.T) {
 }
 
 func TestRPCGuessCompanyCandidateEmptyName(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, nil)
+	s := newTestServer(t, nil, nil, nil, nil, nil)
 	rr := doJSON(t, s.rpcGuessCompanyCandidate, `{"name":"   "}`)
 	if rr.Code != nethttp.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
@@ -82,7 +84,7 @@ func TestRPCGuessCompanyCandidateEmptyName(t *testing.T) {
 func TestRPCGuessCompanyCandidateLLMErrorReturnsWarning(t *testing.T) {
 	// Service returns fallback candidate + error when LLM fails; handler
 	// surfaces both as 200 with a warning field.
-	s := newTestServer(t, &fakeLLM{err: errors.New("llm blew up")}, nil, nil, nil)
+	s := newTestServer(t, &fakeLLM{err: errors.New("llm blew up")}, nil, nil, nil, nil)
 	rr := doJSON(t, s.rpcGuessCompanyCandidate, `{"name":"Acme"}`)
 	if rr.Code != nethttp.StatusOK {
 		t.Fatalf("status = %d, want 200 (fallback path)", rr.Code)
@@ -101,7 +103,7 @@ func TestRPCGuessCompanyCandidateLLMErrorReturnsWarning(t *testing.T) {
 }
 
 func TestRPCGuessCompanyCandidateSuccess(t *testing.T) {
-	s := newTestServer(t, &fakeLLM{payload: `{"official_name":"Acme Corp","website":"https://acme.example"}`}, nil, nil, nil)
+	s := newTestServer(t, &fakeLLM{payload: `{"official_name":"Acme Corp","website":"https://acme.example"}`}, nil, nil, nil, nil)
 	rr := doJSON(t, s.rpcGuessCompanyCandidate, `{"name":"acme"}`)
 	if rr.Code != nethttp.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
@@ -122,7 +124,7 @@ func TestRPCGuessCompanyCandidateSuccess(t *testing.T) {
 // ---------- rpcBuildDossier ----------
 
 func TestRPCBuildDossierBadJSON(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, nil)
+	s := newTestServer(t, nil, nil, nil, nil, nil)
 	rr := doJSON(t, s.rpcBuildDossier, `not json`)
 	if rr.Code != nethttp.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
@@ -130,7 +132,7 @@ func TestRPCBuildDossierBadJSON(t *testing.T) {
 }
 
 func TestRPCBuildDossierMissingName(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, nil)
+	s := newTestServer(t, nil, nil, nil, nil, nil)
 	rr := doJSON(t, s.rpcBuildDossier, `{"official_name":"  "}`)
 	if rr.Code != nethttp.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
@@ -138,7 +140,7 @@ func TestRPCBuildDossierMissingName(t *testing.T) {
 }
 
 func TestRPCBuildDossierServiceErrorReturns500(t *testing.T) {
-	s := newTestServer(t, nil, &fakeLLM{err: errors.New("boom")}, nil, nil)
+	s := newTestServer(t, nil, &fakeLLM{err: errors.New("boom")}, nil, nil, nil)
 	rr := doJSON(t, s.rpcBuildDossier, `{"official_name":"Acme"}`)
 	if rr.Code != nethttp.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rr.Code)
@@ -146,7 +148,7 @@ func TestRPCBuildDossierServiceErrorReturns500(t *testing.T) {
 }
 
 func TestRPCBuildDossierSuccess(t *testing.T) {
-	s := newTestServer(t, nil, &fakeLLM{payload: `{"company_summary":"Acme makes stuff"}`}, nil, nil)
+	s := newTestServer(t, nil, &fakeLLM{payload: `{"company_summary":"Acme makes stuff"}`}, nil, nil, nil)
 	rr := doJSON(t, s.rpcBuildDossier, `{"official_name":"Acme"}`)
 	if rr.Code != nethttp.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
@@ -156,7 +158,7 @@ func TestRPCBuildDossierSuccess(t *testing.T) {
 // ---------- rpcExtractJobDescription ----------
 
 func TestRPCExtractJobDescriptionBadJSON(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, nil)
+	s := newTestServer(t, nil, nil, nil, nil, nil)
 	rr := doJSON(t, s.rpcExtractJobDescription, `not json`)
 	if rr.Code != nethttp.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
@@ -164,7 +166,7 @@ func TestRPCExtractJobDescriptionBadJSON(t *testing.T) {
 }
 
 func TestRPCExtractJobDescriptionServiceError(t *testing.T) {
-	s := newTestServer(t, nil, nil, &fakeLLM{err: errors.New("boom")}, nil)
+	s := newTestServer(t, nil, nil, &fakeLLM{err: errors.New("boom")}, nil, nil)
 	rr := doJSON(t, s.rpcExtractJobDescription, `{"job_description_raw":"raw"}`)
 	if rr.Code != nethttp.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", rr.Code)
@@ -172,7 +174,7 @@ func TestRPCExtractJobDescriptionServiceError(t *testing.T) {
 }
 
 func TestRPCExtractJobDescriptionSuccess(t *testing.T) {
-	s := newTestServer(t, nil, nil, &fakeLLM{payload: `{"role_title":"Engineer"}`}, nil)
+	s := newTestServer(t, nil, nil, &fakeLLM{payload: `{"role_title":"Engineer"}`}, nil, nil)
 	rr := doJSON(t, s.rpcExtractJobDescription, `{"job_description_raw":"  raw body  "}`)
 	if rr.Code != nethttp.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
@@ -190,10 +192,49 @@ func TestRPCExtractJobDescriptionSuccess(t *testing.T) {
 	}
 }
 
+// ---------- rpcGenerateBragTags ----------
+
+func TestRPCGenerateBragTagsBadJSON(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcGenerateBragTags, `nope`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCGenerateBragTagsEmptyBody(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcGenerateBragTags, `{"body":"   "}`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCGenerateBragTagsServiceError(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, &fakeLLM{err: errors.New("boom")}, nil)
+	rr := doJSON(t, s.rpcGenerateBragTags, `{"body":"Shipped feature flags"}`)
+	if rr.Code != nethttp.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rr.Code)
+	}
+}
+
+func TestRPCGenerateBragTagsSuccess(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, &fakeLLM{payload: `{"tags":[" Feature Flags ","observability"]}`}, nil)
+	rr := doJSON(t, s.rpcGenerateBragTags, `{"body":"Shipped feature flags and improved observability"}`)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	var body brags.TagResult
+	decodeBody(t, rr, &body)
+	if len(body.Tags) != 2 || body.Tags[0] != "feature flags" || body.Tags[1] != "observability" {
+		t.Fatalf("tags = %#v, want normalized tags", body.Tags)
+	}
+}
+
 // ---------- rpcSummarizeThread ----------
 
 func TestRPCSummarizeThreadBadJSON(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, nil)
+	s := newTestServer(t, nil, nil, nil, nil, nil)
 	rr := doJSON(t, s.rpcSummarizeThread, `nope`)
 	if rr.Code != nethttp.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
@@ -201,7 +242,7 @@ func TestRPCSummarizeThreadBadJSON(t *testing.T) {
 }
 
 func TestRPCSummarizeThreadServiceError(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, &fakeLLM{err: errors.New("boom")})
+	s := newTestServer(t, nil, nil, nil, nil, &fakeLLM{err: errors.New("boom")})
 	rr := doJSON(t, s.rpcSummarizeThread, `{"thread":{"person_name":"Jane"}}`)
 	if rr.Code != nethttp.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", rr.Code)
@@ -209,7 +250,7 @@ func TestRPCSummarizeThreadServiceError(t *testing.T) {
 }
 
 func TestRPCSummarizeThreadSuccess(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, &fakeLLM{payload: `{"summary":"  short  "}`})
+	s := newTestServer(t, nil, nil, nil, nil, &fakeLLM{payload: `{"summary":"  short  "}`})
 	rr := doJSON(t, s.rpcSummarizeThread, `{"thread":{"person_name":"Jane"}}`)
 	if rr.Code != nethttp.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)
@@ -224,7 +265,7 @@ func TestRPCSummarizeThreadSuccess(t *testing.T) {
 // ---------- rpcGenerateMessage ----------
 
 func TestRPCGenerateMessageBadJSON(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, nil)
+	s := newTestServer(t, nil, nil, nil, nil, nil)
 	rr := doJSON(t, s.rpcGenerateMessage, `nope`)
 	if rr.Code != nethttp.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
@@ -233,7 +274,7 @@ func TestRPCGenerateMessageBadJSON(t *testing.T) {
 
 func TestRPCGenerateMessageInvalidGoalReturns502(t *testing.T) {
 	// ErrInvalidGoal bubbles up as a service error → 502 by handler policy.
-	s := newTestServer(t, nil, nil, nil, &fakeLLM{payload: `{"message":"x"}`})
+	s := newTestServer(t, nil, nil, nil, nil, &fakeLLM{payload: `{"message":"x"}`})
 	rr := doJSON(t, s.rpcGenerateMessage, `{"goal":"bogus","thread":{"person_name":"Jane"}}`)
 	if rr.Code != nethttp.StatusBadGateway {
 		t.Fatalf("status = %d, want 502", rr.Code)
@@ -241,7 +282,7 @@ func TestRPCGenerateMessageInvalidGoalReturns502(t *testing.T) {
 }
 
 func TestRPCGenerateMessageSuccess(t *testing.T) {
-	s := newTestServer(t, nil, nil, nil, &fakeLLM{payload: `{"message":"  hi  "}`})
+	s := newTestServer(t, nil, nil, nil, nil, &fakeLLM{payload: `{"message":"  hi  "}`})
 	rr := doJSON(t, s.rpcGenerateMessage, `{"goal":"outreach","thread":{"person_name":"Jane"}}`)
 	if rr.Code != nethttp.StatusOK {
 		t.Fatalf("status = %d, want 200", rr.Code)

@@ -158,7 +158,8 @@ const render = (root) => {
             Wipes the SQLite database (OPFS) and backend metadata (IndexedDB) in this browser.
             Snapshots already saved to Drive or your local folder are <strong>not</strong> touched —
             use them to restore. Useful for simulating a fresh device or total local data loss.
-            "Load sample data" replaces the current DB with a 50-application seed for quick demos.
+            "Load sample data" replaces the current DB with a seed dataset (profile overview,
+            sparks, 2 resumes, 3 brag entries, 12 companies, 24 people, 50 applications) for quick demos.
           </p>
         </div>
         ${inlineError({ id: 'danger-error' })}
@@ -533,7 +534,7 @@ const wireSnapshotActions = () => {
   });
 
   document.getElementById('btn-load-sample').addEventListener('click', async () => {
-    if (!confirm('Replace the current database with the checked-in sample dataset (50 apps)?')) return;
+    if (!confirm('Replace the current database with the checked-in sample dataset (profile + 12 companies + 24 people + 50 apps)?')) return;
     setInlineError('danger-error', '');
     try {
       const resp = await fetch('/static/local/samples/sample.sqlite', { cache: 'no-store' });

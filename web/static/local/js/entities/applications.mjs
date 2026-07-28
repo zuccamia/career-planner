@@ -12,6 +12,7 @@
 
 import { exec, transaction } from '../db/client.mjs';
 import { APPLICATION_STATUSES } from '../db/schema.mjs';
+import { sanitizeURL } from '../ui/dom.mjs';
 
 export { APPLICATION_STATUSES };
 
@@ -53,7 +54,7 @@ const normalize = (data) => ({
   company_id: data.company_id,
   person_id: data.person_id ?? null,
   role_title: (data.role_title ?? '').trim(),
-  job_posting_url: (data.job_posting_url ?? '').trim(),
+  job_posting_url: sanitizeURL(data.job_posting_url),
   job_description_raw: data.job_description_raw ?? '',
   job_description_extracted_json: data.job_description_extracted_json ?? '{}',
   status: data.status ?? 'wishlist',

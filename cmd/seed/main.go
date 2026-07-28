@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"flag"
 	"fmt"
 	"log"
@@ -12,6 +13,12 @@ import (
 
 	appdb "github.com/zuccamia/career-planner/internal/db"
 )
+
+//go:embed samples/resume.md
+var sampleResumeMarkdown string
+
+//go:embed samples/resume.typ
+var sampleResumeTypst string
 
 type companySeed struct {
 	Name        string
@@ -55,6 +62,9 @@ func run(args []string) error {
 	if !*append_ {
 		if err := resetApplicationData(ctx, database); err != nil {
 			return fmt.Errorf("reset application data: %w", err)
+		}
+		if err := resetProfileData(ctx, database); err != nil {
+			return fmt.Errorf("reset profile data: %w", err)
 		}
 	}
 
@@ -134,8 +144,14 @@ func run(args []string) error {
 		totalPeople += len(ids)
 	}
 
+	profileSummary, err := seedProfile(ctx, database, now)
+	if err != nil {
+		return fmt.Errorf("seed profile: %w", err)
+	}
+
 	fmt.Printf("Seeded %d applications with %d status-change events\n", insertedApplications, insertedEvents)
 	fmt.Printf("Seeded %d people, %d communication threads with %d entries\n", totalPeople, insertedThreads, insertedEntries)
+	fmt.Printf("Seeded profile: %s\n", profileSummary)
 	for _, status := range []string{"wishlist", "applied", "online_assessment", "first_interview", "second_interview", "additional_interview", "offer", "rejected", "withdrawn"} {
 		if statusCounts[status] == 0 {
 			continue
@@ -162,6 +178,139 @@ func resetApplicationData(ctx context.Context, database *sql.DB) error {
 		}
 	}
 	return nil
+}
+
+// resetProfileData clears the profile-related tables so re-runs of the seeder
+// produce a reproducible profile section, mirroring resetApplicationData's
+// contract. profile_overview has a CHECK(id=1), so this UPDATEs its columns
+// back to empty rather than deleting the row.
+func resetProfileData(ctx context.Context, database *sql.DB) error {
+	statements := []string{
+		`UPDATE profile_overview SET name='', headline='', summary='', skills_json='[]', onboarded_at=NULL, updated_at=datetime('now') WHERE id=1`,
+		`DELETE FROM career_sparks`,
+		`DELETE FROM resumes`,
+		`DELETE FROM brag_entries`,
+		`DELETE FROM sqlite_sequence WHERE name IN ('career_sparks', 'resumes', 'brag_entries')`,
+	}
+	for _, statement := range statements {
+		if _, err := database.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("exec %q: %w", statement, err)
+		}
+	}
+	return nil
+}
+
+// seedProfile populates the Profile page — overview, ordered sparks (with
+// ties so the "top-priority tier" highlight has something to lift), two
+// resumes (markdown + Typst embedded from cmd/seed/samples/), and three brag
+// entries. Returns a short summary line for the CLI output.
+func seedProfile(ctx context.Context, database *sql.DB, now time.Time) (string, error) {
+	tsFmt := now.Format("2006-01-02 15:04:05")
+
+	const overviewSummary = "Six years shipping backend systems in high-agency teams — mostly Go and Python, " +
+		"lately more infra work around ingestion and observability. Looking for a role where I can " +
+		"own an end-to-end system, keep learning from strong peers, and see the impact of what I " +
+		"ship in real users' hands. Remote-friendly, ideally async-first."
+	const overviewSkillsJSON = `[` +
+		`{"name":"Go","years":6,"level":"expert"},` +
+		`{"name":"Python","years":4,"level":"advanced"},` +
+		`{"name":"Data pipelines","years":5,"level":"advanced"},` +
+		`{"name":"PostgreSQL","years":6,"level":"advanced"},` +
+		`{"name":"Observability","years":3,"level":"intermediate"},` +
+		`{"name":"Kafka","years":3,"level":"intermediate"},` +
+		`{"name":"gRPC","years":4,"level":"advanced"},` +
+		`{"name":"Terraform","years":2,"level":"intermediate"}` +
+		`]`
+
+	if _, err := database.ExecContext(ctx, `
+		UPDATE profile_overview
+		SET name = ?, headline = ?, summary = ?, skills_json = ?, onboarded_at = ?, updated_at = ?
+		WHERE id = 1`,
+		"Nova Hoang", "Backend engineer, data pipelines", overviewSummary, overviewSkillsJSON, tsFmt, tsFmt,
+	); err != nil {
+		return "", fmt.Errorf("update profile_overview: %w", err)
+	}
+
+	sparks := []struct {
+		body     string
+		priority int
+	}{
+		{"high-agency team", 1},
+		{"remote-friendly", 1},
+		{"ships to real users weekly", 1},
+		{"async-first", 2},
+		{"strong technical peers", 2},
+		{"Go / Python stack", 3},
+		{"no rotating on-call", 3},
+	}
+	for _, s := range sparks {
+		if _, err := database.ExecContext(ctx, `
+			INSERT INTO career_sparks (body, sort_order, created_at, updated_at)
+			VALUES (?, ?, ?, ?)`,
+			s.body, s.priority, tsFmt, tsFmt,
+		); err != nil {
+			return "", fmt.Errorf("insert spark %q: %w", s.body, err)
+		}
+	}
+
+	resumes := []struct {
+		title, format, body string
+		isPrimary           int
+	}{
+		{"Backend engineer resume", "md", sampleResumeMarkdown, 1},
+		{"Backend engineer resume (Typst)", "typ", sampleResumeTypst, 0},
+	}
+	for _, r := range resumes {
+		if _, err := database.ExecContext(ctx, `
+			INSERT INTO resumes (title, format, body, is_primary, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			r.title, r.format, r.body, r.isPrimary, tsFmt, tsFmt,
+		); err != nil {
+			return "", fmt.Errorf("insert resume %q: %w", r.title, err)
+		}
+	}
+
+	brags := []struct {
+		title, body, impact, tagsJSON, entryDate string
+	}{
+		{
+			"Shipped incident-detection MVP",
+			"Shipped incident-detection MVP to production behind a feature flag. " +
+				"Onboarded on-call to the new dashboard.",
+			"Cut mean time to detect from 22 min to under 4 min for the top 10 services.",
+			`["reliability","observability","ownership"]`,
+			"2025-03-12",
+		},
+		{
+			"Rebuilt onboarding flow with legal + design",
+			"Led a cross-functional rewrite of the new-user onboarding flow. " +
+				"Coordinated with legal (compliance review), design (three iteration " +
+				"cycles), and support (updated help docs).",
+			"Reduced 30-day churn by 18%.",
+			`["cross-functional","ownership","growth"]`,
+			"2024-11-04",
+		},
+		{
+			"Mentored two junior engineers through first incidents",
+			"Paired with two new grads through their first Sev-2 incidents. Wrote up " +
+				"an internal \"shadowing on-call\" doc that the team adopted as standard " +
+				"practice for new hires.",
+			"Both engineers now run on-call independently.",
+			`["mentorship","process"]`,
+			"2024-08-20",
+		},
+	}
+	for _, b := range brags {
+		if _, err := database.ExecContext(ctx, `
+			INSERT INTO brag_entries (title, body, impact, tags_json, entry_date, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			b.title, b.body, b.impact, b.tagsJSON, b.entryDate, tsFmt, tsFmt,
+		); err != nil {
+			return "", fmt.Errorf("insert brag %q: %w", b.title, err)
+		}
+	}
+
+	return fmt.Sprintf("overview + %d sparks + %d resumes + %d brags", len(sparks), len(resumes), len(brags)), nil
 }
 
 func ensureCompany(ctx context.Context, database *sql.DB, company companySeed, now time.Time) (int64, error) {

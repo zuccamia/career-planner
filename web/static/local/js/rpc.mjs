@@ -87,6 +87,10 @@ export const extractJobDescription = (input) =>
 export const buildDossier = (company) =>
   llmCall('build-dossier', company, '/api/dossiers/build');
 
+// Generate suggested brag tags from the brag body only.
+export const generateBragTags = (payload) =>
+  llmCall('generate-brag-tags', payload, '/api/profile/generate-brag-tags');
+
 // Ask the LLM to summarize one communication thread. Caller ships the full
 // thread + entries context (the server is stateless for local-first data) and
 // receives { summary }. Persisting the summary is the caller's job.

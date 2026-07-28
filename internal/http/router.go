@@ -9,6 +9,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/brags"
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
@@ -19,6 +20,7 @@ import (
 type Server struct {
 	companies      *companies.Service
 	applications   *applications.Service
+	brags          *brags.Service
 	communications *communications.Service
 	dossiers       *dossiers.Service
 
@@ -42,10 +44,11 @@ type ServerLLM struct {
 }
 
 // NewRouter wires handlers, static assets, and middleware into the application router.
-func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, applicationsService *applications.Service, communicationsService *communications.Service, serverLLM ServerLLM) http.Handler {
+func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, applicationsService *applications.Service, bragsService *brags.Service, communicationsService *communications.Service, serverLLM ServerLLM) http.Handler {
 	server := &Server{
 		companies:          companiesService,
 		applications:       applicationsService,
+		brags:              bragsService,
 		communications:     communicationsService,
 		dossiers:           dossiersService,
 		serverLLMAvailable: serverLLM.Available,
@@ -68,6 +71,7 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.Handle("POST /api/companies/guess-candidate", llm(server.rpcGuessCompanyCandidate))
 	mux.Handle("POST /api/dossiers/build", llm(server.rpcBuildDossier))
 	mux.Handle("POST /api/applications/extract-job-description", llm(server.rpcExtractJobDescription))
+	mux.Handle("POST /api/profile/generate-brag-tags", llm(server.rpcGenerateBragTags))
 	mux.Handle("POST /api/communications/summarize-thread", llm(server.rpcSummarizeThread))
 	mux.Handle("POST /api/communications/generate-message", llm(server.rpcGenerateMessage))
 	// BYOK helpers — the browser calls these before + after hitting the user's
@@ -82,6 +86,7 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.HandleFunc("GET /local/companies", server.localCompanies)
 	mux.HandleFunc("GET /local/applications", server.localApplications)
 	mux.HandleFunc("GET /local/people", server.localPeople)
+	mux.HandleFunc("GET /local/profile", server.localProfile)
 	mux.HandleFunc("GET /local/settings", server.localSettings)
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
 	return logging(mux)

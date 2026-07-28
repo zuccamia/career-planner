@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/brags"
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
@@ -35,6 +36,7 @@ func New() App {
 		companies.NewService(llmClient),
 		dossiers.NewService(llmClient),
 		applications.NewService(llmClient),
+		brags.NewService(llmClient),
 		communications.NewService(llmClient),
 		serverLLM,
 	)

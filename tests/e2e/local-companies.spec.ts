@@ -71,7 +71,7 @@ test.describe('local companies page', () => {
     // Name links to website when website is set.
     await expect(card.getByRole('link', { name: 'Stripe Local Co.' })).toHaveAttribute(
       'href',
-      'https://stripe.com',
+      /https:\/\/stripe\.com\/?$/,
     );
     // Tech blog icon-link renders when tech_blog_url is set.
     await expect(card.getByRole('link', { name: 'Tech blog' })).toBeVisible();

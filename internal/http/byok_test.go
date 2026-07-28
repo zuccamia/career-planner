@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/brags"
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
@@ -34,6 +35,7 @@ func nilServer() *Server {
 		companies:      companies.NewService(nil),
 		dossiers:       dossiers.NewService(nil),
 		applications:   applications.NewService(nil),
+		brags:          brags.NewService(nil),
 		communications: communications.NewService(nil),
 	}
 }
@@ -149,6 +151,19 @@ func TestBYOKPromptBuildDossierSuccess(t *testing.T) {
 	decodeBody(t, rr, &body)
 	if !strings.Contains(body.User, "Acme") || !strings.Contains(body.User, "acme.example") {
 		t.Errorf("user prompt missing company details: %q", body.User)
+	}
+}
+
+func TestBYOKPromptGenerateBragTagsSuccess(t *testing.T) {
+	mux := newBYOKMux(nilServer())
+	rr := doBYOK(t, mux, "POST", "/api/llm/prompts/generate-brag-tags", `{"body":"Shipped feature flags and improved observability"}`)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	var body struct{ System, User string }
+	decodeBody(t, rr, &body)
+	if !strings.Contains(body.User, "Shipped feature flags") {
+		t.Errorf("user prompt missing brag body: %q", body.User)
 	}
 }
 
@@ -303,6 +318,20 @@ func TestBYOKParseGenerateMessageTrims(t *testing.T) {
 	decodeBody(t, rr, &out)
 	if out["message"] != "hey there" {
 		t.Errorf("message = %q, want trimmed 'hey there'", out["message"])
+	}
+}
+
+func TestBYOKParseGenerateBragTagsNormalizes(t *testing.T) {
+	mux := newBYOKMux(nilServer())
+	body := `{"raw":"{\"tags\":[\" Feature Flags \",\"observability\",\"feature flags\"]}"}`
+	rr := doBYOK(t, mux, "POST", "/api/llm/parse/generate-brag-tags", body)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	var out brags.TagResult
+	decodeBody(t, rr, &out)
+	if len(out.Tags) != 2 || out.Tags[0] != "feature flags" || out.Tags[1] != "observability" {
+		t.Fatalf("tags = %#v, want normalized tags", out.Tags)
 	}
 }
 

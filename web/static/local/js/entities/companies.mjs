@@ -9,6 +9,7 @@
 // content."
 
 import { exec } from '../db/client.mjs';
+import { sanitizeURL } from '../ui/dom.mjs';
 
 const EDITABLE_COLS = ['official_name', 'website', 'tech_blog_url', 'ats_url', 'ats_provider'];
 
@@ -69,8 +70,17 @@ export const findCompanyByName = async (name) => {
   return hydrateCompany(rows[0] || null);
 };
 
+const normalize = (data) => ({
+  official_name: (data.official_name ?? '').toString().trim(),
+  website: sanitizeURL(data.website),
+  tech_blog_url: sanitizeURL(data.tech_blog_url),
+  ats_url: sanitizeURL(data.ats_url),
+  ats_provider: (data.ats_provider ?? '').toString().trim(),
+});
+
 export const createCompany = async (data) => {
-  const values = EDITABLE_COLS.map(c => data[c] ?? '');
+  const n = normalize(data);
+  const values = EDITABLE_COLS.map(c => n[c]);
   await exec(
     `INSERT INTO companies (${EDITABLE_COLS.join(', ')})
      VALUES (${EDITABLE_COLS.map(() => '?').join(', ')})`,
@@ -81,7 +91,8 @@ export const createCompany = async (data) => {
 };
 
 export const updateCompany = async (id, data) => {
-  const values = EDITABLE_COLS.map(c => data[c] ?? '');
+  const n = normalize(data);
+  const values = EDITABLE_COLS.map(c => n[c]);
   await exec(
     `UPDATE companies
      SET ${EDITABLE_COLS.map(c => `${c} = ?`).join(', ')},

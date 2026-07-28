@@ -3,6 +3,20 @@
 export const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// sanitizeURL trims a user-entered URL and only keeps absolute http/https
+// links. Invalid or unsupported schemes collapse to '' so callers don't persist
+// javascript:, data:, or malformed hrefs that later render as clickable links.
+export const sanitizeURL = (s) => {
+  const raw = String(s ?? '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : '';
+  } catch {
+    return '';
+  }
+};
+
 // Renders a timestamp as YYYY-MM-DD in local time. Handles two input shapes
 // that coexist in the DB: SQLite's naive "YYYY-MM-DD HH:MM:SS" (UTC by
 // convention, no tz marker) and full ISO strings from `new Date().toISOString()`

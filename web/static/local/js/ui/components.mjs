@@ -183,7 +183,9 @@ export const emptyState = ({ message, id = '', extraClass = '' } = {}) => {
 // formField renders a labeled <input> / <textarea> / <select> wrapped in the
 // standard grid gap-2 container.
 //
-//   type:        'text' (default) | 'url' | 'email' | 'number' | 'textarea' | 'select'
+//   type:        'text' (default) | 'url' | 'email' | 'number' | 'date' |
+//                'textarea' | 'select' — anything unrecognized is passed
+//                through as the input type attribute.
 //   name:        required — used for both id and name
 //   label:       visible label text
 //   value:       current value (auto-escaped for input/textarea; ignored for select)
@@ -191,26 +193,105 @@ export const emptyState = ({ message, id = '', extraClass = '' } = {}) => {
 //   required:    boolean
 //   rows:        textarea rows (default 3)
 //   extraClass:  appended to the control's class (e.g. 'font-mono')
-//   options:     [{value, label, selected}] — for type='select'
+//   options:     [{value, label, selected, disabled}] — for type='select'
 //   hint:        optional raw HTML shown as a muted note under the control
+//   dataset:     { key: value } → data-* attributes on the input/textarea/select
 export const formField = ({
   type = 'text', name, label, value = '', placeholder = '',
   required = false, rows = 3, extraClass = '', options = [], hint = '',
+  min = '', max = '', step = '',
+  dataset = {},
 }) => {
   const req = required ? ' required' : '';
   const ph = placeholder ? ` placeholder="${escapeHtml(placeholder)}"` : '';
+  const minAttr = min !== '' ? ` min="${escapeHtml(min)}"` : '';
+  const maxAttr = max !== '' ? ` max="${escapeHtml(max)}"` : '';
+  const stepAttr = step !== '' ? ` step="${escapeHtml(step)}"` : '';
+  const dataAttrs = Object.entries(dataset)
+    .map(([k, v]) => ` data-${k}="${escapeHtml(v)}"`)
+    .join('');
   const control = type === 'textarea'
-    ? `<textarea id="${name}" name="${name}" rows="${rows}" class="${CLS.textarea}${extraClass ? ' ' + extraClass : ''}"${ph}${req}>${escapeHtml(value)}</textarea>`
+    ? `<textarea id="${name}" name="${name}" rows="${rows}" class="${CLS.textarea}${extraClass ? ' ' + extraClass : ''}"${ph}${req}${dataAttrs}>${escapeHtml(value)}</textarea>`
     : type === 'select'
-      ? `<select id="${name}" name="${name}"${req} class="${CLS.select}${extraClass ? ' ' + extraClass : ''}">${options.map(o =>
+      ? `<select id="${name}" name="${name}"${req} class="${CLS.select}${extraClass ? ' ' + extraClass : ''}"${dataAttrs}>${options.map(o =>
           `<option value="${escapeHtml(o.value)}"${o.selected ? ' selected' : ''}${o.disabled ? ' disabled' : ''}>${escapeHtml(o.label)}</option>`
         ).join('')}</select>`
-      : `<input id="${name}" name="${name}" type="${type}" value="${escapeHtml(value)}" class="${CLS.input}${extraClass ? ' ' + extraClass : ''}"${ph}${req}>`;
+      : `<input id="${name}" name="${name}" type="${type}" value="${escapeHtml(value)}" class="${CLS.input}${extraClass ? ' ' + extraClass : ''}"${ph}${req}${minAttr}${maxAttr}${stepAttr}${dataAttrs}>`;
   return `<div class="grid gap-2">
     <label class="${CLS.label}" for="${name}">${escapeHtml(label)}</label>
     ${control}
     ${hint ? `<p class="text-xs text-slate-500">${hint}</p>` : ''}
   </div>`;
+};
+
+// pillDismiss renders the tiny × dismiss button that lives inside a badge()'s
+// `body` — the "delete this pill" affordance. Sized to sit comfortably inside
+// a size='sm' badge; hover styling suggests destructive intent.
+//
+//   dataset:    { key: value } → data-* attributes
+//   extraClass: appended to the base class (typically a js-* selector hook)
+//   ariaLabel:  screen-reader label (default "Remove")
+export const pillDismiss = ({ dataset = {}, extraClass = '', ariaLabel = 'Remove' } = {}) => {
+  const attrs = Object.entries(dataset)
+    .map(([k, v]) => `data-${k}="${escapeHtml(v)}"`)
+    .join(' ');
+  const base = 'inline-flex h-5 w-5 items-center justify-center rounded-full opacity-60 hover:bg-red-50 hover:text-red-600 hover:opacity-100';
+  const cls = `${base}${extraClass ? ' ' + extraClass : ''}`;
+  return `<button type="button" class="${cls}"${attrs ? ' ' + attrs : ''} aria-label="${escapeHtml(ariaLabel)}">×</button>`;
+};
+
+// removablePill renders a badge-styled pill with a text label and embedded
+// dismiss button. It composes badge() + pillDismiss() so pages can share the
+// same visual treatment for skills, sparks, brag tags, and similar tokens.
+export const removablePill = ({
+  label,
+  bodyHtml = '',
+  color = 'slate',
+  classes = 'gap-1.5',
+  dataset = {},
+  dismissClass = '',
+  dismissLabel = 'Remove',
+} = {}) => badge({
+  color,
+  classes,
+  dataset,
+  body:
+    `<span>${bodyHtml || escapeHtml(label)}</span>`
+    + pillDismiss({ dataset, extraClass: dismissClass, ariaLabel: dismissLabel }),
+});
+
+// tab renders a single button in a tab strip. Active tab gets an underline
+// and colored text; inactive is muted and hover-underlines. The caller wires
+// clicks via data-tab / .js-tab selector.
+//
+// An empty count slot is always rendered (initially hidden) so callers can
+// populate it later without re-rendering the tab — same pattern the sidebar
+// uses. Look up the slot via `[data-tab-count="<name>"]` and set textContent
+// + toggle .hidden.
+//
+//   label:   visible text (escaped)
+//   name:    data-tab value (escaped)
+//   active:  boolean — apply the active styling
+export const tab = ({ label, name, active = false } = {}) => {
+  const state = active
+    ? 'border-b-2 border-blue-600 text-blue-700'
+    : 'border-b-2 border-transparent text-slate-500 hover:text-slate-900';
+  return `<button type="button" class="js-tab inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition ${state}" data-tab="${escapeHtml(name)}" role="tab" aria-selected="${active}">${escapeHtml(label)}<span data-tab-count="${escapeHtml(name)}" class="hidden rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700"></span></button>`;
+};
+
+// chip renders a small outline pill button — used for suggestion chips
+// (wizard "add spark by clicking a suggestion") and similar affordances.
+// Class .js-chip is the selector convention; dataset carries the payload.
+//
+//   label:   visible text (escaped); rendered with a leading "+ " prefix
+//   dataset: { key: value } → data-* attrs
+//   noPrefix: skip the "+ " prefix (default false)
+export const chip = ({ label, dataset = {}, noPrefix = false } = {}) => {
+  const attrs = Object.entries(dataset)
+    .map(([k, v]) => `data-${k}="${escapeHtml(v)}"`)
+    .join(' ');
+  const prefix = noPrefix ? '' : '+ ';
+  return `<button type="button" class="js-chip inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:border-blue-400 hover:bg-blue-50"${attrs ? ' ' + attrs : ''}>${escapeHtml(prefix + label)}</button>`;
 };
 
 // badge renders a Tailwind pill. Color must be one of the keys below; sizes
@@ -231,14 +312,35 @@ const BADGE_COLORS = {
   red:      'bg-red-100 text-red-700',
 };
 const BADGE_WEIGHTS = { medium: 'font-medium', semibold: 'font-semibold' };
-export const badge = ({ label, color = 'slate', size = 'sm', classes = '', icon: iconName = '', weight = 'semibold' }) => {
+// badge props:
+//   label:     visible text (escaped). Ignored when `body` is supplied.
+//   color:     one of BADGE_COLORS keys
+//   size:      'xs' | 'sm'
+//   classes:   appended to the outer <span>
+//   icon:      icon name (see ui/icons.mjs). Ignored when `body` is supplied.
+//   weight:    'medium' | 'semibold'
+//   body:      optional raw HTML that replaces the icon+label content —
+//              for interactive pills (e.g. spark pills with inline edit/
+//              delete buttons). Callers own the escaping of anything inside.
+//   dataset:   optional { key: value } for data-* attrs on the outer span
+//   id:        optional element id
+export const badge = ({
+  label, color = 'slate', size = 'sm', classes = '', icon: iconName = '', weight = 'semibold',
+  body = '', dataset = {}, id = '',
+} = {}) => {
   const dims = size === 'xs' ? 'px-2.5 py-0.5 text-xs' : 'px-3 py-1 text-sm';
   const palette = BADGE_COLORS[color] || BADGE_COLORS.slate;
   const fw = BADGE_WEIGHTS[weight] || BADGE_WEIGHTS.semibold;
   const cls = classes ? ' ' + classes : '';
-  const gap = iconName ? ' gap-1' : '';
-  const iconHtml = iconName ? icon(iconName, size === 'xs' ? 3 : 4) : '';
-  return `<span class="inline-flex items-center${gap} rounded-full ${fw} ${dims} ${palette}${cls}">${iconHtml}${escapeHtml(label)}</span>`;
+  const useBody = Boolean(body);
+  const gap = (iconName && !useBody) ? ' gap-1' : '';
+  const iconHtml = (iconName && !useBody) ? icon(iconName, size === 'xs' ? 3 : 4) : '';
+  const inner = useBody ? body : `${iconHtml}${escapeHtml(label)}`;
+  const attrs = [
+    id ? `id="${escapeHtml(id)}"` : '',
+    ...Object.entries(dataset).map(([k, v]) => `data-${k}="${escapeHtml(v)}"`),
+  ].filter(Boolean).join(' ');
+  return `<span class="inline-flex items-center${gap} rounded-full ${fw} ${dims} ${palette}${cls}"${attrs ? ' ' + attrs : ''}>${inner}</span>`;
 };
 // badgeClasses returns just the class string, for callers that need to attach
 // the palette to their own element (e.g. status pills where color depends on

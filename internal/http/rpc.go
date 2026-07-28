@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zuccamia/career-planner/internal/applications"
+	"github.com/zuccamia/career-planner/internal/brags"
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/people"
@@ -88,6 +89,29 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// rpcGenerateBragTags wraps brags.Service.GenerateTags for the browser client.
+// Input: {"body":"..."}. Output: {"tags":[...]}.
+func (s *Server) rpcGenerateBragTags(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Body string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
+	if strings.TrimSpace(body.Body) == "" {
+		writeErr(w, http.StatusBadRequest, "body is required")
+		return
+	}
+	tags, err := s.brags.GenerateTags(r.Context(), body.Body)
+	if err != nil {
+		log.Printf("rpc generate-brag-tags: %v", err)
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, brags.TagResult{Tags: tags})
 }
 
 // threadDetailPayload matches the JSON shape the browser sends when calling

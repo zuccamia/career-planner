@@ -6,6 +6,7 @@
 // entities/companies.mjs findCompanyByName).
 
 import { exec } from '../db/client.mjs';
+import { sanitizeURL } from '../ui/dom.mjs';
 
 const EDITABLE_COLS = ['full_name', 'title', 'company_id', 'linkedin_url', 'notes'];
 
@@ -55,7 +56,7 @@ const normalize = (data) => ({
   // company_id is nullable — coerce empty strings and zero to null so the FK
   // stays consistent with the Go side.
   company_id: data.company_id ? Number(data.company_id) : null,
-  linkedin_url: (data.linkedin_url ?? '').trim(),
+  linkedin_url: sanitizeURL(data.linkedin_url),
   notes: data.notes ?? '',
 });
 

@@ -73,6 +73,62 @@ func TestOpenAppliesAllMigrationsOnFreshDB(t *testing.T) {
 	}
 }
 
+// TestMigration004ProfileTablesAndColumns asserts the profile-side schema is
+// wired up on a fresh DB: the four tables exist, the singleton profile_overview
+// row is present, and the newer columns (impact on brag_entries, skills_json
+// on profile_overview) are queryable.
+func TestMigration004ProfileTablesAndColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "profile.sqlite")
+	db, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer db.Close()
+
+	// All four profile tables must be queryable.
+	for _, table := range []string{"profile_overview", "career_sparks", "resumes", "brag_entries"} {
+		if _, err := db.Exec("SELECT 1 FROM " + table + " LIMIT 0"); err != nil {
+			t.Fatalf("query %s: %v", table, err)
+		}
+	}
+
+	// Singleton row is seeded on migration.
+	if got := queryIntTest(t, db, `SELECT COUNT(*) FROM profile_overview WHERE id = 1`); got != 1 {
+		t.Fatalf("profile_overview id=1 row count = %d, want 1", got)
+	}
+
+	// Newer columns must exist.
+	if _, err := db.Exec(`SELECT impact FROM brag_entries LIMIT 0`); err != nil {
+		t.Fatalf("brag_entries.impact missing: %v", err)
+	}
+	if _, err := db.Exec(`SELECT tags_generated_at FROM brag_entries LIMIT 0`); err != nil {
+		t.Fatalf("brag_entries.tags_generated_at missing: %v", err)
+	}
+	if _, err := db.Exec(`SELECT skills_json FROM profile_overview LIMIT 0`); err != nil {
+		t.Fatalf("profile_overview.skills_json missing: %v", err)
+	}
+
+	// Confirm skills_json defaults to '[]' (not NULL) so JS parsing is safe.
+	var skills string
+	if err := db.QueryRow(`SELECT skills_json FROM profile_overview WHERE id = 1`).Scan(&skills); err != nil {
+		t.Fatalf("select skills_json: %v", err)
+	}
+	if skills != "[]" {
+		t.Fatalf("skills_json default = %q, want %q", skills, "[]")
+	}
+}
+
+// queryIntTest is a local helper (the db_test.go file's own test helpers use
+// t.Fatalf on error). Kept package-local to avoid coupling to cmd/seed.
+func queryIntTest(t *testing.T, db *sql.DB, query string) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(query).Scan(&n); err != nil {
+		t.Fatalf("query %q: %v", query, err)
+	}
+	return n
+}
+
 func TestOpenIsIdempotent(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "idem.sqlite")
 	first, err := Open(context.Background(), path)

@@ -9,6 +9,7 @@ import { mountApplications } from './pages/applications.mjs';
 import { mountDashboard } from './pages/dashboard.mjs';
 import { mountCompanies } from './pages/companies.mjs';
 import { mountPeople } from './pages/people.mjs';
+import { mountProfile } from './pages/profile.mjs';
 import { refreshSidebarCounts } from './ui/sidebar_counts.mjs';
 import { refreshCurrentSnapshotBadge } from './ui/current_snapshot.mjs';
 import { refreshAiModeBadge } from './ui/ai_mode_badge.mjs';
@@ -56,6 +57,8 @@ const boot = async () => {
       await mountCompanies(appEl);
     } else if (page === 'people') {
       await mountPeople(appEl);
+    } else if (page === 'profile') {
+      await mountProfile(appEl);
     } else if (page === 'settings') {
       await mountSettings(appEl);
     } else {

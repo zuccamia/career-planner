@@ -78,6 +78,18 @@ func (s *Server) localPeople(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) localProfile(w http.ResponseWriter, r *http.Request) {
+	tmpl, err := parseLocalTemplate("profile.html")
+	if err != nil {
+		log.Printf("local profile template: %v", err)
+		http.Error(w, "template error", http.StatusInternalServerError)
+		return
+	}
+	if err := tmpl.ExecuteTemplate(w, "local_profile", localPageData{Title: "Profile", Page: "profile"}); err != nil {
+		log.Printf("local profile render: %v", err)
+	}
+}
+
 func (s *Server) localSettings(w http.ResponseWriter, r *http.Request) {
 	tmpl, err := parseLocalTemplate("settings.html")
 	if err != nil {
