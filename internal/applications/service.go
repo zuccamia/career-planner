@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/zuccamia/career-planner/internal/sources/ats"
@@ -45,9 +46,10 @@ type ExtractJobDescriptionTextInput struct {
 // so a caller (hosted or BYOK) can call FinalizeJDExtraction later without
 // re-fetching the posting URL. Opaque to the browser — treated as pass-through.
 type JDExtractionContext struct {
-	Prompt         llm.Prompt
-	EnrichedRaw    string
-	Posting        ats.Posting
+	Prompt      llm.Prompt
+	EnrichedRaw string
+	Posting     ats.Posting
+	Warning     string
 }
 
 // ExtractJobDescriptionText runs the JD extraction pipeline on raw text and
@@ -61,6 +63,9 @@ func (s *Service) ExtractJobDescriptionText(ctx context.Context, input ExtractJo
 	prep, err := s.PrepareJDExtraction(ctx, input)
 	if err != nil {
 		return JobDescriptionStructured{}, "", err
+	}
+	if prep.Warning != "" {
+		log.Printf("extract-job-description suspicious-input warning=%q company=%q role=%q posting_url=%q", prep.Warning, strings.TrimSpace(input.CompanyName), strings.TrimSpace(input.RoleTitle), strings.TrimSpace(input.JobPostingURL))
 	}
 	var out JobDescriptionStructured
 	if err := s.client.GenerateJSON(ctx, prep.Prompt, &out); err != nil {
@@ -111,7 +116,22 @@ func (s *Service) PrepareJDExtraction(ctx context.Context, input ExtractJobDescr
 		},
 		EnrichedRaw: raw,
 		Posting:     posting,
+		Warning:     suspiciousJDWarning(raw),
 	}, nil
+}
+
+// DetectSuspiciousJDInput returns a soft warning when JD input appears to
+// contain prompt-like or internal-instruction language.
+func DetectSuspiciousJDInput(raw string) string {
+	return suspiciousJDWarning(raw)
+}
+
+func suspiciousJDWarning(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || !llm.IsSuspiciousText(trimmed) {
+		return ""
+	}
+	return "Job description text appears to contain prompt-like or internal-instruction language. Results may be less reliable; review extracted fields carefully."
 }
 
 // FinalizeJDExtraction sanitizes a decoded LLM result and overlays ATS-verified

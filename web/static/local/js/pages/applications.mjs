@@ -23,7 +23,7 @@ import { listPeopleByCompanyID } from '../entities/people.mjs';
 import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { badge, badgeClasses, button, collapsible, emptyState, inlineError, setInlineError, inlineNote, setInlineNote, pageHeader, setPageCount } from '../ui/components.mjs';
+import { badge, badgeClasses, button, collapsible, emptyState, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, pageHeader, setPageCount } from '../ui/components.mjs';
 import { extractJobDescription } from '../rpc.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
@@ -504,6 +504,7 @@ const detailsHtml = (a, events, attachments) => {
 
       ${inlineError({ id: 'details-error' })}
       ${inlineNote({ id: 'details-note' })}
+      ${inlineWarning({ id: 'details-warning' })}
 
       <form id="quick-status-form" class="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 pt-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] sm:items-end">
         <div class="grid gap-2">
@@ -818,6 +819,7 @@ const wireDetails = (app) => {
     extractBtn.setAttribute('aria-busy', 'true');
     setInlineError('details-error', '');
     setInlineNote('details-note', '');
+    setInlineWarning('details-warning', '');
     try {
       const resp = await extractJobDescription({
         company_name: app.company_name || '',
@@ -830,9 +832,11 @@ const wireDetails = (app) => {
         jobDescriptionRaw: resp.job_description_raw || '',
       });
       const reason = (resp.structured?.reasoning || '').trim();
+      const warning = (resp.warning || '').trim();
       await renderDetails();
       // renderDetails re-renders the panel; re-apply the note after paint.
-      setInlineNote('details-note', reason ? `Job description extracted. ${reason}` : 'Job description extracted');
+      setInlineNote('details-note', reason ? `Job description extracted. ${reason}` : 'Job description extracted.');
+      setInlineWarning('details-warning', warning);
     } catch (err) {
       setInlineError('details-error', `Extract failed: ${err.message}`);
       extractBtn.disabled = false;

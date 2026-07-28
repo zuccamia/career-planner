@@ -38,6 +38,9 @@ func (s *Service) FinalizeTags(out TagResult) []string {
 	for _, raw := range out.Tags {
 		tag := strings.ToLower(strings.TrimSpace(raw))
 		tag = strings.Join(strings.Fields(tag), " ")
+		if llm.IsSuspiciousText(tag) {
+			continue
+		}
 		if tag == "" {
 			continue
 		}

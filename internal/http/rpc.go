@@ -2,6 +2,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strings"
@@ -175,6 +176,10 @@ func (s *Server) rpcSummarizeThread(w http.ResponseWriter, r *http.Request) {
 	summary, err := s.communications.SummarizeThreadContext(r.Context(), body.toThreadDetail())
 	if err != nil {
 		log.Printf("rpc summarize-thread: %v", err)
+		if errors.Is(err, communications.ErrUnsafeGeneration) {
+			writeErr(w, http.StatusBadRequest, "Couldn’t safely generate a summary from this thread. Remove prompt-like text and try again.")
+			return
+		}
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -195,6 +200,10 @@ func (s *Server) rpcGenerateMessage(w http.ResponseWriter, r *http.Request) {
 	message, err := s.communications.GenerateMessageFromContext(r.Context(), body.threadDetailPayload.toThreadDetail(), body.Goal)
 	if err != nil {
 		log.Printf("rpc generate-message: %v", err)
+		if errors.Is(err, communications.ErrUnsafeGeneration) {
+			writeErr(w, http.StatusBadRequest, "Couldn’t safely generate a draft from this thread. Remove prompt-like text and try again.")
+			return
+		}
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -226,8 +235,13 @@ func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	warning := applications.DetectSuspiciousJDInput(raw)
+	if warning != "" {
+		log.Printf("rpc extract-job-description warning: %s", warning)
+	}
 	writeJSON(w, http.StatusOK, struct {
 		Structured        applications.JobDescriptionStructured `json:"structured"`
 		JobDescriptionRaw string                                `json:"job_description_raw"`
-	}{Structured: structured, JobDescriptionRaw: raw})
+		Warning           string                                `json:"warning,omitempty"`
+	}{Structured: structured, JobDescriptionRaw: raw, Warning: warning})
 }

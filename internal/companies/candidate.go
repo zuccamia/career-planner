@@ -59,7 +59,7 @@ func sanitizeCandidate(candidate Candidate, fallbackName string) Candidate {
 	candidate.TechBlogURL = sanitizeHTTPURL(candidate.TechBlogURL)
 	candidate.ATSURL = sanitizeHTTPURL(candidate.ATSURL)
 	candidate.ATSProvider = strings.TrimSpace(candidate.ATSProvider)
-	candidate.Reasoning = strings.TrimSpace(candidate.Reasoning)
+	candidate.Reasoning = llm.SanitizeText(candidate.Reasoning)
 	if candidate.OfficialName == "" {
 		candidate.OfficialName = fallbackName
 	}

@@ -5,6 +5,7 @@ package communications
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,6 +23,8 @@ var (
 )
 
 var allowedDirections = sliceToSet(Directions)
+
+var ErrUnsafeGeneration = errors.New("could not safely generate a result from this thread")
 
 func sliceToSet(vals []string) map[string]struct{} {
 	set := make(map[string]struct{}, len(vals))
@@ -51,7 +54,11 @@ func (s *Service) SummarizeThreadContext(ctx context.Context, detail ThreadDetai
 	if err := s.client.GenerateJSON(ctx, s.BuildSummaryPrompt(detail), &out); err != nil {
 		return "", err
 	}
-	return s.FinalizeSummary(out), nil
+	summary := s.FinalizeSummary(out)
+	if summary == "" {
+		return "", ErrUnsafeGeneration
+	}
+	return summary, nil
 }
 
 // GenerateMessageFromContext drafts a message ("outreach" or "reply") from a
@@ -68,7 +75,11 @@ func (s *Service) GenerateMessageFromContext(ctx context.Context, detail ThreadD
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return "", err
 	}
-	return s.FinalizeMessage(out), nil
+	message := s.FinalizeMessage(out)
+	if message == "" {
+		return "", ErrUnsafeGeneration
+	}
+	return message, nil
 }
 
 // BuildSummaryPrompt assembles the summarize prompt for a ThreadDetail. Pure.
@@ -81,7 +92,7 @@ func (s *Service) BuildSummaryPrompt(detail ThreadDetail) llm.Prompt {
 
 // FinalizeSummary trims a decoded summary result.
 func (s *Service) FinalizeSummary(out SummaryResult) string {
-	return strings.TrimSpace(out.Summary)
+	return llm.SanitizeText(out.Summary)
 }
 
 // BuildMessagePrompt assembles the message-generation prompt. Validates goal.
@@ -98,7 +109,7 @@ func (s *Service) BuildMessagePrompt(detail ThreadDetail, goal string) (llm.Prom
 
 // FinalizeMessage trims a decoded message result.
 func (s *Service) FinalizeMessage(out MessageResult) string {
-	return strings.TrimSpace(out.Message)
+	return llm.SanitizeText(out.Message)
 }
 
 // buildThreadContext formats thread, person-note, summary, and entry data for

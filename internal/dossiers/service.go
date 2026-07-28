@@ -66,6 +66,6 @@ func (s *Service) FinalizeDossier(generated llmResult) Dossier {
 		InternshipSeasons:     result.InternshipSeasons,
 		InternshipSummary:     result.InternshipSummary,
 		MajorTechStacks:       result.MajorTechStacks,
-		Reasoning:             result.Reasoning,
+		Reasoning:             llm.SanitizeText(result.Reasoning),
 	}
 }
