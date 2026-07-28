@@ -1,7 +1,9 @@
 name: Deploy to Cloud Run
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -16,12 +18,15 @@ env:
 
 jobs:
   deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - id: auth
         uses: google-github-actions/auth@v2
@@ -41,7 +46,7 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE }}:${{ github.sha }}
+            ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE }}:${{ github.event.workflow_run.head_sha || github.sha }}
             ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -112,7 +117,7 @@ jobs:
           fi
 
           gcloud run deploy "$SERVICE" \
-            --image "${GCP_REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${GITHUB_SHA}" \
+            --image "${GCP_REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/${SERVICE}:${{ github.event.workflow_run.head_sha || github.sha }}" \
             --project "$PROJECT_ID" \
             --region "$GCP_REGION" \
             --platform managed \
