@@ -25,11 +25,11 @@ func (s *Service) ParseAndFinalize(raw string) (Dossier, error) {
 // BuildText generates a dossier for a company via the LLM without persisting
 // it. Composed from BuildDossierPrompt + FinalizeDossier so the BYOK path can
 // call each half independently.
-func (s *Service) BuildText(ctx context.Context, company companies.Company) (Dossier, error) {
+func (s *Service) BuildText(ctx context.Context, company companies.Company, outputLanguage string) (Dossier, error) {
 	if s.client == nil {
 		return Dossier{}, fmt.Errorf("llm client is not configured")
 	}
-	prompt := s.BuildDossierPrompt(company)
+	prompt := s.BuildDossierPrompt(company, outputLanguage)
 	var generated llmResult
 	if err := s.client.GenerateJSON(ctx, prompt, &generated); err != nil {
 		return Dossier{}, fmt.Errorf("generate dossier: %w", err)
@@ -38,14 +38,20 @@ func (s *Service) BuildText(ctx context.Context, company companies.Company) (Dos
 }
 
 // BuildDossierPrompt assembles the LLM prompt for a company dossier. Pure —
-// no I/O, no LLM call.
-func (s *Service) BuildDossierPrompt(company companies.Company) llm.Prompt {
-	return llm.Prompt{System: dossierSystemPrompt, User: fmt.Sprintf(dossierUserPrompt,
-		company.OfficialName,
-		company.Website,
-		company.ATSURL,
-		company.ATSProvider,
-	)}
+// no I/O, no LLM call. outputLanguage selects the locale-specific prompt
+// template; missing locales fall back to English.
+func (s *Service) BuildDossierPrompt(company companies.Company, outputLanguage string) llm.Prompt {
+	set := llm.PickPromptSet(dossierPrompts, outputLanguage)
+	return llm.Prompt{
+		System: set.System,
+		User: fmt.Sprintf(
+			set.User,
+			company.OfficialName,
+			company.Website,
+			company.ATSURL,
+			company.ATSProvider,
+		),
+	}
 }
 
 // FinalizeDossier sanitizes a decoded LLM result and maps it into the domain

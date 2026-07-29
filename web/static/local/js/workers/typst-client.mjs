@@ -29,16 +29,37 @@ const boot = () => {
 };
 
 // compileTypstToPdf(source) -> { pdf: Uint8Array, log: string }
-// Throws on compile error. Typst diagnostics come back via the thrown Error's
-// message; preserved as-is so the profile page can render them.
+// Throws on compile error. The thrown Error carries a human-friendly `message`
+// plus the raw dump on `log` (for the collapsible diagnostic panel) and a
+// `code` for callers that want to localize the top-level line.
 export const compileTypstToPdf = async (source) => {
   const $typst = await boot();
   try {
     const pdf = await $typst.pdf({ mainContent: String(source || '') });
     return { pdf, log: '' };
   } catch (err) {
-    const wrapped = new Error(err?.message || String(err) || 'Typst compile failed');
-    wrapped.log = err?.stack || '';
+    const raw = err?.message || String(err) || 'Typst compile failed';
+    const parsed = parseTypstDiagnostics(raw);
+    const wrapped = new Error(parsed.message);
+    wrapped.log = raw;
+    wrapped.code = parsed.code;
+    wrapped.diagnostics = parsed.diagnostics;
     throw wrapped;
   }
+};
+
+// parseTypstDiagnostics extracts the human-readable `message: "..."` clauses
+// from a SourceDiagnostic array dump and classifies common patterns. Multiple
+// "is not valid in code" diagnostics are a strong tell that the source isn't
+// actually Typst (e.g. Markdown, plain text, or another notation).
+const parseTypstDiagnostics = (raw) => {
+  const diagnostics = [...raw.matchAll(/message:\s*"((?:[^"\\]|\\.)*)"/g)].map(m => m[1]);
+  const invalidInCode = diagnostics.filter(m => m.includes('is not valid in code')).length;
+  if (invalidInCode >= 2) {
+    return { code: 'not_typst_source', message: 'not_typst_source', diagnostics };
+  }
+  if (diagnostics.length > 0) {
+    return { code: 'diagnostics', message: diagnostics.slice(0, 3).join(' · '), diagnostics };
+  }
+  return { code: 'unknown', message: raw, diagnostics: [] };
 };

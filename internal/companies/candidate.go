@@ -14,8 +14,8 @@ import (
 // GuessCandidate turns free-form user input into a probable canonical company
 // record for confirmation. Composed from BuildCandidatePrompt + FinalizeCandidate
 // so the BYOK path can call each half independently.
-func (s *Service) GuessCandidate(ctx context.Context, input string) (Candidate, error) {
-	prompt, fallback, skip := s.BuildCandidatePrompt(input)
+func (s *Service) GuessCandidate(ctx context.Context, input, outputLanguage string) (Candidate, error) {
+	prompt, fallback, skip := s.BuildCandidatePrompt(input, outputLanguage)
 	if skip || s == nil || s.client == nil {
 		return fallback, nil
 	}
@@ -29,15 +29,18 @@ func (s *Service) GuessCandidate(ctx context.Context, input string) (Candidate, 
 // BuildCandidatePrompt assembles the LLM prompt for GuessCandidate along with
 // the fallback to return when the LLM should be skipped (empty input). skip=true
 // means the caller should return fallback without invoking the LLM.
-func (s *Service) BuildCandidatePrompt(input string) (llm.Prompt, Candidate, bool) {
+// outputLanguage selects the locale-specific prompt template; missing locales
+// fall back to English.
+func (s *Service) BuildCandidatePrompt(input, outputLanguage string) (llm.Prompt, Candidate, bool) {
 	trimmed := strings.TrimSpace(input)
 	fallback := Candidate{OfficialName: trimmed}
 	if trimmed == "" {
 		return llm.Prompt{}, fallback, true
 	}
+	set := llm.PickPromptSet(companyCandidatePrompts, outputLanguage)
 	return llm.Prompt{
-		System: companyCandidateSystemPrompt,
-		User:   fmt.Sprintf(companyCandidateUserPrompt, trimmed),
+		System: set.System,
+		User:   fmt.Sprintf(set.User, trimmed),
 	}, fallback, false
 }
 

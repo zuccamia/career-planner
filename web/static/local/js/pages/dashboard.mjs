@@ -16,6 +16,7 @@ import { listDailyCreatedCounts } from '../entities/engineering_blogs.mjs';
 import { escapeHtml } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { emptyState } from '../ui/components.mjs';
+import { t } from '../i18n.mjs';
 
 const ACTIVITY_WINDOW_DAYS = 30;
 const ACTIVITY_VISIBLE_DAYS = 14;
@@ -120,7 +121,7 @@ const buildSankeyData = async () => {
     indexByStatus.set(def.status, nodes.length);
     nodes.push({
       id: def.status,
-      name: def.label,
+      name: t(`applications.status.${def.status}`),
       color: def.color,
       value: valueByStatus.get(def.status) || 0,
       depth: def.depth,
@@ -237,7 +238,7 @@ const buildActivitySeries = async (endDay) => {
 const shellHtml = () => `
   <div class="space-y-6">
     <section class="space-y-2">
-      <p class="${CLS.eyebrow}">Dashboard</p>
+      <p class="${CLS.eyebrow}">${t('dashboard.eyebrow')}</p>
     </section>
     <section id="pipeline-section"></section>
     <section id="activity-section"></section>
@@ -267,17 +268,17 @@ const pipelineHtml = (stages, sankey) => {
   const article = (body) => `
     <article class="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div class="space-y-1">
-        <h2 class="text-xl font-semibold text-slate-900">Application pipeline</h2>
+        <h2 class="text-xl font-semibold text-slate-900">${t('dashboard.pipeline.heading')}</h2>
       </div>
       ${body}
     </article>`;
-  if (!stages.length) return article(emptyState({ message: 'No application pipeline yet. Add applications to see the funnel fill in.' }));
+  if (!stages.length) return article(emptyState({ message: t('dashboard.pipeline.empty') }));
   const sankeyBlock = `
     <div class="hidden overflow-x-auto lg:block">
       <div class="min-w-[960px] rounded-3xl bg-slate-50 p-6">
         <svg id="pipeline-sankey" class="block h-auto w-full overflow-visible"
              viewBox="0 0 1080 380" preserveAspectRatio="xMidYMid meet"
-             role="img" aria-label="Application pipeline visualization"></svg>
+             role="img" aria-label="${t('dashboard.pipeline.aria')}"></svg>
         <div id="pipeline-sankey-fallback" class="mt-4 hidden"></div>
       </div>
     </div>`;
@@ -289,27 +290,26 @@ const activityHtml = (days, totals) => {
     <article class="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div class="space-y-1">
-          <h2 class="text-xl font-semibold text-slate-900">Activity over time</h2>
+          <h2 class="text-xl font-semibold text-slate-900">${t('dashboard.activity.heading')}</h2>
           <p class="text-sm text-slate-500">
-            Showing the last ${ACTIVITY_VISIBLE_DAYS} days at a glance, with horizontal scrolling
-            across the full ${ACTIVITY_WINDOW_DAYS}-day activity history.
+            ${t('dashboard.activity.help', { visible: ACTIVITY_VISIBLE_DAYS, window: ACTIVITY_WINDOW_DAYS })}
           </p>
         </div>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          ${totalCard('Applied', totals.applied, 'blue')}
-          ${totalCard('Threads', totals.threadEntries, 'amber')}
-          ${totalCard('Tech blogs', totals.techBlogs, 'emerald')}
-          ${totalCard('Total', totals.total, 'slate')}
+          ${totalCard(t('dashboard.activity.total.applied'), totals.applied, 'blue')}
+          ${totalCard(t('dashboard.activity.total.threads'), totals.threadEntries, 'amber')}
+          ${totalCard(t('dashboard.activity.total.tech_blogs'), totals.techBlogs, 'emerald')}
+          ${totalCard(t('dashboard.activity.total.total'), totals.total, 'slate')}
         </div>
       </div>
       ${body}
     </article>`;
-  if (!days.length) return article(emptyState({ message: 'No recent activity yet. Status changes, thread entries, and tech blog additions will appear here.' }));
+  if (!days.length) return article(emptyState({ message: t('dashboard.activity.empty') }));
   return article(`
     <div class="flex flex-wrap items-center justify-end gap-4 text-sm text-slate-600">
-      <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-blue-500"></span>Applied events</span>
-      <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-amber-500"></span>Thread entries</span>
-      <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-emerald-500"></span>Tech blog notes</span>
+      <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-blue-500"></span>${t('dashboard.activity.legend.applied')}</span>
+      <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-amber-500"></span>${t('dashboard.activity.legend.threads')}</span>
+      <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-emerald-500"></span>${t('dashboard.activity.legend.tech_blogs')}</span>
     </div>
     <div id="activity-scroll" class="overflow-x-auto">
       <div class="min-w-[1440px]">
@@ -317,14 +317,14 @@ const activityHtml = (days, totals) => {
           ${days.map(d => `
             <div class="flex min-w-0 flex-1 flex-col items-center justify-end gap-3">
               <div class="flex h-40 items-end gap-1"
-                   aria-label="${escapeHtml(d.label)}: ${d.appliedCount} applied, ${d.threadEntryCount} thread entries, ${d.techBlogCount} tech blogs">
-                <div class="w-3 rounded-t bg-blue-500"    style="height: ${d.appliedHeight}%;"     title="Applied: ${d.appliedCount}"></div>
-                <div class="w-3 rounded-t bg-amber-500"   style="height: ${d.threadEntryHeight}%;" title="Thread entries: ${d.threadEntryCount}"></div>
-                <div class="w-3 rounded-t bg-emerald-500" style="height: ${d.techBlogHeight}%;"    title="Tech blog notes: ${d.techBlogCount}"></div>
+                   aria-label="${escapeHtml(t('dashboard.activity.bar_aria', { label: d.label, applied: d.appliedCount, threads: d.threadEntryCount, techBlogs: d.techBlogCount }))}">
+                <div class="w-3 rounded-t bg-blue-500"    style="height: ${d.appliedHeight}%;"     title="${escapeHtml(t('dashboard.activity.bar_applied', { n: d.appliedCount }))}"></div>
+                <div class="w-3 rounded-t bg-amber-500"   style="height: ${d.threadEntryHeight}%;" title="${escapeHtml(t('dashboard.activity.bar_threads', { n: d.threadEntryCount }))}"></div>
+                <div class="w-3 rounded-t bg-emerald-500" style="height: ${d.techBlogHeight}%;"    title="${escapeHtml(t('dashboard.activity.bar_tech_blogs', { n: d.techBlogCount }))}"></div>
               </div>
               <div class="space-y-1 text-center">
-                <p class="text-xs font-semibold text-slate-700">${escapeHtml(d.label)}</p>
-                <p class="text-[11px] text-slate-500">${d.totalCount} total</p>
+                <p class="whitespace-nowrap text-xs font-semibold text-slate-700">${escapeHtml(d.label)}</p>
+                <p class="whitespace-nowrap text-[11px] text-slate-500">${t('dashboard.activity.day_total', { n: d.totalCount })}</p>
               </div>
             </div>
           `).join('')}
@@ -382,14 +382,14 @@ const renderSankey = async (data) => {
     }
   };
   if (!data.nodes.length || !data.links.length) {
-    showFallback('No stage transitions recorded yet. Update application statuses to build the flow.');
+    showFallback(t('dashboard.pipeline.no_transitions'));
     return;
   }
   let d3;
   try { d3 = await loadD3(); }
-  catch { showFallback('Could not load the pipeline visualization.'); return; }
+  catch { showFallback(t('dashboard.pipeline.load_failed')); return; }
   if (!d3 || typeof d3.sankey !== 'function') {
-    showFallback('Could not load the pipeline visualization.');
+    showFallback(t('dashboard.pipeline.load_failed'));
     return;
   }
 

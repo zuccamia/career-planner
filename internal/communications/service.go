@@ -17,7 +17,7 @@ import (
 // order. Exposed via /api/db/enums.json so the browser matches its dropdowns
 // to the same source.
 var (
-	Channels   = []string{"email", "handshake", "linkedin", "phone", "meeting", "text"}
+	Channels   = []string{"email", "handshake", "linkedin", "facebook", "phone", "meeting", "text"}
 	Directions = []string{"inbound", "outbound", "note"}
 	Statuses   = []string{"open", "closed"}
 )
@@ -46,12 +46,12 @@ type MessageResult struct {
 
 // SummarizeThreadContext runs the summary prompt and returns the summary text.
 // Composed from BuildSummaryPrompt + FinalizeSummary.
-func (s *Service) SummarizeThreadContext(ctx context.Context, detail ThreadDetail) (string, error) {
+func (s *Service) SummarizeThreadContext(ctx context.Context, detail ThreadDetail, outputLanguage string) (string, error) {
 	if s.client == nil {
 		return "", fmt.Errorf("llm client is not configured")
 	}
 	var out SummaryResult
-	if err := s.client.GenerateJSON(ctx, s.BuildSummaryPrompt(detail), &out); err != nil {
+	if err := s.client.GenerateJSON(ctx, s.BuildSummaryPrompt(detail, outputLanguage), &out); err != nil {
 		return "", err
 	}
 	summary := s.FinalizeSummary(out)
@@ -63,8 +63,8 @@ func (s *Service) SummarizeThreadContext(ctx context.Context, detail ThreadDetai
 
 // GenerateMessageFromContext drafts a message ("outreach" or "reply") from a
 // browser-supplied ThreadDetail. Composed from BuildMessagePrompt + FinalizeMessage.
-func (s *Service) GenerateMessageFromContext(ctx context.Context, detail ThreadDetail, goal string) (string, error) {
-	prompt, err := s.BuildMessagePrompt(detail, goal)
+func (s *Service) GenerateMessageFromContext(ctx context.Context, detail ThreadDetail, goal, outputLanguage string) (string, error) {
+	prompt, err := s.BuildMessagePrompt(detail, goal, outputLanguage)
 	if err != nil {
 		return "", err
 	}
@@ -83,10 +83,13 @@ func (s *Service) GenerateMessageFromContext(ctx context.Context, detail ThreadD
 }
 
 // BuildSummaryPrompt assembles the summarize prompt for a ThreadDetail. Pure.
-func (s *Service) BuildSummaryPrompt(detail ThreadDetail) llm.Prompt {
+// outputLanguage selects the locale-specific prompt template; missing locales
+// fall back to English.
+func (s *Service) BuildSummaryPrompt(detail ThreadDetail, outputLanguage string) llm.Prompt {
+	set := llm.PickPromptSet(summarizePrompts, outputLanguage)
 	return llm.Prompt{
-		System: summarizeSystemPrompt,
-		User:   fmt.Sprintf(summarizeUserPrompt, buildThreadContext(detail)),
+		System: set.System,
+		User:   fmt.Sprintf(set.User, buildThreadContext(detail)),
 	}
 }
 
@@ -96,14 +99,17 @@ func (s *Service) FinalizeSummary(out SummaryResult) string {
 }
 
 // BuildMessagePrompt assembles the message-generation prompt. Validates goal.
-func (s *Service) BuildMessagePrompt(detail ThreadDetail, goal string) (llm.Prompt, error) {
+// outputLanguage selects the locale-specific prompt template; missing locales
+// fall back to English.
+func (s *Service) BuildMessagePrompt(detail ThreadDetail, goal, outputLanguage string) (llm.Prompt, error) {
 	goal = strings.TrimSpace(strings.ToLower(goal))
 	if goal != "outreach" && goal != "reply" {
 		return llm.Prompt{}, ErrInvalidGoal
 	}
+	set := llm.PickPromptSet(messagePrompts, outputLanguage)
 	return llm.Prompt{
-		System: generateSystemPrompt,
-		User:   fmt.Sprintf(generateUserPrompt, goal, buildThreadContext(detail)),
+		System: set.System,
+		User:   fmt.Sprintf(set.User, goal, buildThreadContext(detail)),
 	}, nil
 }
 

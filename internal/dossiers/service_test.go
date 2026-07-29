@@ -39,7 +39,7 @@ func TestBuildTextSanitizesAndReturnsDossier(t *testing.T) {
 		"reasoning": "  ok  "
 	}`}}
 
-	got, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"})
+	got, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"}, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestBuildTextSanitizesAndReturnsDossier(t *testing.T) {
 
 func TestBuildTextDropsUnparseableCareersURL(t *testing.T) {
 	svc := &Service{client: &fakeClient{payload: `{"careers_url": "not a url"}`}}
-	got, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"})
+	got, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"}, "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestBuildTextDropsUnparseableCareersURL(t *testing.T) {
 
 func TestBuildTextErrorsWithoutClient(t *testing.T) {
 	svc := &Service{}
-	_, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"})
+	_, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"}, "")
 	if err == nil {
 		t.Fatal("expected error when llm client is nil")
 	}
@@ -88,7 +88,7 @@ func TestBuildTextErrorsWithoutClient(t *testing.T) {
 func TestBuildTextPropagatesClientError(t *testing.T) {
 	boom := errors.New("boom")
 	svc := &Service{client: &fakeClient{err: boom}}
-	_, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"})
+	_, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"}, "")
 	if err == nil || !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped boom, got %v", err)
 	}

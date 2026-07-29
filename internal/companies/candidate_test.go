@@ -30,7 +30,7 @@ func TestGuessCandidateSanitizesURLs(t *testing.T) {
 		"reasoning": "  looks legit  "
 	}`})
 
-	got, err := svc.GuessCandidate(context.Background(), "acme")
+	got, err := svc.GuessCandidate(context.Background(), "acme", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestGuessCandidateSanitizesURLs(t *testing.T) {
 func TestGuessCandidateFallsBackToInputName(t *testing.T) {
 	svc := NewService(&fakeClient{payload: `{"official_name": "  "}`})
 
-	got, err := svc.GuessCandidate(context.Background(), "  fallback co  ")
+	got, err := svc.GuessCandidate(context.Background(), "  fallback co  ", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestGuessCandidateFallsBackToInputName(t *testing.T) {
 
 func TestGuessCandidateEmptyInputReturnsEmpty(t *testing.T) {
 	svc := NewService(&fakeClient{})
-	got, err := svc.GuessCandidate(context.Background(), "   ")
+	got, err := svc.GuessCandidate(context.Background(), "   ", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestGuessCandidateEmptyInputReturnsEmpty(t *testing.T) {
 
 func TestGuessCandidateNoClientReturnsFallback(t *testing.T) {
 	svc := NewService(nil)
-	got, err := svc.GuessCandidate(context.Background(), "Acme")
+	got, err := svc.GuessCandidate(context.Background(), "Acme", "")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

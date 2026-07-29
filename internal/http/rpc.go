@@ -35,7 +35,8 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 // browser client. Input: {"name": "..."}. Output: the Candidate struct.
 func (s *Server) rpcGuessCompanyCandidate(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Name string `json:"name"`
+		Name           string `json:"name"`
+		OutputLanguage string `json:"output_language"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -46,7 +47,7 @@ func (s *Server) rpcGuessCompanyCandidate(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	candidate, err := s.companies.GuessCandidate(r.Context(), name)
+	candidate, err := s.companies.GuessCandidate(r.Context(), name, body.OutputLanguage)
 	if err != nil {
 		// Return the fallback candidate the service produces on LLM failure,
 		// with a warning in the body so the UI can surface it.
@@ -65,10 +66,11 @@ func (s *Server) rpcGuessCompanyCandidate(w http.ResponseWriter, r *http.Request
 // struct (JSON-tagged). No DB access — the browser stores the result locally.
 func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		OfficialName string `json:"official_name"`
-		Website      string `json:"website"`
-		ATSURL       string `json:"ats_url"`
-		ATSProvider  string `json:"ats_provider"`
+		OfficialName   string `json:"official_name"`
+		Website        string `json:"website"`
+		ATSURL         string `json:"ats_url"`
+		ATSProvider    string `json:"ats_provider"`
+		OutputLanguage string `json:"output_language"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -84,7 +86,7 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 		Website:      strings.TrimSpace(body.Website),
 		ATSURL:       strings.TrimSpace(body.ATSURL),
 		ATSProvider:  strings.TrimSpace(body.ATSProvider),
-	})
+	}, body.OutputLanguage)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -96,7 +98,8 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 // Input: {"body":"..."}. Output: {"tags":[...]}.
 func (s *Server) rpcGenerateBragTags(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Body string `json:"body"`
+		Body           string `json:"body"`
+		OutputLanguage string `json:"output_language"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -106,7 +109,7 @@ func (s *Server) rpcGenerateBragTags(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "body is required")
 		return
 	}
-	tags, err := s.brags.GenerateTags(r.Context(), body.Body)
+	tags, err := s.brags.GenerateTags(r.Context(), body.Body, body.OutputLanguage)
 	if err != nil {
 		log.Printf("rpc generate-brag-tags: %v", err)
 		writeErr(w, http.StatusBadGateway, err.Error())
@@ -132,6 +135,7 @@ type threadDetailPayload struct {
 		Content    string `json:"content"`
 		OccurredAt string `json:"occurred_at"`
 	} `json:"entries"`
+	OutputLanguage string `json:"output_language"`
 }
 
 // toThreadDetail converts the wire payload into the domain type expected by
@@ -173,7 +177,7 @@ func (s *Server) rpcSummarizeThread(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	summary, err := s.communications.SummarizeThreadContext(r.Context(), body.toThreadDetail())
+	summary, err := s.communications.SummarizeThreadContext(r.Context(), body.toThreadDetail(), body.OutputLanguage)
 	if err != nil {
 		log.Printf("rpc summarize-thread: %v", err)
 		if errors.Is(err, communications.ErrUnsafeGeneration) {
@@ -197,7 +201,7 @@ func (s *Server) rpcGenerateMessage(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	message, err := s.communications.GenerateMessageFromContext(r.Context(), body.threadDetailPayload.toThreadDetail(), body.Goal)
+	message, err := s.communications.GenerateMessageFromContext(r.Context(), body.threadDetailPayload.toThreadDetail(), body.Goal, body.threadDetailPayload.OutputLanguage)
 	if err != nil {
 		log.Printf("rpc generate-message: %v", err)
 		if errors.Is(err, communications.ErrUnsafeGeneration) {
@@ -219,6 +223,7 @@ func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request
 		RoleTitle         string `json:"role_title"`
 		JobPostingURL     string `json:"job_posting_url"`
 		JobDescriptionRaw string `json:"job_description_raw"`
+		OutputLanguage    string `json:"output_language"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -229,6 +234,7 @@ func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request
 		RoleTitle:         body.RoleTitle,
 		JobPostingURL:     body.JobPostingURL,
 		JobDescriptionRaw: body.JobDescriptionRaw,
+		OutputLanguage:    body.OutputLanguage,
 	})
 	if err != nil {
 		log.Printf("rpc extract-job-description: %v", err)

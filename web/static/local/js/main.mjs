@@ -1,9 +1,10 @@
-// Local-first app entrypoint. Boots DB and dispatches to the current page module.
+// App entrypoint. Boots DB and dispatches to the current page module.
 // Page identity comes from the data-page attribute on <main id="app">.
 
 import { initDb } from './db/client.mjs';
 import { ensureSchema } from './db/schema.mjs';
 import { hydrateIcons } from './ui/icons.mjs';
+import { initI18n, t } from './i18n.mjs';
 import { mountSettings } from './pages/settings.mjs';
 import { mountApplications } from './pages/applications.mjs';
 import { mountDashboard } from './pages/dashboard.mjs';
@@ -28,7 +29,11 @@ const renderStatus = (msg, cls = '') => {
 
 const boot = async () => {
   try {
-    renderStatus('Initializing local database…', 'text-slate-500');
+    // Load locale bundles before any page mounts so t() is usable in every
+    // page module. The server-rendered shell is already localized via cookie;
+    // this initializes the client mirror so subsequent t() calls agree.
+    await initI18n();
+    renderStatus(t('app.loading'), 'text-slate-500');
     const info = await initDb();
     console.log('[local] sqlite ready', info);
     await ensureSchema();

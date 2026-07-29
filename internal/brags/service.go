@@ -10,8 +10,10 @@ import (
 )
 
 // GenerateTags runs the brag-tag prompt and returns normalized tags.
-func (s *Service) GenerateTags(ctx context.Context, body string) ([]string, error) {
-	prompt := s.BuildGenerateTagsPrompt(body)
+// outputLanguage selects the locale-specific prompt template; missing locales
+// fall back to English.
+func (s *Service) GenerateTags(ctx context.Context, body, outputLanguage string) ([]string, error) {
+	prompt := s.BuildGenerateTagsPrompt(body, outputLanguage)
 	if s.client == nil {
 		return nil, fmt.Errorf("llm client is not configured")
 	}
@@ -23,11 +25,12 @@ func (s *Service) GenerateTags(ctx context.Context, body string) ([]string, erro
 }
 
 // BuildGenerateTagsPrompt assembles the prompt for generating brag tags.
-func (s *Service) BuildGenerateTagsPrompt(body string) llm.Prompt {
+func (s *Service) BuildGenerateTagsPrompt(body, outputLanguage string) llm.Prompt {
+	set := llm.PickPromptSet(generateTagsPrompts, outputLanguage)
 	trimmed := strings.TrimSpace(body)
 	return llm.Prompt{
-		System: generateTagsSystemPrompt,
-		User:   fmt.Sprintf(generateTagsUserPrompt, trimmed),
+		System: set.System,
+		User:   fmt.Sprintf(set.User, trimmed),
 	}
 }
 

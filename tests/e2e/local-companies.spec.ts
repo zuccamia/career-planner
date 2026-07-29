@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// The local-first app renders entirely on the client: the Go server only
+// The app renders entirely on the client: the Go server only
 // serves a minimal HTML shell, and page content is drawn by JS after
 // sqlite-wasm + OPFS boot. Each Playwright test uses a fresh browser context,
 // so OPFS starts empty and no server-side reset is required.
@@ -200,5 +200,43 @@ test.describe('local companies page', () => {
     // above — plus no unrelated blog link.
     const headerAnchors = alphaCard.locator('a[title^="People at "], a[title^="Applications at "], a[title^="Engineering blog"]');
     await expect(headerAnchors).toHaveCount(2);
+  });
+
+  // A company name with special characters should render as literal text
+  // (no HTML injection) and appear correctly in confirm dialogs (no visible
+  // &amp; leaks).
+  test('special characters in a company name render safely across the UI', async ({ page }) => {
+    const trickyName = 'Rock & <b>Roll</b> "Inc"';
+    await gotoCompanies(page);
+    await openEditor(page);
+    await fillEditor(page, { officialName: trickyName });
+    await page.getByRole('button', { name: 'Create company' }).click();
+    await expect(page.locator('#toast')).toContainText(/Created company #\d+/);
+
+    // innerHTML sink: the list card must render the name as literal text —
+    // if <b> parsed as HTML, no <b> element would exist inside the card and
+    // toContainText would still match. So assert both: text matches AND
+    // there is no actual <b> descendant (proves the tags stayed as text).
+    const card = page.locator('#list-content li', { hasText: trickyName });
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(trickyName);
+    await expect(card.locator('b')).toHaveCount(0);
+    // Double-escape guard: literal "&amp;" must never appear as visible text.
+    await expect(card).not.toContainText('&amp;');
+
+    // confirm dialog: message contains the raw &, <, >, " — not &amp;, &lt;,
+    // &gt;, &quot;. Capture the dialog text before dismissing.
+    const dialogText = await new Promise<string>((resolve) => {
+      page.once('dialog', (dialog) => {
+        const msg = dialog.message();
+        dialog.dismiss();
+        resolve(msg);
+      });
+      card.getByRole('button', { name: `Delete ${trickyName}` }).click();
+    });
+    expect(dialogText).toContain(trickyName);
+    expect(dialogText).not.toContain('&amp;');
+    expect(dialogText).not.toContain('&lt;');
+    expect(dialogText).not.toContain('&quot;');
   });
 });

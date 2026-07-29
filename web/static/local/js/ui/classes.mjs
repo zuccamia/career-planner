@@ -1,4 +1,4 @@
-// Shared Tailwind class strings for the local-first UI. Kept as literal
+// Shared Tailwind class strings for the UI. Kept as literal
 // strings so Tailwind's static scanner can see them.
 
 export const CLS = {

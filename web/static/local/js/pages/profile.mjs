@@ -10,6 +10,7 @@ import { CLS } from '../ui/classes.mjs';
 import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
 import { button, pageHeader, formField, emptyState, inlineError, setInlineError, badge, tab, chip, removablePill } from '../ui/components.mjs';
 import { toast } from '../ui/toast.mjs';
+import { t } from '../i18n.mjs';
 import {
   getOverview, updateOverview, markOnboarded, clearOnboarded, SKILL_LEVELS,
 } from '../entities/profile-overview.mjs';
@@ -31,10 +32,12 @@ import { compileTypstToPdf } from '../workers/typst-client.mjs';
 
 // Tab identity + display label in one place — order determines tab-strip
 // order (relying on JS insertion order for object keys, guaranteed since ES2015).
+// Values are i18n keys resolved at render time (t() bundle isn't ready at
+// module load).
 const TABS = {
-  overview: 'Overview',
-  resumes: 'Resumes',
-  brag: 'Brag Sheet',
+  overview: 'profile.tab.overview',
+  resumes: 'profile.tab.resumes',
+  brag: 'profile.tab.brag_sheet',
 };
 const TAB_NAMES = Object.keys(TABS);
 const CURRENT_YEAR = String(new Date().getFullYear());
@@ -68,7 +71,7 @@ const shellHtml = () => `
   <div class="space-y-6">
     <div id="toast" class="hidden"></div>
     <section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      ${pageHeader({ title: 'Profile', tagline: 'Who you are, what you want, and the material to tailor from.' })}
+      ${pageHeader({ title: t('page.profile.title'), tagline: t('profile.tagline') })}
     </section>
 
     <div class="border-b border-slate-200">
@@ -82,7 +85,7 @@ const shellHtml = () => `
 `;
 
 const tabButton = (name) => tab({
-  label: TABS[name],
+  label: t(TABS[name]),
   name,
   active: state.tab === name,
 });
@@ -144,7 +147,7 @@ const wireTabStrip = () => {
 // ============================================================================
 
 const renderOverviewTab = async (el) => {
-  el.innerHTML = `<p class="text-sm text-slate-500">Loading profile…</p>`;
+  el.innerHTML = `<p class="text-sm text-slate-500">${t('app.loading')}</p>`;
   const [overview, sparkCount] = await Promise.all([getOverview(), countSparks()]);
   const isFirstRun =
     !overview?.onboarded_at &&
@@ -175,27 +178,27 @@ const renderOverviewFlat = async (el, overview) => {
     <div class="space-y-6">
       <div class="${CLS.card}">
         <div class="flex items-baseline justify-between">
-          <p class="${CLS.eyebrow}">About you</p>
-          ${button({ id: 'btn-redo-intro', variant: 'primaryCompact', icon: 'arrowPath', label: 'Redo intro' })}
+          <p class="${CLS.eyebrow}">${t('profile.overview.about_eyebrow')}</p>
+          ${button({ id: 'btn-redo-intro', variant: 'primaryCompact', icon: 'arrowPath', label: t('profile.action.redo_intro') })}
         </div>
         ${inlineError({ id: 'overview-error' })}
         <div class="grid gap-4">
-          ${formField({ type: 'text', name: 'ov-name', label: 'Name',
-                        value: overview?.name || '', placeholder: 'Your name',
+          ${formField({ type: 'text', name: 'ov-name', label: t('profile.field.name.label'),
+                        value: overview?.name || '', placeholder: t('profile.field.name.placeholder'),
                         dataset: { field: 'name' } })}
-          ${formField({ type: 'text', name: 'ov-headline', label: 'Headline',
+          ${formField({ type: 'text', name: 'ov-headline', label: t('profile.field.headline.label'),
                         value: overview?.headline || '',
-                        placeholder: 'Backend engineer, data pipelines',
-                        hint: 'A one-line snapshot of who you are and the work you want to be known for.',
+                        placeholder: t('profile.field.headline.placeholder'),
+                        hint: t('profile.field.headline.hint'),
                         dataset: { field: 'headline' } })}
-          ${formField({ type: 'textarea', name: 'ov-summary', label: 'Summary',
+          ${formField({ type: 'textarea', name: 'ov-summary', label: t('profile.field.summary.label'),
                         value: overview?.summary || '', rows: 6,
-                        placeholder: 'What kind of work do you want to do next?',
+                        placeholder: t('profile.field.summary.placeholder'),
                         dataset: { field: 'summary' } })}
           <div class="grid gap-2">
-            <label class="${CLS.label}">Skills</label>
+            <label class="${CLS.label}">${t('profile.skills.label')}</label>
             ${skillsEditorHtml({ mountId: 'ov-skills-editor', skills: overview?.skills || [] })}
-            <p class="text-xs text-slate-500">A stable "glossary" the AI can pull from when tailoring. Years and level are optional — leave blank if unsure.</p>
+            <p class="text-xs text-slate-500">${t('profile.skills.help')}</p>
           </div>
         </div>
       </div>
@@ -203,8 +206,8 @@ const renderOverviewFlat = async (el, overview) => {
       <div class="${CLS.card}">
         <div class="flex items-baseline justify-between">
           <div>
-            <p class="${CLS.eyebrow}">Career priorities (sparks)</p>
-            <p class="mt-1 text-sm text-slate-500">What matters most to you in a role. Set a priority (P1 = top) when adding each spark; several sparks can share the same tier. Sparks at your top tier are <span class="font-medium text-slate-700">highlighted</span> — the AI weights them most when tailoring resumes and outreach.</p>
+            <p class="${CLS.eyebrow}">${t('profile.sparks.eyebrow')}</p>
+            <p class="mt-1 text-sm text-slate-500">${t('profile.sparks.help')}</p>
           </div>
         </div>
         <div id="sparks-list" class="space-y-2">${sparksListHtml(sparks)}</div>
@@ -217,7 +220,7 @@ const renderOverviewFlat = async (el, overview) => {
 
 const sparksListHtml = (sparks) => {
   if (!sparks.length) {
-    return `<p class="text-sm text-slate-400">No sparks yet. Add a few to tell the AI what matters most to you.</p>`;
+    return `<p class="text-sm text-slate-400">${t('profile.sparks.empty')}</p>`;
   }
   // "Top priority" = the smallest sort_order present. Any spark at that tier
   // (there may be several tied) is highlighted; the rest render muted.
@@ -237,7 +240,7 @@ const sparkPillHtml = (s, isTopTier) => {
     classes: 'gap-1.5',
     dataset: idAttr,
     dismissClass: 'js-spark-delete',
-    dismissLabel: 'Remove spark',
+    dismissLabel: t('profile.sparks.aria.remove'),
   });
 };
 
@@ -258,15 +261,15 @@ const bragTagPillHtml = (tag) => {
 // (middle) so the first spark added isn't automatically the top.
 const sparkInputHtml = () => `
   <div class="flex items-center gap-2">
-    <input id="spark-input" type="text" placeholder="Type a spark and press Enter" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
-    <select id="spark-priority" title="Priority (P1 = top)" class="${CLS.inputBase} w-24 shrink-0">
-      <option value="1">P1 top</option>
-      <option value="2">P2</option>
-      <option value="3" selected>P3</option>
-      <option value="4">P4</option>
-      <option value="5">P5</option>
+    <input id="spark-input" type="text" placeholder="${t('profile.sparks.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
+    <select id="spark-priority" title="${t('profile.sparks.priority_title')}" class="${CLS.inputBase} w-24 shrink-0">
+      <option value="1">${t('profile.sparks.priority.p1')}</option>
+      <option value="2">${t('profile.sparks.priority.p2')}</option>
+      <option value="3" selected>${t('profile.sparks.priority.p3')}</option>
+      <option value="4">${t('profile.sparks.priority.p4')}</option>
+      <option value="5">${t('profile.sparks.priority.p5')}</option>
     </select>
-    ${button({ id: 'btn-add-spark', variant: 'secondaryCompact', icon: 'plus', label: 'Add' })}
+    ${button({ id: 'btn-add-spark', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
   </div>
 `;
 
@@ -352,19 +355,19 @@ const skillPillHtml = (s, i) => {
 const skillsEditorHtml = ({ mountId, skills = [] }) => `
   <div id="${mountId}" data-skills-editor class="space-y-3">
     <div class="flex items-center gap-2">
-      <input type="text" class="${CLS.inputBase} flex-1 min-w-0 js-skill-name" placeholder="Skill name (Enter to add)" autocomplete="off" />
+      <input type="text" class="${CLS.inputBase} flex-1 min-w-0 js-skill-name" placeholder="${t('profile.skills.name_placeholder')}" autocomplete="off" />
       <input type="number" class="${CLS.inputBase} w-16 shrink-0 px-2 text-center js-skill-years"
-             min="0" step="0.5" placeholder="Yrs" title="Years of experience (optional)" />
-      <select class="${CLS.inputBase} w-32 shrink-0 js-skill-level" title="Self-rated level (optional)">
+             min="0" step="0.5" placeholder="${t('profile.skills.years_placeholder')}" title="${t('profile.skills.years_title')}" />
+      <select class="${CLS.inputBase} w-32 shrink-0 js-skill-level" title="${t('profile.skills.level_title')}">
         <option value="">—</option>
         ${SKILL_LEVELS.map(lvl => `<option value="${lvl}">${capitalize(lvl)}</option>`).join('')}
       </select>
-      ${button({ variant: 'secondaryCompact', icon: 'plus', label: 'Add', extraClass: 'js-add-skill' })}
+      ${button({ variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add'), extraClass: 'js-add-skill' })}
     </div>
     <div class="js-skill-pills flex flex-wrap gap-2">
       ${skills.length
         ? skills.map((s, i) => skillPillHtml(s, i)).join('')
-        : '<p class="text-sm text-slate-400">No skills yet.</p>'}
+        : `<p class="text-sm text-slate-400">${t('profile.skills.empty')}</p>`}
     </div>
   </div>
 `;
@@ -383,7 +386,7 @@ const wireSkillsEditor = (mountId, initialSkills, onChange) => {
     if (!pillsEl) return;
     pillsEl.innerHTML = skills.length
       ? skills.map((s, i) => skillPillHtml(s, i)).join('')
-      : '<p class="text-sm text-slate-400">No skills yet.</p>';
+      : `<p class="text-sm text-slate-400">${t('profile.skills.empty')}</p>`;
     wirePills();
   };
 
@@ -514,26 +517,26 @@ const WIZARD_STEPS = 8;
 
 // Themed spark steps sit between the text prompts (1–4) and the recap (8).
 // Keys must match the step numbers so `SPARK_THEMES[step]` works directly.
-const SPARK_THEMES = {
+const sparkThemes = () => ({
   5: {
-    title: 'Work environment',
-    prompt: 'Where and how do you want to work?',
-    hints: 'Remote / hybrid / in-person? Team size? Pace? Timezone constraints?',
+    title: t('profile.wizard.spark.env.title'),
+    prompt: t('profile.wizard.spark.env.prompt'),
+    hints: t('profile.wizard.spark.env.hint'),
     chips: ['remote-friendly', 'async-first', 'small team (<15)', 'hybrid ok'],
   },
   6: {
-    title: 'What matters most',
-    prompt: 'What values or conditions matter to you?',
-    hints: 'Autonomy, mission, learning, compensation, work-life? Anything that would be a dealbreaker?',
+    title: t('profile.wizard.spark.values.title'),
+    prompt: t('profile.wizard.spark.values.prompt'),
+    hints: t('profile.wizard.spark.values.hint'),
     chips: ['high-agency', 'ships weekly', 'mission-driven', 'mentorship available'],
   },
   7: {
-    title: 'Craft & tools',
-    prompt: 'Any tools, languages, or areas you especially enjoy — or want to avoid?',
-    hints: "Languages, frameworks, domains you're drawn to. It's fine to name things you'd rather not touch.",
+    title: t('profile.wizard.spark.craft.title'),
+    prompt: t('profile.wizard.spark.craft.prompt'),
+    hints: t('profile.wizard.spark.craft.hint'),
     chips: ['Go', 'TypeScript', 'data pipelines', 'no on-call'],
   },
-};
+});
 
 const renderWizard = async (el) => {
   const step = state.wizardStep;
@@ -542,36 +545,36 @@ const renderWizard = async (el) => {
   ).join(' ');
 
   let body = '';
-  if (step === 1) body = wizardTextStep({ label: 'Your name', hint: "What you'd like to see in your resume header.", field: 'name', placeholder: 'Your name', multiline: false });
-  else if (step === 2) body = wizardTextStep({ label: 'Your one-line pitch', hint: 'A one-line snapshot of who you are and the work you want to be known for.', field: 'headline', placeholder: 'Backend engineer, data pipelines', multiline: false, examples: [
-    'Senior accountant, month-end close and consolidations',
-    'Data analyst focused on growth experimentation',
-    'Frontend engineer, design systems',
-    'Product manager, developer platforms',
-    'Registered nurse, cardiac step-down',
+  if (step === 1) body = wizardTextStep({ label: t('profile.wizard.name.label'), hint: t('profile.field.name.hint'), field: 'name', placeholder: t('profile.field.name.placeholder'), multiline: false });
+  else if (step === 2) body = wizardTextStep({ label: t('profile.wizard.headline.label'), hint: t('profile.field.headline.hint'), field: 'headline', placeholder: t('profile.field.headline.placeholder'), multiline: false, examples: [
+    t('profile.wizard.headline.example1'),
+    t('profile.wizard.headline.example2'),
+    t('profile.wizard.headline.example3'),
+    t('profile.wizard.headline.example4'),
+    t('profile.wizard.headline.example5'),
   ] });
-  else if (step === 3) body = wizardTextStep({ label: 'What kind of work do you want to do next?', hint: 'A paragraph is fine — write it for yourself, not a recruiter.', field: 'summary', placeholder: "Picture the work that would make you glad you spent the year on it. What are you building, who's it for, and what did you get to be good at along the way?", multiline: true });
+  else if (step === 3) body = wizardTextStep({ label: t('profile.wizard.summary.label'), hint: t('profile.field.summary.hint'), field: 'summary', placeholder: t('profile.wizard.summary.placeholder'), multiline: true });
   else if (step === 4) body = wizardSkillsStep();
-  else if (step >= 5 && step <= 7) body = await wizardSparkStep(SPARK_THEMES[step]);
+  else if (step >= 5 && step <= 7) body = await wizardSparkStep(sparkThemes()[step]);
   else if (step === 8) body = await wizardRecapStep();
 
   el.innerHTML = `
     <div class="${CLS.card} max-w-2xl mx-auto">
       <div class="flex items-center justify-between">
-        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Set up your profile · Step ${step} of ${WIZARD_STEPS}</p>
+        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${t('profile.wizard.progress', { step, total: WIZARD_STEPS })}</p>
         <div class="flex gap-1.5" aria-hidden="true">${dots}</div>
       </div>
       ${inlineError({ id: 'wizard-error' })}
       <div class="pt-2">${body}</div>
       <div class="flex items-center justify-between pt-4">
         <div>
-          ${step > 1 ? button({ id: 'btn-wizard-back', variant: 'secondaryCompact', label: 'Back' }) : ''}
+          ${step > 1 ? button({ id: 'btn-wizard-back', variant: 'secondaryCompact', label: t('profile.wizard.action.back') }) : ''}
         </div>
         <div class="flex gap-2">
-          ${step < WIZARD_STEPS ? button({ id: 'btn-wizard-skip', variant: 'linkMuted', label: step <= 4 ? 'Skip setup' : 'Skip this' }) : ''}
+          ${step <= 4 ? button({ id: 'btn-wizard-skip', variant: 'linkMuted', label: t('profile.wizard.action.skip_all') }) : ''}
           ${step < WIZARD_STEPS
-            ? button({ id: 'btn-wizard-next', variant: 'primaryCompact', label: 'Next →' })
-            : button({ id: 'btn-wizard-done', variant: 'primaryCompact', icon: 'check', label: 'Looks good' })}
+            ? button({ id: 'btn-wizard-next', variant: 'primaryCompact', label: t('profile.wizard.action.next') })
+            : button({ id: 'btn-wizard-done', variant: 'primaryCompact', icon: 'check', label: t('profile.wizard.action.finish') })}
         </div>
       </div>
     </div>
@@ -582,8 +585,8 @@ const renderWizard = async (el) => {
 const wizardSkillsStep = () => `
   <div class="space-y-4">
     <div>
-      <h2 class="text-lg font-semibold text-slate-900">Your top skills</h2>
-      <p class="mt-1 text-sm text-slate-500">Add each skill with optional years and self-rated level. The AI uses this as a stable "glossary" when tailoring — level and years let it emphasize your strongest bets.</p>
+      <h2 class="text-lg font-semibold text-slate-900">${t('profile.wizard.skills.heading')}</h2>
+      <p class="mt-1 text-sm text-slate-500">${t('profile.wizard.skills.help')}</p>
     </div>
     ${skillsEditorHtml({ mountId: 'wiz-skills-editor', skills: state.wizardOverview.skills || [] })}
   </div>
@@ -626,8 +629,8 @@ const wizardSparkStep = async (theme) => {
       ${sparkInputHtml()}
       ${carryover.length ? `
         <div class="space-y-2 border-t border-slate-100 pt-4">
-          <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Already on file</p>
-          <p class="text-xs text-slate-500">Kept from previous entries — the AI still sees them. Click × to remove any that no longer fit.</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${t('profile.wizard.spark.already_on_file')}</p>
+          <p class="text-xs text-slate-500">${t('profile.wizard.spark.already_on_file_help')}</p>
           <div id="carryover-sparks" class="opacity-75">${sparksListHtml(carryover)}</div>
         </div>
       ` : ''}
@@ -663,7 +666,7 @@ const wizardRecapStep = async () => {
   const line = (label, val) => `
     <div class="grid gap-1">
       <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${escapeHtml(label)}</p>
-      <p class="text-sm text-slate-900">${val ? escapeHtml(val) : '<span class="text-slate-400">— not set —</span>'}</p>
+      <p class="text-sm text-slate-900">${val ? escapeHtml(val) : `<span class="text-slate-400">${t('common.status.not_set')}</span>`}</p>
     </div>
   `;
   const formatSkill = (s) => {
@@ -674,22 +677,22 @@ const wizardRecapStep = async () => {
   };
   const skillsList = (ov?.skills || []).length
     ? `<ul class="mt-1 space-y-1 text-sm text-slate-900">${ov.skills.map(s => `<li>· ${formatSkill(s)}</li>`).join('')}</ul>`
-    : `<p class="text-sm text-slate-400">— none —</p>`;
+    : `<p class="text-sm text-slate-400">${t('common.status.none')}</p>`;
   const sparkList = sparks.length
     ? `<ul class="mt-1 space-y-1 text-sm text-slate-900">${sparks.map(s => `<li>· ${escapeHtml(s.body)}</li>`).join('')}</ul>`
-    : `<p class="text-sm text-slate-400">— none —</p>`;
+    : `<p class="text-sm text-slate-400">${t('common.status.none')}</p>`;
   return `
     <div class="space-y-4">
-      <h2 class="text-lg font-semibold text-slate-900">Your profile</h2>
-      ${line('Name', ov?.name)}
-      ${line('Headline', ov?.headline)}
-      ${line('Summary', ov?.summary)}
+      <h2 class="text-lg font-semibold text-slate-900">${t('profile.recap.heading')}</h2>
+      ${line(t('profile.recap.name'), ov?.name)}
+      ${line(t('profile.recap.headline'), ov?.headline)}
+      ${line(t('profile.recap.summary'), ov?.summary)}
       <div class="grid gap-1">
-        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Skills</p>
+        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${t('profile.recap.skills')}</p>
         ${skillsList}
       </div>
       <div class="grid gap-1">
-        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Career sparks</p>
+        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${t('profile.recap.sparks')}</p>
         ${sparkList}
       </div>
     </div>
@@ -707,16 +710,9 @@ const wireWizard = (el) => {
   });
 
   document.getElementById('btn-wizard-skip')?.addEventListener('click', async () => {
-    // Text steps (1–4) treat Skip as "opt out of the whole wizard"; themed
-    // spark steps (5–7) treat Skip as "advance to the next theme."
-    if (step <= 4) {
-      await persistWizardTextIfAny();
-      await markOnboarded();
-      renderOverviewTab(el);
-    } else {
-      state.wizardStep = step + 1;
-      renderWizard(el);
-    }
+    await persistWizardTextIfAny();
+    await markOnboarded();
+    renderOverviewTab(el);
   });
 
   document.getElementById('btn-wizard-next')?.addEventListener('click', async () => {
@@ -773,18 +769,18 @@ const persistWizardTextIfAny = async () => {
 // ============================================================================
 
 const renderResumesTab = async (el) => {
-  el.innerHTML = `<p class="text-sm text-slate-500">Loading resumes…</p>`;
+  el.innerHTML = `<p class="text-sm text-slate-500">${t('app.loading')}</p>`;
   refreshProfileTabCounts();
   const resumes = await listResumes();
   el.innerHTML = `
     <div class="space-y-6">
       <section class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Store the source (markdown or Typst). Typst resumes compile to PDF in-browser and can be attached to an application.</p>
-        ${button({ id: 'btn-new-resume', variant: 'primaryCompact', icon: 'plus', label: 'Resume', ariaLabel: 'Add resume' })}
+        <p class="text-sm text-slate-500">${t('profile.resumes.help')}</p>
+        ${button({ id: 'btn-new-resume', variant: 'primaryCompact', icon: 'plus', label: t('profile.resumes.action.new'), ariaLabel: t('profile.resumes.aria.add') })}
       </section>
       <section id="resume-editor" class="${state.resumeEditorId || state.resumeEditorNew ? '' : 'hidden'}"></section>
       <section id="resume-list" class="${CLS.card}">
-        ${resumes.length ? resumesListHtml(resumes) : emptyState({ message: 'No resumes yet. Create one to get started.' })}
+        ${resumes.length ? resumesListHtml(resumes) : emptyState({ message: t('profile.resumes.empty') })}
       </section>
     </div>
   `;
@@ -802,18 +798,18 @@ const resumesListHtml = (resumes) => `
         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div class="min-w-0 space-y-1">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="font-semibold text-slate-900">${escapeHtml(r.title || '(untitled)')}</span>
-              ${badge({ label: r.format === 'typ' ? 'Typst' : 'Markdown', color: r.format === 'typ' ? 'violet' : 'slate', size: 'xs' })}
-              ${r.is_primary ? badge({ label: 'Primary', color: 'emerald', size: 'xs' }) : ''}
+              <span class="font-semibold text-slate-900">${escapeHtml(r.title || t('profile.resumes.untitled'))}</span>
+              ${badge({ label: r.format === 'typ' ? t('profile.resumes.format.typst') : t('profile.resumes.format.markdown'), color: r.format === 'typ' ? 'violet' : 'slate', size: 'xs' })}
+              ${r.is_primary ? badge({ label: t('profile.resumes.primary'), color: 'emerald', size: 'xs' }) : ''}
             </div>
-            <p class="text-xs text-slate-500">Updated ${formatDate(r.updated_at)}</p>
+            <p class="text-xs text-slate-500">${t('common.updated_at', { date: formatDate(r.updated_at) })}</p>
           </div>
           <div class="flex items-center gap-2 shrink-0">
             ${r.is_primary
               ? ''
-              : button({ variant: 'secondaryCompact', label: 'Set primary', extraClass: 'js-primary', dataset: { id: r.id } })}
-            ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: 'Edit', extraClass: 'js-edit-resume', dataset: { id: r.id } })}
-            ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: 'Delete', extraClass: 'js-delete-resume', dataset: { id: r.id, title: r.title || '(untitled)' } })}
+              : button({ variant: 'secondaryCompact', label: t('profile.resumes.action.set_primary'), extraClass: 'js-primary', dataset: { id: r.id } })}
+            ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('common.action.edit'), extraClass: 'js-edit-resume', dataset: { id: r.id } })}
+            ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('common.action.delete'), extraClass: 'js-delete-resume', dataset: { id: r.id, title: r.title || t('profile.resumes.untitled') } })}
           </div>
         </div>
       </li>
@@ -824,10 +820,10 @@ const resumesListHtml = (resumes) => `
 const wireResumesList = () => {
   document.querySelectorAll('.js-edit-resume').forEach(b => b.addEventListener('click', () => openResumeEditor(Number(b.dataset.id))));
   document.querySelectorAll('.js-delete-resume').forEach(b => b.addEventListener('click', async () => {
-    if (!confirm(`Delete resume "${b.dataset.title}"?`)) return;
+    if (!confirm(t('profile.resumes.confirm.delete', { title: b.dataset.title }))) return;
     await deleteResume(Number(b.dataset.id));
     if (state.resumeEditorId === Number(b.dataset.id)) closeResumeEditor();
-    toast('Resume deleted', 'ok');
+    toast(t('profile.resumes.toast.deleted'), 'ok');
     renderResumesTab(document.getElementById('tab-content'));
   }));
   document.querySelectorAll('.js-primary').forEach(b => b.addEventListener('click', async () => {
@@ -860,46 +856,46 @@ const mountResumeEditor = async () => {
     <div class="${CLS.card}">
       <form id="resume-form" class="space-y-4">
         <div class="flex items-baseline justify-between">
-          <p class="${CLS.eyebrow}">${isNew ? 'New resume' : 'Edit resume'}</p>
+          <p class="${CLS.eyebrow}">${isNew ? t('profile.resumes.form.new_eyebrow') : t('profile.resumes.form.edit_eyebrow')}</p>
           <div class="flex items-center gap-2">
-            ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: 'Save' })}
-            ${button({ id: 'btn-close-resume', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: 'Cancel' })}
+            ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('common.action.save') })}
+            ${button({ id: 'btn-close-resume', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
         </div>
         ${inlineError({ id: 'resume-error' })}
         <div class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-          ${formField({ type: 'text', name: 'res-title', label: 'Title',
+          ${formField({ type: 'text', name: 'res-title', label: t('profile.resumes.field.title.label'),
                         value: r.title, required: true,
-                        placeholder: 'e.g. Senior accountant resume — or Backend engineer resume' })}
-          ${formField({ type: 'select', name: 'res-format', label: 'Format',
+                        placeholder: t('profile.resumes.field.title.placeholder') })}
+          ${formField({ type: 'select', name: 'res-format', label: t('profile.resumes.field.format.label'),
                         options: [
-                          { value: 'md',  label: 'Markdown (.md)', selected: r.format === 'md' },
-                          { value: 'typ', label: 'Typst (.typ)',   selected: r.format === 'typ' },
+                          { value: 'md',  label: t('profile.resumes.field.format.markdown'), selected: r.format === 'md' },
+                          { value: 'typ', label: t('profile.resumes.field.format.typst'),   selected: r.format === 'typ' },
                         ] })}
         </div>
-        ${formField({ type: 'textarea', name: 'res-body', label: 'Source',
+        ${formField({ type: 'textarea', name: 'res-body', label: t('profile.resumes.field.source.label'),
                       value: r.body, rows: 25, extraClass: 'font-mono text-xs',
-                      placeholder: 'Paste your resume source here…' })}
+                      placeholder: t('profile.resumes.field.source.placeholder') })}
       </form>
 
       <div id="typst-panel" class="${r.format === 'typ' ? '' : 'hidden'} space-y-3 border-t border-slate-200 pt-4">
         ${inlineError({ id: 'compile-error' })}
         <div class="flex items-center gap-2">
-          ${button({ id: 'btn-compile', variant: 'secondaryCompact', icon: 'sparkles', label: 'Compile to PDF' })}
+          ${button({ id: 'btn-compile', variant: 'secondaryCompact', icon: 'sparkles', label: t('profile.resumes.action.compile') })}
           <span id="compile-status" class="text-xs text-slate-500"></span>
         </div>
         <div id="pdf-preview" class="hidden">
-          <iframe id="pdf-iframe" class="h-96 w-full rounded-xl border border-slate-200" title="PDF preview"></iframe>
+          <iframe id="pdf-iframe" class="h-96 w-full rounded-xl border border-slate-200" title="${t('profile.resumes.pdf_preview_title')}"></iframe>
           <div class="mt-2 flex items-center gap-2">
-            ${button({ id: 'btn-attach-pdf', variant: 'primaryCompact', icon: 'arrowUpTray', label: 'Attach to application' })}
-            ${button({ id: 'btn-download-pdf', variant: 'secondaryCompact', icon: 'arrowDownTray', label: 'Download' })}
+            ${button({ id: 'btn-attach-pdf', variant: 'primaryCompact', icon: 'arrowUpTray', label: t('profile.resumes.action.attach') })}
+            ${button({ id: 'btn-download-pdf', variant: 'secondaryCompact', icon: 'arrowDownTray', label: t('profile.resumes.action.download') })}
           </div>
         </div>
         <div id="compile-log" class="hidden max-h-40 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] text-slate-700"></div>
       </div>
 
       <div class="border-t border-slate-200 pt-4">
-        <p class="${CLS.eyebrow}">PDFs sent from this resume</p>
+        <p class="${CLS.eyebrow}">${t('profile.resumes.sent.eyebrow')}</p>
         <div id="sent-pdfs" class="mt-3">${sentPdfsHtml(pdfList)}</div>
       </div>
     </div>
@@ -909,14 +905,16 @@ const mountResumeEditor = async () => {
 };
 
 const sentPdfsHtml = (rows) => {
-  if (!rows.length) return `<p class="text-xs text-slate-500">None yet. Compile a PDF above and attach it to an application.</p>`;
+  if (!rows.length) return `<p class="text-xs text-slate-500">${t('profile.resumes.sent.empty')}</p>`;
   return `<ul class="space-y-2">${rows.map(r => `
     <li class="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
       <div class="min-w-0">
         <p class="truncate font-medium text-slate-900">${escapeHtml(r.original_filename || r.filename)}</p>
         <p class="text-xs text-slate-500">${r.application_role_title
-          ? `Sent to ${escapeHtml(r.application_role_title)}${r.application_company_name ? ` · ${escapeHtml(r.application_company_name)}` : ''}`
-          : 'Application deleted'} · ${formatDate(r.created_at)}${r.size_bytes ? ' · ' + formatBytes(r.size_bytes) : ''}</p>
+          ? (r.application_company_name
+              ? t('profile.resumes.sent.item_with_company', { role: escapeHtml(r.application_role_title), company: escapeHtml(r.application_company_name) })
+              : t('profile.resumes.sent.item', { role: escapeHtml(r.application_role_title) }))
+          : t('profile.resumes.sent.deleted')} · ${formatDate(r.created_at)}${r.size_bytes ? ' · ' + formatBytes(r.size_bytes) : ''}</p>
       </div>
     </li>
   `).join('')}</ul>`;
@@ -938,18 +936,18 @@ const wireResumeEditor = () => {
       body: document.getElementById('res-body').value,
     };
     if (!data.title.trim()) {
-      setInlineError('resume-error', 'Title is required');
+      setInlineError('resume-error', t('profile.resumes.error.title_required'));
       return;
     }
     try {
       if (state.resumeEditorId) {
         await updateResume(state.resumeEditorId, data);
-        toast('Resume saved', 'ok');
+        toast(t('profile.resumes.toast.saved'), 'ok');
       } else {
         const id = await createResume(data);
         state.resumeEditorId = id;
         state.resumeEditorNew = false;
-        toast(`Created resume #${id}`, 'ok');
+        toast(t('profile.resumes.toast.created', { id }), 'ok');
       }
       renderResumesTab(document.getElementById('tab-content'));
     } catch (err) {
@@ -974,8 +972,8 @@ const compileCurrentResume = async () => {
   const logEl = document.getElementById('compile-log');
   const source = document.getElementById('res-body').value;
   setInlineError('compile-error', '');
-  if (!source.trim()) { setInlineError('compile-error', 'Nothing to compile — resume body is empty'); return; }
-  status.textContent = 'Compiling… (first run loads the Typst engine)';
+  if (!source.trim()) { setInlineError('compile-error', t('profile.resumes.compile.empty')); return; }
+  status.textContent = t('profile.resumes.compile.running');
   preview.classList.add('hidden');
   logEl.classList.add('hidden');
   try {
@@ -985,14 +983,17 @@ const compileCurrentResume = async () => {
     state.resumePdfUrl = URL.createObjectURL(state.resumePdfBlob);
     iframe.src = state.resumePdfUrl;
     preview.classList.remove('hidden');
-    status.textContent = `Compiled ${formatBytes(state.resumePdfBlob.size)}`;
+    status.textContent = t('profile.resumes.compile.done', { size: formatBytes(state.resumePdfBlob.size) });
     if (log) {
       logEl.textContent = log;
       logEl.classList.remove('hidden');
     }
   } catch (err) {
     status.textContent = '';
-    setInlineError('compile-error', `Compile failed: ${err.message || String(err)}`);
+    const friendly = err.code === 'not_typst_source'
+      ? t('profile.resumes.compile.not_typst_source')
+      : (err.message || String(err));
+    setInlineError('compile-error', t('profile.resumes.compile.failed', { err: friendly }));
     if (err.log) {
       logEl.textContent = err.log;
       logEl.classList.remove('hidden');
@@ -1014,12 +1015,12 @@ const downloadCurrentPdf = () => {
 
 const openAttachDialog = async () => {
   if (!state.resumePdfBlob || !state.resumeEditorId) {
-    setInlineError('resume-error', 'Compile the PDF first');
+    setInlineError('resume-error', t('profile.resumes.attach.compile_first'));
     return;
   }
   const [apps, companies] = await Promise.all([listApplications(), listCompanies()]);
   if (!apps.length) {
-    setInlineError('resume-error', 'No applications yet — create one first');
+    setInlineError('resume-error', t('profile.resumes.attach.no_applications'));
     return;
   }
   const companyById = new Map(companies.map(c => [c.id, c]));
@@ -1027,13 +1028,10 @@ const openAttachDialog = async () => {
   dlg.className = 'fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4';
   dlg.innerHTML = `
     <div class="${CLS.card} w-full max-w-md">
-      <div class="flex items-baseline justify-between">
-        <p class="${CLS.eyebrow}">Attach PDF to application</p>
-        <button type="button" id="btn-cancel-attach" class="text-slate-400 hover:text-slate-900" aria-label="Cancel">×</button>
-      </div>
+      <p class="${CLS.eyebrow}">${t('profile.resumes.attach.dialog_eyebrow')}</p>
       ${inlineError({ id: 'attach-error' })}
       <div class="grid gap-2">
-        <label class="${CLS.label}" for="attach-app">Application</label>
+        <label class="${CLS.label}" for="attach-app">${t('profile.resumes.attach.application_label')}</label>
         <select id="attach-app" class="${CLS.select}">
           ${apps.map(a => {
             const co = companyById.get(a.company_id);
@@ -1043,15 +1041,14 @@ const openAttachDialog = async () => {
         </select>
       </div>
       <div class="flex justify-end gap-2 pt-2">
-        ${button({ id: 'btn-cancel-attach-2', variant: 'secondaryCompact', label: 'Cancel' })}
-        ${button({ id: 'btn-confirm-attach', variant: 'primaryCompact', icon: 'check', label: 'Attach' })}
+        ${button({ id: 'btn-confirm-attach', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('profile.resumes.attach.attach') })}
+        ${button({ id: 'btn-cancel-attach', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
       </div>
     </div>
   `;
   document.body.appendChild(dlg);
   const close = () => dlg.remove();
   dlg.querySelector('#btn-cancel-attach').addEventListener('click', close);
-  dlg.querySelector('#btn-cancel-attach-2').addEventListener('click', close);
   dlg.querySelector('#btn-confirm-attach').addEventListener('click', async () => {
     const sel = dlg.querySelector('#attach-app');
     const applicationId = Number(sel.value);
@@ -1073,10 +1070,11 @@ const openAttachDialog = async () => {
         sha256: meta.sha256,
       });
       close();
-      toast(`Attached ${meta.storedFilename}`, 'ok');
+      toast(t('profile.resumes.toast.attached', { name: meta.storedFilename }), 'ok');
       await mountResumeEditor();
     } catch (err) {
-      setInlineError('attach-error', err.message || String(err));
+      const msg = err.code === 'no_storage_backend' ? t('common.error.no_storage_backend') : (err.message || String(err));
+      setInlineError('attach-error', msg);
     }
   });
 };
@@ -1086,18 +1084,18 @@ const openAttachDialog = async () => {
 // ============================================================================
 
 const renderBragTab = async (el) => {
-  el.innerHTML = `<p class="text-sm text-slate-500">Loading brag sheet…</p>`;
+  el.innerHTML = `<p class="text-sm text-slate-500">${t('app.loading')}</p>`;
   refreshProfileTabCounts();
   const [entries, companies] = await Promise.all([listBragEntries(), listCompanies()]);
   el.innerHTML = `
     <div class="space-y-6">
       <section class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">Small accomplishments you'll want to remember when the AI tailors a resume.</p>
-        ${button({ id: 'btn-new-brag', variant: 'primaryCompact', icon: 'plus', label: 'Brag', ariaLabel: 'Add brag entry' })}
+        <p class="text-sm text-slate-500">${t('profile.brags.help')}</p>
+        ${button({ id: 'btn-new-brag', variant: 'primaryCompact', icon: 'plus', label: t('profile.brags.action.new'), ariaLabel: t('profile.brags.aria.add') })}
       </section>
       <section id="brag-editor" class="${state.bragEditorId || state.bragEditorNew ? '' : 'hidden'}"></section>
       <section id="brag-list" class="${CLS.card}">
-        ${entries.length ? bragListHtml(entries) : emptyState({ message: 'No brag entries yet. Log a win and it will surface when you tailor resumes for that company.' })}
+        ${entries.length ? bragListHtml(entries) : emptyState({ message: t('profile.brags.empty') })}
       </section>
     </div>
   `;
@@ -1115,20 +1113,20 @@ const bragListHtml = (entries) => `
         <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div class="min-w-0 space-y-1">
             <div class="flex flex-wrap items-center gap-2">
-              <p class="font-semibold text-slate-900">${escapeHtml(e.title || '(untitled)')}</p>
+              <p class="font-semibold text-slate-900">${escapeHtml(e.title || t('profile.brags.untitled'))}</p>
               ${e.entry_date ? badge({ label: String(e.entry_date).slice(0, 4), color: 'violet', size: 'xs' }) : ''}
             </div>
             <p class="line-clamp-1 text-sm text-slate-700">${escapeHtml(e.body)}</p>
-            ${e.impact ? `<p class="line-clamp-1 text-sm font-medium text-emerald-700">Impact: ${escapeHtml(e.impact)}</p>` : ''}
+            ${e.impact ? `<p class="line-clamp-1 text-sm font-medium text-emerald-700">${t('profile.brags.impact', { text: escapeHtml(e.impact) })}</p>` : ''}
             <div class="flex flex-wrap items-center gap-2 pt-1">
               ${e.company_name ? badge({ label: e.company_name, color: 'blue', size: 'xs' }) : ''}
-              ${(e.tags || []).map(t => badge({ label: t, color: 'slate', size: 'xs' })).join('')}
+              ${(e.tags || []).map(tag => badge({ label: tag, color: 'slate', size: 'xs' })).join('')}
             </div>
-            ${e.tags_generated_at ? `<p class="text-xs text-slate-500">Tag suggestions updated ${escapeHtml(formatDate(e.tags_generated_at))}</p>` : ''}
+            ${e.tags_generated_at ? `<p class="text-xs text-slate-500">${t('profile.brags.tags_updated', { date: formatDate(e.tags_generated_at) })}</p>` : ''}
           </div>
           <div class="flex items-center gap-2 shrink-0">
-            ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: 'Edit', extraClass: 'js-edit-brag', dataset: { id: e.id } })}
-            ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: 'Delete', extraClass: 'js-delete-brag', dataset: { id: e.id, title: e.title || '(untitled)' } })}
+            ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('common.action.edit'), extraClass: 'js-edit-brag', dataset: { id: e.id } })}
+            ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('common.action.delete'), extraClass: 'js-delete-brag', dataset: { id: e.id, title: e.title || t('profile.brags.untitled') } })}
           </div>
         </div>
       </li>
@@ -1139,10 +1137,10 @@ const bragListHtml = (entries) => `
 const wireBragList = () => {
   document.querySelectorAll('.js-edit-brag').forEach(b => b.addEventListener('click', () => openBragEditor(Number(b.dataset.id))));
   document.querySelectorAll('.js-delete-brag').forEach(b => b.addEventListener('click', async () => {
-    if (!confirm(`Delete brag entry "${b.dataset.title}"?`)) return;
+    if (!confirm(t('profile.brags.confirm.delete', { title: b.dataset.title }))) return;
     await deleteBragEntry(Number(b.dataset.id));
     if (state.bragEditorId === Number(b.dataset.id)) closeBragEditor();
-    toast('Brag entry deleted', 'ok');
+    toast(t('profile.brags.toast.deleted'), 'ok');
     renderBragTab(document.getElementById('tab-content'));
   }));
 };
@@ -1172,34 +1170,33 @@ const mountBragEditor = async (companies) => {
     <div class="${CLS.card}">
       <form id="brag-form" class="space-y-4">
         <div class="flex items-baseline justify-between">
-          <p class="${CLS.eyebrow}">${isNew ? 'New brag entry' : 'Edit brag entry'}</p>
+          <p class="${CLS.eyebrow}">${isNew ? t('profile.brags.form.new_eyebrow') : t('profile.brags.form.edit_eyebrow')}</p>
           <div class="flex items-center gap-2">
-            ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: 'Save' })}
-            ${button({ id: 'btn-close-brag', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: 'Cancel' })}
+            ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('common.action.save') })}
+            ${button({ id: 'btn-close-brag', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
         </div>
         ${inlineError({ id: 'brag-error' })}
-        ${formField({ type: 'text', name: 'brag-title', label: 'Title',
+        ${formField({ type: 'text', name: 'brag-title', label: t('profile.brags.field.title.label'),
                       value: e.title, required: true,
-                      placeholder: 'e.g. Closed Q3 books ahead of schedule — or Shipped incident-detection MVP' })}
-        ${formField({ type: 'textarea', name: 'brag-body', label: 'Description',
+                      placeholder: t('profile.brags.field.title.placeholder') })}
+        ${formField({ type: 'textarea', name: 'brag-body', label: t('profile.brags.field.description.label'),
                       value: e.body, rows: 6,
-                      placeholder: 'Describe what you did and why it mattered: your role/contributions, the impact (numbers if you have them — dollars saved, % improved, users reached — or key non-numeric wins like passing an audit), and how it turned out after launch. What would you tell a friend to convince them to join your team? Any recent praise worth capturing?' })}
-        ${formField({ type: 'text', name: 'brag-impact', label: 'Impact (optional)',
+                      placeholder: t('profile.brags.field.description.placeholder') })}
+        ${formField({ type: 'text', name: 'brag-impact', label: t('profile.brags.field.impact.label'),
                       value: e.impact || '',
-                      placeholder: 'e.g. Cut close time 9 → 6 days · Reduced 30-day churn by 18%',
-                      hint: 'The quantitative outcome, if any. Stored separately so the AI can surface metrics when tailoring.' })}
+                      placeholder: t('profile.brags.field.impact.placeholder') })}
         <div class="grid gap-4 sm:grid-cols-2">
-          ${formField({ type: 'select', name: 'brag-company', label: 'Company (optional)',
+          ${formField({ type: 'select', name: 'brag-company', label: t('profile.brags.field.company.label'),
                         options: [
-                          { value: '', label: '— none —', selected: !e.company_id },
+                          { value: '', label: t('common.status.none'), selected: !e.company_id },
                           ...companies.map(c => ({
                             value: String(c.id),
                             label: c.official_name,
                             selected: c.id === e.company_id,
                           })),
                         ] })}
-          ${formField({ type: 'number', name: 'brag-date', label: 'Year (optional)',
+          ${formField({ type: 'number', name: 'brag-date', label: t('profile.brags.field.year.label'),
                         value: (e.entry_date || '').slice(0, 4),
                         placeholder: CURRENT_YEAR,
                         min: '1970',
@@ -1207,13 +1204,14 @@ const mountBragEditor = async (companies) => {
         </div>
         <div class="grid gap-2">
           <div class="flex items-baseline justify-between gap-3">
-            <label class="${CLS.label}" for="brag-tag-input">Tags</label>
-            ${button({ id: 'btn-generate-brag-tags', variant: 'secondaryCompact', icon: 'sparkles', label: 'Generate tags' })}
+            <label class="${CLS.label}" for="brag-tag-input">${t('profile.brags.tags.label')}</label>
+            ${button({ id: 'btn-generate-brag-tags', variant: 'secondaryCompact', icon: 'sparkles', label: t('profile.brags.tags.generate') })}
           </div>
+          ${inlineError({ id: 'brag-tags-error' })}
           <div id="brag-tags-list"></div>
           <div class="flex items-center gap-2">
-            <input id="brag-tag-input" type="text" placeholder="Type a tag and press Enter" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
-            ${button({ id: 'btn-add-brag-tag', variant: 'secondaryCompact', icon: 'plus', label: 'Add' })}
+            <input id="brag-tag-input" type="text" placeholder="${t('profile.brags.tags.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
+            ${button({ id: 'btn-add-brag-tag', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
           </div>
           <p id="brag-tags-updated" class="text-xs text-slate-500 hidden"></p>
         </div>
@@ -1226,7 +1224,7 @@ const mountBragEditor = async (companies) => {
     const listEl = document.getElementById('brag-tags-list');
     listEl.innerHTML = state.bragDraftTags.length
       ? `<div class="flex flex-wrap gap-2">${state.bragDraftTags.map(bragTagPillHtml).join('')}</div>`
-      : '<p class="text-sm text-slate-400">No tags yet. Generate from the brag body or add your own.</p>';
+      : `<p class="text-sm text-slate-400">${t('profile.brags.tags.empty')}</p>`;
     listEl.querySelectorAll('.js-brag-tag-delete').forEach(btn => btn.addEventListener('click', () => {
       const tag = normalizeTag(btn.dataset.tag);
       state.bragDraftTags = state.bragDraftTags.filter(t => normalizeTag(t) !== tag);
@@ -1234,7 +1232,7 @@ const mountBragEditor = async (companies) => {
     }));
     const stamp = state.bragPendingTagsGeneratedAt || e.tags_generated_at;
     const stampEl = document.getElementById('brag-tags-updated');
-    stampEl.textContent = stamp ? `Tag suggestions updated ${formatDate(stamp)}` : '';
+    stampEl.textContent = stamp ? t('profile.brags.tags_updated', { date: formatDate(stamp) }) : '';
     stampEl.classList.toggle('hidden', !stamp);
   };
   const addTag = () => {
@@ -1253,25 +1251,25 @@ const mountBragEditor = async (companies) => {
   });
   document.getElementById('btn-generate-brag-tags').addEventListener('click', async () => {
     try {
-      setInlineError('brag-error', '');
+      setInlineError('brag-tags-error', '');
       const body = document.getElementById('brag-body').value;
       if (!body.trim()) {
-        setInlineError('brag-error', 'Description is required to generate tags');
+        setInlineError('brag-tags-error', t('profile.brags.error.description_required'));
         return;
       }
-      const out = await generateBragTags({ body });
+      const out = await generateBragTags({ body }, '');
       state.bragDraftTags = Array.isArray(out?.tags) ? out.tags : [];
       state.bragPendingTagsGeneratedAt = new Date().toISOString();
       renderTagList();
     } catch (err) {
-      setInlineError('brag-error', err.message || String(err));
+      setInlineError('brag-tags-error', err.message || String(err));
     }
   });
   renderTagList();
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const title = document.getElementById('brag-title').value.trim();
-    if (!title) { setInlineError('brag-error', 'Title is required'); return; }
+    if (!title) { setInlineError('brag-error', t('profile.brags.error.title_required')); return; }
     const data = {
       title,
       body: document.getElementById('brag-body').value,
@@ -1287,10 +1285,10 @@ const mountBragEditor = async (companies) => {
     try {
       if (state.bragEditorId) {
         await updateBragEntry(state.bragEditorId, data);
-        toast('Brag entry saved', 'ok');
+        toast(t('profile.brags.toast.saved'), 'ok');
       } else {
         const id = await createBragEntry(data);
-        toast(`Created brag entry #${id}`, 'ok');
+        toast(t('profile.brags.toast.created', { id }), 'ok');
       }
       closeBragEditor();
       renderBragTab(document.getElementById('tab-content'));

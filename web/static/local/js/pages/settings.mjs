@@ -23,6 +23,7 @@ import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
 import { button, badge, inlineError, setInlineError } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
+import { SUPPORTED, currentLocale, setLocale, localeDisplayName, t } from '../i18n.mjs';
 
 const kb = (n) => `${(n/1024).toFixed(1)} KB`;
 
@@ -35,69 +36,25 @@ const render = (root) => {
       <div id="toast" class="hidden"></div>
 
       <section class="space-y-2">
-        <p class="${CLS.eyebrow}">Settings</p>
+        <p class="${CLS.eyebrow}">${t('page.settings.title')}</p>
         <p class="text-sm text-slate-500">
-          Your data lives in this browser. Connect one or more backends below so snapshots
-          survive if the browser clears its storage.
+          ${t('settings.section.storage_intro')}
         </p>
-      </section>
-
-      <section id="ai-provider" class="${CLS.card}">
-        <header class="space-y-1">
-          <div class="flex items-center gap-2">
-            <p class="${CLS.eyebrow}">AI provider</p>
-            <span id="byok-status"></span>
-          </div>
-          <p class="text-sm text-slate-500">
-            Bring your own OpenAI-compatible key. The browser calls your provider directly;
-            the server assembles prompts and sanitizes responses, but never sees the key.
-            Stored in this browser's IndexedDB.
-          </p>
-        </header>
-        ${inlineError({ id: 'byok-error' })}
-        <div id="byok-fields" class="space-y-3">
-          <label class="block text-sm text-slate-700">
-            Base URL
-            <input id="byok-base-url" type="url" placeholder="https://api.openai.com/v1" class="${CLS.input} mt-1">
-          </label>
-          <label class="block text-sm text-slate-700">
-            Model
-            <input id="byok-model" type="text" placeholder="gpt-4o-mini" class="${CLS.input} mt-1">
-          </label>
-          <label class="block text-sm text-slate-700">
-            API key
-            <span class="ml-1 text-xs text-slate-500">(stored only in this browser)</span>
-            <div class="mt-1 flex items-center gap-2">
-              <input id="byok-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" class="${CLS.input} flex-1">
-              ${button({ id: 'btn-byok-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: 'Show API key' })}
-            </div>
-          </label>
-          <label class="flex items-center gap-2 text-sm text-slate-700">
-            <input id="byok-clear-on-signout" type="checkbox" class="h-4 w-4">
-            <span>Clear my key when I sign out of Google Drive</span>
-          </label>
-          <div class="flex flex-wrap items-center gap-3">
-            ${button({ id: 'btn-byok-save', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: 'Save AI provider settings', disabled: true })}
-            ${button({ id: 'btn-byok-test', variant: 'secondaryCompact', icon: 'link', label: 'Test connection' })}
-            ${button({ id: 'btn-byok-clear', variant: 'dangerCompact', icon: 'trash', label: 'Clear key' })}
-            <span id="byok-test-result" class="text-sm text-slate-600"></span>
-          </div>
-        </div>
       </section>
 
       <section class="${CLS.card}">
         <header class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <p class="${CLS.eyebrow}">Local disk</p>
+          <div class="min-w-0 flex-1 space-y-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="${CLS.eyebrow}">${t('settings.local_disk.eyebrow')}</p>
               <span id="disk-status"></span>
             </div>
             <p class="text-sm text-slate-500" id="local-disk-support"></p>
           </div>
-          <div class="flex flex-wrap gap-2">
-            ${button({ id: 'btn-connect-disk', variant: 'successIcon', icon: 'link', iconOnly: true, ariaLabel: 'Connect folder', disabled: true })}
-            ${button({ id: 'btn-forget-disk', variant: 'dangerIcon', icon: 'linkSlash', iconOnly: true, ariaLabel: 'Forget folder', disabled: true })}
-            ${button({ id: 'btn-list-local', variant: 'icon', icon: 'clipboardList', iconOnly: true, ariaLabel: 'List snapshots', disabled: true })}
+          <div class="flex shrink-0 flex-wrap gap-2">
+            ${button({ id: 'btn-connect-disk', variant: 'successIcon', icon: 'link', iconOnly: true, ariaLabel: t('settings.local_disk.action.connect'), disabled: true })}
+            ${button({ id: 'btn-forget-disk', variant: 'dangerIcon', icon: 'linkSlash', iconOnly: true, ariaLabel: t('settings.local_disk.action.forget'), disabled: true })}
+            ${button({ id: 'btn-list-local', variant: 'icon', icon: 'clipboardList', iconOnly: true, ariaLabel: t('settings.local_disk.action.list'), disabled: true })}
           </div>
         </header>
         ${inlineError({ id: 'local-disk-error' })}
@@ -106,20 +63,19 @@ const render = (root) => {
 
       <section class="${CLS.card}">
         <header class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div class="space-y-1">
-            <div class="flex items-center gap-2">
-              <p class="${CLS.eyebrow}">Google Drive</p>
+          <div class="min-w-0 flex-1 space-y-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="${CLS.eyebrow}">${t('settings.drive.eyebrow')}</p>
               <span id="drive-status"></span>
             </div>
             <p class="text-sm text-slate-500">
-              Snapshots go to Drive's hidden <code class="rounded bg-slate-100 px-1 py-0.5 text-xs">appDataFolder</code>.
-              Attachments go to a visible <em>Career Planner - Attachments</em> folder.
+              ${t('settings.drive.help')}
             </p>
           </div>
-          <div class="flex flex-wrap gap-2">
-            ${button({ id: 'btn-connect-drive', variant: 'successIcon', icon: 'link', iconOnly: true, ariaLabel: 'Connect Google Drive' })}
-            ${button({ id: 'btn-signout-drive', variant: 'dangerIcon', icon: 'linkSlash', iconOnly: true, ariaLabel: 'Sign out of Google Drive', disabled: true })}
-            ${button({ id: 'btn-list-drive', variant: 'icon', icon: 'clipboardList', iconOnly: true, ariaLabel: 'List snapshots', disabled: true })}
+          <div class="flex shrink-0 flex-wrap gap-2">
+            ${button({ id: 'btn-connect-drive', variant: 'successIcon', icon: 'link', iconOnly: true, ariaLabel: t('settings.drive.action.connect') })}
+            ${button({ id: 'btn-signout-drive', variant: 'dangerIcon', icon: 'linkSlash', iconOnly: true, ariaLabel: t('settings.drive.action.disconnect'), disabled: true })}
+            ${button({ id: 'btn-list-drive', variant: 'icon', icon: 'clipboardList', iconOnly: true, ariaLabel: t('settings.drive.action.list'), disabled: true })}
           </div>
         </header>
         ${inlineError({ id: 'drive-error' })}
@@ -128,44 +84,99 @@ const render = (root) => {
 
       <section class="${CLS.card}">
         <div class="space-y-1">
-          <p class="${CLS.eyebrow}">Snapshot now</p>
+          <p class="${CLS.eyebrow}">${t('settings.snapshot.eyebrow')}</p>
           <p class="text-sm text-slate-500">
-            Writes the current database to every connected backend and prunes older copies.
-            Add an optional label (e.g. <code class="rounded bg-slate-100 px-1 py-0.5 text-xs">spring-2026</code>) to keep a snapshot forever — labeled snapshots are exempt from retention pruning.
-            The download option gives you a portable <code class="rounded bg-slate-100 px-1 py-0.5 text-xs">.sqlite</code> file that works anywhere.
+            ${t('settings.snapshot.help_line1')}
+            ${t('settings.snapshot.help_line2')}
+          </p>
+          <p class="text-sm text-slate-500">
+            ${t('settings.snapshot.help_line3')}
           </p>
         </div>
         ${inlineError({ id: 'snapshot-error' })}
         <div class="flex flex-wrap items-center gap-3">
           <label class="flex items-center gap-2 text-sm text-slate-700">
-            Keep last
+            ${t('settings.snapshot.keep_last_prefix')}
             <input id="keep-count" type="number" min="1" value="5" class="${CLS.inputCompact}">
-            auto snapshots
+            ${t('settings.snapshot.keep_last_suffix')}
           </label>
           <label class="flex items-center gap-2 text-sm text-slate-700">
-            Label
-            <input id="snapshot-label" type="text" placeholder="optional, e.g. spring-2026" maxlength="40" class="${CLS.inputCompact}" style="width: 14rem">
+            ${t('settings.snapshot.label_field')}
+            <input id="snapshot-label" type="text" placeholder="${t('settings.snapshot.label_placeholder')}" maxlength="40" class="${CLS.inputCompact}" style="width: 14rem">
           </label>
-          ${button({ id: 'btn-snapshot-all', variant: 'primaryCompact', icon: 'camera', label: 'Snapshot all' })}
-          ${button({ id: 'btn-download-snapshot', variant: 'icon', icon: 'arrowDownTray', iconOnly: true, ariaLabel: 'Download .sqlite' })}
+          ${button({ id: 'btn-snapshot-all', variant: 'primaryCompact', icon: 'camera', label: t('settings.snapshot.action.snapshot_all') })}
+          ${button({ id: 'btn-download-snapshot', variant: 'icon', icon: 'arrowDownTray', iconOnly: true, ariaLabel: t('settings.snapshot.action.download') })}
+        </div>
+      </section>
+
+      <section id="language" class="${CLS.card}">
+        <header class="space-y-1">
+          <p class="${CLS.eyebrow}">${t('settings.language.label')}</p>
+          <p class="text-sm text-slate-500">${t('settings.language.help')}</p>
+        </header>
+        <label class="block text-sm text-slate-700">
+          <select id="locale-select" class="${CLS.input} mt-1">
+            ${SUPPORTED.map(code => `<option value="${code}"${code === currentLocale() ? ' selected' : ''}>${localeDisplayName(code)}</option>`).join('')}
+          </select>
+        </label>
+      </section>
+
+      <section id="ai-provider" class="${CLS.card}">
+        <header class="space-y-1">
+          <div class="flex items-center gap-2">
+            <p class="${CLS.eyebrow}">${t('settings.ai.eyebrow')}</p>
+            <span id="byok-status"></span>
+          </div>
+          <p class="text-sm text-slate-500">
+            ${t('settings.ai.help')}
+          </p>
+        </header>
+        ${inlineError({ id: 'byok-error' })}
+        <div id="byok-fields" class="space-y-3">
+          <label class="block text-sm text-slate-700">
+            ${t('settings.ai.field.base_url.label')}
+            <input id="byok-base-url" type="url" placeholder="https://api.openai.com/v1" class="${CLS.input} mt-1">
+          </label>
+          <label class="block text-sm text-slate-700">
+            ${t('settings.ai.field.model.label')}
+            <input id="byok-model" type="text" placeholder="gpt-4o-mini" class="${CLS.input} mt-1">
+          </label>
+          <label class="block text-sm text-slate-700">
+            ${t('settings.ai.field.api_key.label')}
+            <span class="ml-1 text-xs text-slate-500">${t('settings.ai.field.api_key.note')}</span>
+            <div class="mt-1 flex items-center gap-2">
+              <input id="byok-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" class="${CLS.input} flex-1">
+              ${button({ id: 'btn-byok-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: t('settings.ai.field.api_key.show') })}
+            </div>
+          </label>
+          <label class="flex items-center gap-2 text-sm text-slate-700">
+            <input id="byok-clear-on-signout" type="checkbox" class="h-4 w-4">
+            <span>${t('settings.ai.field.clear_with_drive.label')}</span>
+          </label>
+          <div class="flex flex-wrap items-center gap-3">
+            ${button({ id: 'btn-byok-save', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('settings.ai.action.save'), disabled: true })}
+            ${button({ id: 'btn-byok-test', variant: 'secondaryCompact', icon: 'link', label: t('settings.ai.action.test') })}
+            ${button({ id: 'btn-byok-clear', variant: 'dangerCompact', icon: 'trash', label: t('settings.ai.action.clear') })}
+            <span id="byok-test-result" class="text-sm text-slate-600"></span>
+          </div>
         </div>
       </section>
 
       <section class="${CLS.card} border-red-200">
         <div class="space-y-1">
-          <p class="${CLS.eyebrow} text-red-700">Danger zone</p>
+          <p class="${CLS.eyebrow} text-red-700">${t('settings.danger.eyebrow')}</p>
           <p class="text-sm text-slate-500">
-            Wipes the SQLite database (OPFS) and backend metadata (IndexedDB) in this browser.
-            Snapshots already saved to Drive or your local folder are <strong>not</strong> touched —
-            use them to restore. Useful for simulating a fresh device or total local data loss.
-            "Load sample data" replaces the current DB with a seed dataset (profile overview,
-            sparks, 2 resumes, 3 brag entries, 12 companies, 24 people, 50 applications) for quick demos.
+            ${t('settings.danger.help_line1')}
+            ${t('settings.danger.help_line2')}
+          </p>
+          <p class="text-sm text-slate-500">
+            ${t('settings.danger.help_line3')}
           </p>
         </div>
         ${inlineError({ id: 'danger-error' })}
         <div class="flex flex-wrap items-center gap-3">
-          ${button({ id: 'btn-wipe-all', variant: 'dangerCompact', icon: 'trash', label: 'Wipe all local data' })}
-          ${button({ id: 'btn-load-sample', variant: 'primaryCompact', icon: 'arrowUpTray', label: 'Load sample data' })}
+          ${button({ id: 'btn-wipe-all', variant: 'dangerCompact', icon: 'trash', label: t('settings.danger.action.wipe') })}
+          ${button({ id: 'btn-load-sample', variant: 'primaryCompact', icon: 'arrowUpTray', label: t('settings.danger.action.load_sample') })}
         </div>
       </section>
     </div>
@@ -174,7 +185,7 @@ const render = (root) => {
 
 const renderSnapshotList = (el, list, onRestore, onDelete) => {
   if (!list.length) {
-    el.innerHTML = '<div class="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">No snapshots yet.</div>';
+    el.innerHTML = `<div class="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">${t('settings.snapshots.empty')}</div>`;
     return;
   }
   el.innerHTML = `
@@ -186,8 +197,8 @@ const renderSnapshotList = (el, list, onRestore, onDelete) => {
             <p class="text-xs text-slate-500">${s.createdAt.toLocaleString()} · ${kb(s.sizeBytes)}</p>
           </div>
           <div class="flex shrink-0 items-center gap-2">
-            ${button({ variant: 'icon', icon: 'arrowUpTray', iconOnly: true, ariaLabel: `Restore ${s.name || s.id}`, extraClass: 'js-restore', dataset: { id: s.id, name: s.name || s.id } })}
-            ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: `Delete ${s.name || s.id}`, extraClass: 'js-delete', dataset: { id: s.id, name: s.name || s.id } })}
+            ${button({ variant: 'icon', icon: 'arrowUpTray', iconOnly: true, ariaLabel: t('settings.snapshots.aria.restore', { name: s.name || s.id }), extraClass: 'js-restore', dataset: { id: s.id, name: s.name || s.id } })}
+            ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('settings.snapshots.aria.delete', { name: s.name || s.id }), extraClass: 'js-delete', dataset: { id: s.id, name: s.name || s.id } })}
           </div>
         </li>`).join('')}
     </ul>
@@ -207,9 +218,9 @@ const refreshLocalDisk = () => {
     status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: localDisk.dirHandle.name });
     forget.disabled = false;
     list.disabled = false;
-    connect.setAttribute('aria-label', 'Reconnect folder');
+    connect.setAttribute('aria-label', t('settings.local_disk.action.connect'));
   } else {
-    status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'linkSlash', label: 'not connected' });
+    status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'linkSlash', label: t('settings.local_disk.badge.not_connected') });
     forget.disabled = true;
     list.disabled = true;
   }
@@ -223,8 +234,8 @@ const refreshDrive = () => {
   if (googleDrive.isReady()) {
     const online = navigator.onLine;
     const label = online
-      ? (googleDrive.refreshToken ? 'refresh token stored' : 'session only')
-      : 'offline';
+      ? (googleDrive.refreshToken ? t('settings.drive.badge.online_refresh') : t('settings.drive.badge.online_session'))
+      : t('settings.drive.badge.offline');
     status.innerHTML = badge({
       color: online ? 'emerald' : 'amber',
       size: 'xs',
@@ -234,7 +245,7 @@ const refreshDrive = () => {
     signout.disabled = false;
     list.disabled = !online;
   } else {
-    status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'linkSlash', label: 'not connected' });
+    status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'linkSlash', label: t('settings.drive.badge.not_connected') });
     signout.disabled = true;
     list.disabled = true;
   }
@@ -245,9 +256,9 @@ const refreshByokStatus = async () => {
   const [cfg, serverLLM] = await Promise.all([getByokConfig(), getServerLLMStatus()]);
   const byokActive = !!(cfg && cfg.enabled && cfg.baseUrl && cfg.apiKey && cfg.model);
   if (byokActive) {
-    status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: `BYOK · ${cfg.model}` });
+    status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: t('settings.ai.badge.byok', { model: cfg.model }) });
   } else if (!serverLLM.available) {
-    status.innerHTML = badge({ color: 'amber', size: 'xs', icon: 'sparkles', label: 'setup needed' });
+    status.innerHTML = badge({ color: 'amber', size: 'xs', icon: 'sparkles', label: t('settings.ai.badge.setup_needed') });
   } else {
     status.innerHTML = '';
   }
@@ -276,8 +287,8 @@ const refreshOnlineBanner = () => {
   } else {
     el.classList.remove('hidden');
     el.textContent = googleDrive.isReady()
-      ? 'Offline — Google Drive uploads/reads paused. Local disk (if connected) still works.'
-      : 'Offline — cloud backends unavailable.';
+      ? t('settings.drive.offline.disabled')
+      : t('settings.drive.offline.no_backend');
   }
 };
 
@@ -293,17 +304,17 @@ const errorIdFor = (backend) =>
 // meaningful across page reloads.
 const restoreSnapshot = (backend) => async (id, displayName) => {
   const shown = displayName || id;
-  if (!confirm(`Restore ${shown}? Current database contents will be replaced.`)) return;
+  if (!confirm(t('settings.snapshots.confirm.restore', { name: shown }))) return;
   const errId = errorIdFor(backend);
   setInlineError(errId, '');
   try {
     const bytes = await backend.loadSnapshot(id);
     await importDb(bytes);
     await setCurrentSnapshotName(shown);
-    toast(`Restored ${shown} (${kb(bytes.byteLength)}). Reloading…`, 'ok');
+    toast(t('settings.snapshots.toast.restored', { name: shown, size: kb(bytes.byteLength) }), 'ok');
     setTimeout(() => location.reload(), 500);
   } catch (err) {
-    setInlineError(errId, `Restore failed: ${err.message}`);
+    setInlineError(errId, t('settings.snapshots.error.restore_failed', { err: err.message }));
   }
 };
 
@@ -326,18 +337,18 @@ const toggleSnapshotList = (backend, listEl) => async () => {
   try {
     await showSnapshotList(backend, listEl);
   } catch (err) {
-    setInlineError(errId, `List failed: ${err.message}`);
+    setInlineError(errId, t('settings.snapshots.error.list_failed', { err: err.message }));
   }
 };
 
 const deleteSnapshot = (backend, listEl) => async (id, displayName) => {
   const shown = displayName || id;
-  if (!confirm(`Delete ${shown}? This cannot be undone.`)) return;
+  if (!confirm(t('settings.snapshots.confirm.delete', { name: shown }))) return;
   const errId = errorIdFor(backend);
   setInlineError(errId, '');
   try {
     await backend.deleteSnapshot(id);
-    toast(`Deleted ${shown}`, 'ok');
+    toast(t('settings.snapshots.toast.deleted', { name: shown }), 'ok');
     await showSnapshotList(backend, listEl);
   } catch (err) {
     setInlineError(errId, `Delete failed: ${err.message}`);
@@ -377,26 +388,26 @@ const wireByok = async () => {
     const revealed = apiKey.type === 'password';
     apiKey.type = revealed ? 'text' : 'password';
     revealBtn.innerHTML = icon(revealed ? 'eyeSlash' : 'eye');
-    revealBtn.setAttribute('aria-label', revealed ? 'Hide API key' : 'Show API key');
+    revealBtn.setAttribute('aria-label', revealed ? t('settings.ai.field.api_key.hide') : t('settings.ai.field.api_key.show'));
   });
 
   document.getElementById('btn-byok-test').addEventListener('click', async () => {
     setInlineError('byok-error', '');
-    result.textContent = 'Testing…';
+    result.textContent = t('settings.ai.test.running');
     const form = readByokForm();
     if (!form.baseUrl || !form.apiKey) {
       result.textContent = '';
-      setInlineError('byok-error', 'Base URL and API key are required to test.');
+      setInlineError('byok-error', t('settings.ai.error.test_missing_fields'));
       return;
     }
     const res = await testConnection({ baseUrl: form.baseUrl, apiKey: form.apiKey });
     if (res.ok) {
-      result.textContent = `✓ Reached provider in ${res.latencyMs}ms (${res.modelsCount} models listed)`;
+      result.textContent = t('settings.ai.test.success', { latency: res.latencyMs, count: res.modelsCount });
       lastTestedFingerprint = currentFingerprint();
       syncSaveEnabled();
     } else {
       result.textContent = '';
-      setInlineError('byok-error', `Test failed (${res.latencyMs ?? '—'}ms): ${res.error}`);
+      setInlineError('byok-error', t('settings.ai.test.failure', { latency: res.latencyMs ?? '—', err: res.error }));
     }
   });
 
@@ -404,22 +415,22 @@ const wireByok = async () => {
     setInlineError('byok-error', '');
     const form = readByokForm();
     if (!form.baseUrl || !form.apiKey || !form.model) {
-      setInlineError('byok-error', 'Base URL, model, and API key are required to enable BYOK.');
+      setInlineError('byok-error', t('settings.ai.error.save_missing_fields'));
       return;
     }
     await saveByokConfig(form);
-    toast(`BYOK enabled · ${form.model}`, 'ok');
+    toast(t('settings.ai.toast.enabled', { model: form.model }), 'ok');
     await refreshByokStatus();
   });
 
   document.getElementById('btn-byok-clear').addEventListener('click', async () => {
-    if (!confirm('Clear the saved API key from this browser?')) return;
+    if (!confirm(t('settings.ai.confirm.clear'))) return;
     await clearByokConfig();
     apiKey.value = '';
     result.textContent = '';
     lastTestedFingerprint = null;
     syncSaveEnabled();
-    toast('BYOK key cleared', 'info');
+    toast(t('settings.ai.toast.cleared'), 'info');
     await refreshByokStatus();
   });
 };
@@ -430,10 +441,10 @@ const wireLocalDisk = () => {
   const listEl = document.getElementById('local-snapshots');
 
   if (!LocalDiskBackend.isSupported()) {
-    supportEl.innerHTML = '<span class="text-red-600">This browser does not support silent local-folder writes (Firefox/Safari). Use "Download .sqlite" below to export manually.</span>';
+    supportEl.innerHTML = `<span class="text-red-600">${t('settings.local_disk.unsupported')}</span>`;
     connect.disabled = true;
   } else {
-    supportEl.textContent = 'Pick a folder once; on future opens the browser asks to re-allow the same folder in a single click.';
+    supportEl.textContent = t('settings.local_disk.help');
     connect.disabled = false;
   }
 
@@ -441,17 +452,17 @@ const wireLocalDisk = () => {
     setInlineError('local-disk-error', '');
     try {
       await localDisk.connect();
-      toast(`Local disk connected: ${localDisk.dirHandle.name}`, 'ok');
+      toast(t('settings.local_disk.toast.connected', { folder: localDisk.dirHandle.name }), 'ok');
       refreshLocalDisk();
     } catch (err) {
-      setInlineError('local-disk-error', `Connect failed: ${err.message}`);
+      setInlineError('local-disk-error', t('settings.local_disk.error.connect_failed', { err: err.message }));
     }
   });
 
   document.getElementById('btn-forget-disk').addEventListener('click', async () => {
     await localDisk.forget();
     listEl.innerHTML = '';
-    toast('Forgot saved folder', 'info');
+    toast(t('settings.local_disk.toast.forgot'), 'info');
     refreshLocalDisk();
   });
 
@@ -465,11 +476,11 @@ const wireDrive = () => {
     setInlineError('drive-error', '');
     try {
       await googleDrive.connect();
-      toast('Google Drive connected', 'ok');
+      toast(t('settings.drive.toast.connected'), 'ok');
       refreshDrive();
       refreshOnlineBanner();
     } catch (err) {
-      setInlineError('drive-error', `Drive connect failed: ${err.message}`);
+      setInlineError('drive-error', t('settings.drive.error.connect_failed', { err: err.message }));
     }
   });
 
@@ -486,7 +497,7 @@ const wireDrive = () => {
       await refreshByokStatus();
     }
     listEl.innerHTML = '';
-    toast('Signed out of Google Drive', 'info');
+    toast(t('settings.drive.toast.disconnected'), 'info');
     refreshDrive();
     refreshOnlineBanner();
   });
@@ -499,7 +510,7 @@ const wireSnapshotActions = () => {
     setInlineError('snapshot-error', '');
     const active = availableBackends();
     if (!active.length) {
-      setInlineError('snapshot-error', 'No backends available — connect one first (or use Download below)');
+      setInlineError('snapshot-error', t('settings.snapshot.error.no_backends'));
       return;
     }
     try {
@@ -522,19 +533,19 @@ const wireSnapshotActions = () => {
       const ok = results.filter(r => r.ok).length;
       const failed = results.filter(r => !r.ok);
       if (failed.length === 0) {
-        toast(`Snapshot saved to ${ok} backend(s)`, 'ok');
+        toast(t('settings.snapshot.toast.saved', { n: ok }), 'ok');
       } else {
         const msg = failed.map(f => `${f.backend}: ${f.error}`).join('; ');
-        if (ok) toast(`Saved to ${ok}, failed: ${msg}`, 'info');
-        else setInlineError('snapshot-error', `Failed: ${msg}`);
+        if (ok) toast(t('settings.snapshot.toast.partial', { ok, failed: msg }), 'info');
+        else setInlineError('snapshot-error', t('settings.snapshot.error.all_failed', { msg }));
       }
     } catch (err) {
-      setInlineError('snapshot-error', `Snapshot failed: ${err.message}`);
+      setInlineError('snapshot-error', t('settings.snapshot.error.failed', { err: err.message }));
     }
   });
 
   document.getElementById('btn-load-sample').addEventListener('click', async () => {
-    if (!confirm('Replace the current database with the checked-in sample dataset (profile + 12 companies + 24 people + 50 apps)?')) return;
+    if (!confirm(t('settings.danger.confirm.load_sample'))) return;
     setInlineError('danger-error', '');
     try {
       const resp = await fetch('/static/local/samples/sample.sqlite', { cache: 'no-store' });
@@ -544,19 +555,15 @@ const wireSnapshotActions = () => {
       // Loading the sample dataset overwrites the DB — the previously-tracked
       // snapshot name no longer describes what's on disk.
       await clearCurrentSnapshotName();
-      toast(`Loaded sample (${kb(bytes.byteLength)}). Reloading…`, 'ok');
+      toast(t('settings.danger.toast.sample_loaded', { size: kb(bytes.byteLength) }), 'ok');
       setTimeout(() => location.reload(), 500);
     } catch (err) {
-      setInlineError('danger-error', `Load sample failed: ${err.message}`);
+      setInlineError('danger-error', t('settings.danger.error.sample_failed', { err: err.message }));
     }
   });
 
   document.getElementById('btn-wipe-all').addEventListener('click', async () => {
-    const msg = 'Wipe ALL local data?\n\n'
-      + '• Clears the SQLite database in this browser (OPFS)\n'
-      + '• Forgets Google Drive tokens and the local-folder handle (IndexedDB)\n\n'
-      + 'Snapshots on Drive / your picked folder are kept. Type OK to confirm.';
-    if (!confirm(msg)) return;
+    if (!confirm(t('settings.danger.confirm.wipe'))) return;
     setInlineError('danger-error', '');
     try {
       await wipeDb();
@@ -564,10 +571,10 @@ const wireSnapshotActions = () => {
       // idbWipe deletes the whole meta DB — no need to explicitly clear the
       // current-snapshot key first.
       await idbWipe();
-      toast('Local data wiped. Reloading…', 'ok');
+      toast(t('settings.danger.toast.wiped'), 'ok');
       setTimeout(() => location.reload(), 500);
     } catch (err) {
-      setInlineError('danger-error', `Wipe failed: ${err.message}`);
+      setInlineError('danger-error', t('settings.danger.error.wipe_failed', { err: err.message }));
     }
   });
 
@@ -585,9 +592,25 @@ const wireSnapshotActions = () => {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast(`Downloaded snapshot (${kb(bytes.byteLength)})`, 'ok');
+      toast(t('settings.snapshot.toast.downloaded', { size: kb(bytes.byteLength) }), 'ok');
     } catch (err) {
-      setInlineError('snapshot-error', `Download failed: ${err.message}`);
+      setInlineError('snapshot-error', t('settings.snapshot.error.download_failed', { err: err.message }));
+    }
+  });
+};
+
+// wireLocale is fire-and-reload: setLocale() persists the choice + writes the
+// `lang` cookie, then reloads so the server-rendered shell re-renders with the
+// new locale. Nothing else on the page depends on the current selection.
+const wireLocale = () => {
+  const select = document.getElementById('locale-select');
+  if (!select) return;
+  select.addEventListener('change', async (e) => {
+    try {
+      await setLocale(e.target.value);
+    } catch (err) {
+      console.error('[settings] setLocale', err);
+      toast(t('settings.language.error'), { level: 'error' });
     }
   });
 };
@@ -595,6 +618,7 @@ const wireSnapshotActions = () => {
 // ---------- entrypoint ----------
 export const mountSettings = async (root) => {
   render(root);
+  wireLocale();
   await wireByok();
   wireLocalDisk();
   wireDrive();

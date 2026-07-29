@@ -26,7 +26,7 @@ func (f *fakeLLM) GenerateJSON(_ context.Context, p llm.Prompt, out any) error {
 
 func TestBuildGenerateTagsPromptTrimsBody(t *testing.T) {
 	svc := NewService(nil)
-	p := svc.BuildGenerateTagsPrompt("  shipped feature flags  ")
+	p := svc.BuildGenerateTagsPrompt("  shipped feature flags  ", "")
 	if !strings.Contains(p.User, "shipped feature flags") {
 		t.Fatal("expected trimmed body in prompt")
 	}
@@ -37,7 +37,7 @@ func TestBuildGenerateTagsPromptTrimsBody(t *testing.T) {
 
 func TestBuildGenerateTagsPromptIncludesBodyOnly(t *testing.T) {
 	svc := NewService(nil)
-	p := svc.BuildGenerateTagsPrompt("Shipped feature flags to production")
+	p := svc.BuildGenerateTagsPrompt("Shipped feature flags to production", "")
 	if p.System == "" || p.User == "" {
 		t.Fatal("prompt should include system and user text")
 	}
@@ -70,7 +70,7 @@ func TestFinalizeTagsNormalizesDedupesAndCaps(t *testing.T) {
 func TestGenerateTagsReturnsNormalizedTags(t *testing.T) {
 	f := &fakeLLM{payload: `{"tags":[" Feature Flags ","observability","feature flags"]}`}
 	svc := NewService(f)
-	got, err := svc.GenerateTags(context.Background(), "Rolled out behind feature flags and improved dashboards")
+	got, err := svc.GenerateTags(context.Background(), "Rolled out behind feature flags and improved dashboards", "")
 	if err != nil {
 		t.Fatalf("GenerateTags: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestGenerateTagsReturnsNormalizedTags(t *testing.T) {
 
 func TestGenerateTagsPropagatesLLMError(t *testing.T) {
 	svc := NewService(&fakeLLM{err: errors.New("boom")})
-	if _, err := svc.GenerateTags(context.Background(), "foo"); err == nil {
+	if _, err := svc.GenerateTags(context.Background(), "foo", ""); err == nil {
 		t.Fatal("expected error")
 	}
 }

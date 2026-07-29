@@ -62,7 +62,8 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 	switch name {
 	case "guess-candidate":
 		var body struct {
-			Name string `json:"name"`
+			Name           string `json:"name"`
+			OutputLanguage string `json:"output_language"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -72,15 +73,16 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "name is required")
 			return
 		}
-		prompt, _, _ := s.companies.BuildCandidatePrompt(body.Name)
+		prompt, _, _ := s.companies.BuildCandidatePrompt(body.Name, body.OutputLanguage)
 		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
 
 	case "build-dossier":
 		var body struct {
-			OfficialName string `json:"official_name"`
-			Website      string `json:"website"`
-			ATSURL       string `json:"ats_url"`
-			ATSProvider  string `json:"ats_provider"`
+			OfficialName   string `json:"official_name"`
+			Website        string `json:"website"`
+			ATSURL         string `json:"ats_url"`
+			ATSProvider    string `json:"ats_provider"`
+			OutputLanguage string `json:"output_language"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -95,12 +97,13 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			Website:      strings.TrimSpace(body.Website),
 			ATSURL:       strings.TrimSpace(body.ATSURL),
 			ATSProvider:  strings.TrimSpace(body.ATSProvider),
-		})
+		}, body.OutputLanguage)
 		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
 
 	case "generate-brag-tags":
 		var body struct {
-			Body string `json:"body"`
+			Body           string `json:"body"`
+			OutputLanguage string `json:"output_language"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -110,7 +113,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "body is required")
 			return
 		}
-		prompt := s.brags.BuildGenerateTagsPrompt(body.Body)
+		prompt := s.brags.BuildGenerateTagsPrompt(body.Body, body.OutputLanguage)
 		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
 
 	case "summarize-thread":
@@ -119,7 +122,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		prompt := s.communications.BuildSummaryPrompt(body.toThreadDetail())
+		prompt := s.communications.BuildSummaryPrompt(body.toThreadDetail(), body.OutputLanguage)
 		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
 
 	case "generate-message":
@@ -131,7 +134,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		prompt, err := s.communications.BuildMessagePrompt(body.threadDetailPayload.toThreadDetail(), body.Goal)
+		prompt, err := s.communications.BuildMessagePrompt(body.threadDetailPayload.toThreadDetail(), body.Goal, body.threadDetailPayload.OutputLanguage)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
@@ -144,6 +147,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			RoleTitle         string `json:"role_title"`
 			JobPostingURL     string `json:"job_posting_url"`
 			JobDescriptionRaw string `json:"job_description_raw"`
+			OutputLanguage    string `json:"output_language"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -154,6 +158,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			RoleTitle:         body.RoleTitle,
 			JobPostingURL:     body.JobPostingURL,
 			JobDescriptionRaw: body.JobDescriptionRaw,
+			OutputLanguage:    body.OutputLanguage,
 		})
 		if err != nil {
 			writeErr(w, http.StatusBadGateway, err.Error())

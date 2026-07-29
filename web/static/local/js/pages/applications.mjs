@@ -24,15 +24,28 @@ import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
 import { badge, badgeClasses, button, collapsible, emptyState, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, pageHeader, setPageCount } from '../ui/components.mjs';
+import { icon } from '../ui/icons.mjs';
 import { extractJobDescription } from '../rpc.mjs';
+import { outputLanguageSelect, readOutputLanguage } from '../ui/output_language.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
+import { t } from '../i18n.mjs';
 
 const PANEL_IDS = ['editor-panel', 'details-panel'];
 
 // "online_assessment" -> "Online assessment"
 const humanize = (s) =>
   s ? s.charAt(0).toUpperCase() + s.slice(1).replace(/_/g, ' ') : '';
+
+// Localized label for an application status slug. Falls back to humanize()
+// for unknown values (e.g. legacy rows) so nothing renders blank.
+const APPLICATION_STATUS_SLUGS = new Set([
+  'wishlist', 'applied', 'online_assessment',
+  'first_interview', 'second_interview', 'additional_interview',
+  'offer', 'rejected', 'withdrawn',
+]);
+const statusLabel = (s) =>
+  s && APPLICATION_STATUS_SLUGS.has(s) ? t(`applications.status.${s}`) : humanize(s);
 
 // Status → badge palette. Matches internal/http/render.go applicationStatusClasses
 // so pills look identical between the legacy and local surfaces.
@@ -73,25 +86,20 @@ const eventSummary = (ev) => {
   const from = (ev.from_status || '').trim();
   const to = (ev.to_status || '').trim();
   if (type === 'status_changed') {
-    if (from && to) {
-      return content
-        ? `Status changed: ${humanize(from)} → ${humanize(to)} — ${content}`
-        : `Status changed: ${humanize(from)} → ${humanize(to)}`;
-    }
-    if (to) {
-      return content
-        ? `Status changed: ${humanize(to)} — ${content}`
-        : `Status changed: ${humanize(to)}`;
-    }
-    return content || 'Status changed';
+    let base;
+    if (from && to) base = t('applications.event.status_changed_from_to', { from: statusLabel(from), to: statusLabel(to) });
+    else if (to) base = t('applications.event.status_changed_to', { to: statusLabel(to) });
+    else base = t('applications.event.status_changed');
+    if (content) return `${base} — ${content}`;
+    return base;
   }
   if (type === 'created') {
     if (content) return content;
-    if (to) return `Application created: ${humanize(to)}`;
-    return 'Application created';
+    if (to) return t('applications.event.created_with_status', { status: statusLabel(to) });
+    return t('applications.event.created');
   }
   if (content) return content;
-  if (to) return from ? `${humanize(from)} → ${humanize(to)}` : humanize(to);
+  if (to) return from ? `${statusLabel(from)} → ${statusLabel(to)}` : statusLabel(to);
   return humanize(type);
 };
 
@@ -102,8 +110,8 @@ const shellHtml = () => `
     <div id="toast" class="hidden"></div>
 
     <section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      ${pageHeader({ title: 'Application tracker', countId: 'app-count' })}
-      ${button({ id: 'btn-new', variant: 'primaryCompact', icon: 'plus', label: 'Application', ariaLabel: 'Add application' })}
+      ${pageHeader({ title: t('page.applications.title'), countId: 'app-count' })}
+      ${button({ id: 'btn-new', variant: 'primaryCompact', icon: 'plus', label: t('applications.action.new'), ariaLabel: t('applications.aria.add') })}
     </section>
 
     <section id="editor-panel" class="hidden"></section>
@@ -119,14 +127,13 @@ const shellHtml = () => `
 const noCompaniesHtml = () => `
   <div class="${CLS.card}">
     <div class="flex items-baseline justify-between">
-      <p class="${CLS.eyebrow}">Add a company first</p>
-      ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: 'Cancel' })}
+      <p class="${CLS.eyebrow}">${t('applications.no_company.heading')}</p>
+      ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
     </div>
     <p class="text-sm text-slate-600">
-      Applications reference companies via foreign key, so at least one company row has to exist first.
-      Head to the Companies page to add one — the LLM "Look up" affordance there can populate the fields for you.
+      ${t('applications.no_company.body')}
     </p>
-    ${button({ kind: 'link', href: '/local/companies?new=1', icon: 'plus', label: 'Add a company' })}
+    ${button({ kind: 'link', href: '/local/companies?new=1', icon: 'plus', label: t('applications.no_company.cta') })}
   </div>
 `;
 
@@ -134,7 +141,7 @@ const noCompaniesHtml = () => `
 // so we can rebuild it in place when the selected company changes without
 // re-rendering the whole editor.
 const personOptions = (people, selectedID) => [
-  `<option value="">— No contact —</option>`,
+  `<option value="">${t('applications.field.contact.none')}</option>`,
   ...people.map(p => `
     <option value="${p.id}" ${String(p.id) === String(selectedID ?? '') ? 'selected' : ''}>
       ${escapeHtml(p.full_name)}${p.title ? ` — ${escapeHtml(p.title)}` : ''}
@@ -147,7 +154,7 @@ const editorHtml = (app, companies, people) => {
   const status = a.status || 'wishlist';
   const selectedCompany = isNew ? '' : String(a.company_id ?? '');
   const companyOptions = [
-    `<option value="" disabled ${selectedCompany ? '' : 'selected'}>Select a company…</option>`,
+    `<option value="" disabled ${selectedCompany ? '' : 'selected'}>${t('applications.field.company.placeholder')}</option>`,
     ...companies.map(c => `
       <option value="${c.id}" ${String(c.id) === selectedCompany ? 'selected' : ''}>
         ${escapeHtml(c.official_name)}
@@ -157,10 +164,10 @@ const editorHtml = (app, companies, people) => {
     <div class="${CLS.card}">
       <form id="editor-form" class="space-y-5">
         <div class="flex items-baseline justify-between">
-          <p class="${CLS.eyebrow}">${isNew ? 'New application' : 'Edit'}</p>
+          <p class="${CLS.eyebrow}">${isNew ? t('applications.form.new_eyebrow') : t('applications.form.edit_eyebrow')}</p>
           <div class="flex items-center gap-2">
-            ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? 'Create application' : 'Save changes' })}
-            ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: 'Cancel' })}
+            ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('applications.form.aria.create') : t('common.action.save_changes') })}
+            ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
         </div>
 
@@ -168,58 +175,57 @@ const editorHtml = (app, companies, people) => {
 
         <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:items-start">
           <div class="grid gap-2">
-            <label class="${CLS.label}" for="company_id">Company</label>
+            <label class="${CLS.label}" for="company_id">${t('applications.field.company.label')}</label>
             <select id="company_id" name="company_id" required class="${CLS.select}">
               ${companyOptions}
             </select>
             <p class="text-xs text-slate-500">
-              Need a new company? <a href="/local/companies?new=1" class="text-blue-700 underline hover:text-blue-800">Add one</a>.
+              ${t('applications.field.company.help_prefix')} <a href="/local/companies?new=1" class="text-blue-700 underline hover:text-blue-800">${t('applications.field.company.help_link')}</a>
             </p>
           </div>
           <div class="grid gap-2">
-            <label class="${CLS.label}" for="role_title">Role</label>
+            <label class="${CLS.label}" for="role_title">${t('applications.field.role.label')}</label>
             <input id="role_title" name="role_title" type="text" required
-                   value="${escapeHtml(a.role_title)}" placeholder="e.g. Software Engineer"
+                   value="${escapeHtml(a.role_title)}" placeholder="${t('applications.field.role.placeholder')}"
                    class="${CLS.input}">
           </div>
         </div>
 
         <div class="grid gap-2">
-          <label class="${CLS.label}" for="person_id">Point of contact</label>
+          <label class="${CLS.label}" for="person_id">${t('applications.field.contact.label')}</label>
           <select id="person_id" name="person_id" class="${CLS.select}">
             ${personOptions(people, a.person_id)}
           </select>
           <p class="text-xs text-slate-500">
-            People scoped to the selected company. Manage contacts on the
-            <a href="/local/people" class="text-blue-700 underline hover:text-blue-800">People page</a>.
+            ${t('applications.field.contact.help')}
           </p>
         </div>
 
         <div class="grid gap-2">
-          <label class="${CLS.label}" for="job_posting_url">Job posting URL</label>
+          <label class="${CLS.label}" for="job_posting_url">${t('applications.field.url.label')}</label>
           <input id="job_posting_url" name="job_posting_url" type="url"
-                 value="${escapeHtml(a.job_posting_url)}" placeholder="https://…"
+                 value="${escapeHtml(a.job_posting_url)}" placeholder="${t('common.placeholder.url')}"
                  class="${CLS.input}">
         </div>
 
         <div class="grid gap-2">
-          <label class="${CLS.label}" for="status">Status</label>
+          <label class="${CLS.label}" for="status">${t('applications.field.status.label')}</label>
           <select id="status" name="status" class="${CLS.select}">
             ${APPLICATION_STATUSES.map(s => `
-              <option value="${s}" ${s === status ? 'selected' : ''}>${humanize(s)}</option>
+              <option value="${s}" ${s === status ? 'selected' : ''}>${statusLabel(s)}</option>
             `).join('')}
           </select>
         </div>
 
         <div class="grid gap-2">
-          <label class="${CLS.label}" for="job_description_raw">Job description</label>
+          <label class="${CLS.label}" for="job_description_raw">${t('applications.field.jd.label')}</label>
           <textarea id="job_description_raw" name="job_description_raw" rows="8"
                     class="${CLS.textarea} font-mono"
-                    placeholder="Paste the JD, or click Extract on the details panel to fetch from the posting URL.">${escapeHtml(a.job_description_raw)}</textarea>
+                    placeholder="${t('applications.field.jd.placeholder')}">${escapeHtml(a.job_description_raw)}</textarea>
         </div>
 
         <div class="grid gap-2">
-          <label class="${CLS.label}" for="notes">Notes</label>
+          <label class="${CLS.label}" for="notes">${t('applications.field.notes.label')}</label>
           <textarea id="notes" name="notes" rows="3" class="${CLS.textarea}">${escapeHtml(a.notes)}</textarea>
         </div>
       </form>
@@ -229,14 +235,14 @@ const editorHtml = (app, companies, people) => {
 
 const listHtml = (apps) => {
   if (!apps.length) {
-    return emptyState({ message: 'No applications yet.' });
+    return emptyState({ message: t('applications.list.empty') });
   }
   return `
     <ul class="space-y-3">
       ${apps.map(a => {
         const pillClass = badgeClasses(STATUS_BADGE_COLOR[a.status] || 'slate', 'xs');
         const url = escapeHtml(a.job_posting_url);
-        const roleLabel = escapeHtml(a.role_title) || '<span class="italic text-slate-400">Untitled role</span>';
+        const roleLabel = escapeHtml(a.role_title) || `<span class="italic text-slate-400">${t('applications.list.untitled_role')}</span>`;
         // Role title is a hyperlink to the posting when we have a URL,
         // otherwise falls back to opening the inline details panel.
         const roleEl = a.job_posting_url
@@ -249,15 +255,15 @@ const listHtml = (apps) => {
                 <div class="space-y-2 min-w-0">
                   ${roleEl}
                   <p class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                    <span>${escapeHtml(a.company_name) || '<span class="italic text-slate-400">Unknown company</span>'}${a.person_name ? ` · ${escapeHtml(a.person_name)}` : ''}</span>
-                    <span class="${pillClass}">${escapeHtml(humanize(a.status))}</span>
+                    <span>${escapeHtml(a.company_name) || `<span class="italic text-slate-400">${t('applications.details.unknown_company')}</span>`}${a.person_name ? ` · ${escapeHtml(a.person_name)}` : ''}</span>
+                    <span class="${pillClass}">${escapeHtml(statusLabel(a.status))}</span>
                   </p>
                 </div>
                 <div class="flex items-center gap-3 shrink-0">
-                  <span class="text-sm text-slate-500">Updated ${formatDate(a.updated_at)}</span>
-                  ${button({ variant: 'secondaryCompact', label: 'View', extraClass: 'js-details', dataset: { id: a.id } })}
-                  ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: 'Edit application', extraClass: 'js-edit', dataset: { id: a.id } })}
-                  ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: `Delete ${a.role_title || 'application'}`, extraClass: 'js-delete', dataset: { id: a.id, label: a.role_title || `#${a.id}` } })}
+                  <span class="text-sm text-slate-500">${t('common.updated_at', { date: formatDate(a.updated_at) })}</span>
+                  ${button({ variant: 'secondaryCompact', label: t('common.action.view'), extraClass: 'js-details', dataset: { id: a.id } })}
+                  ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('applications.aria.edit'), extraClass: 'js-edit', dataset: { id: a.id } })}
+                  ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('applications.aria.delete', { label: a.role_title || t('applications.list.untitled_role') }), extraClass: 'js-delete', dataset: { id: a.id, label: a.role_title || `#${a.id}` } })}
                 </div>
               </div>
             </div>
@@ -265,7 +271,7 @@ const listHtml = (apps) => {
       }).join('')}
     </ul>
     <div class="mt-6 flex justify-end border-t border-slate-100 pt-4">
-      ${button({ id: 'btn-clear-all', variant: 'dangerCompact', icon: 'trash', label: 'Clear all applications' })}
+      ${button({ id: 'btn-clear-all', variant: 'dangerCompact', icon: 'trash', label: t('applications.action.clear_all') })}
     </div>`;
 };
 
@@ -285,12 +291,12 @@ const emptyLine = (msg) => `<p class="text-sm text-slate-500">${escapeHtml(msg)}
 const structuredHtml = (parsed) => {
   if (!parsed.ok) {
     return `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-      Structured job description could not be loaded. Re-extract to replace the saved data.
+      ${t('applications.details.jd_error')}
     </div>`;
   }
   const s = parsed.data;
   if (!s) {
-    return emptyState({ message: 'No structured job description yet.' });
+    return emptyState({ message: t('applications.details.jd_empty') });
   }
   const req = s.requirements || {};
   const salaryLabel = formatSalary(s.salary?.currency, s.salary?.amount);
@@ -308,47 +314,47 @@ const structuredHtml = (parsed) => {
             : (s.year > 0 ? badge({ label: String(s.year), color: 'emerald' }) : '')}
           ${hasDeadline ? badge({ label: s.application_deadline, color: 'rose' }) : ''}
           ${hasSalary ? badge({ label: salaryLabel, color: 'amber' }) : ''}
-          ${!anyBadge ? '<span class="text-slate-500">No normalized role metadata identified.</span>' : ''}
+          ${!anyBadge ? `<span class="text-slate-500">${t('applications.details.meta_empty')}</span>` : ''}
         </div>
         <div class="grid gap-1">
-          <dt class="text-sm font-semibold text-slate-500">Summary</dt>
-          <dd>${(s.summary || '').trim() ? escapeHtml(s.summary) : '<span class="text-slate-500">No summary yet.</span>'}</dd>
+          <dt class="text-sm font-semibold text-slate-500">${t('applications.details.summary_label')}</dt>
+          <dd>${(s.summary || '').trim() ? escapeHtml(s.summary) : `<span class="text-slate-500">${t('applications.details.summary_empty')}</span>`}</dd>
         </div>
       </section>
 
       <section class="grid gap-6 lg:grid-cols-2">
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">Minimum qualifications</h3>
-          ${(s.minimum_qualifications || []).length ? bulletList(s.minimum_qualifications) : emptyLine('No minimum qualifications identified.')}
+          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.minimum_qualifications')}</h3>
+          ${(s.minimum_qualifications || []).length ? bulletList(s.minimum_qualifications) : emptyLine(t('applications.details.minimum_qualifications_empty'))}
         </div>
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">Preferred qualifications</h3>
-          ${(s.preferred_qualifications || []).length ? bulletList(s.preferred_qualifications) : emptyLine('No preferred qualifications identified.')}
+          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.preferred_qualifications')}</h3>
+          ${(s.preferred_qualifications || []).length ? bulletList(s.preferred_qualifications) : emptyLine(t('applications.details.preferred_qualifications_empty'))}
         </div>
       </section>
 
       <section class="grid gap-6 lg:grid-cols-2">
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">Responsibilities</h3>
-          ${(s.responsibilities || []).length ? bulletList(s.responsibilities) : emptyLine('No responsibilities identified.')}
+          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.responsibilities')}</h3>
+          ${(s.responsibilities || []).length ? bulletList(s.responsibilities) : emptyLine(t('applications.details.responsibilities_empty'))}
         </div>
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">Requirements</h3>
+          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.requirements')}</h3>
           <dl class="space-y-3">
             <div class="flex flex-wrap gap-2">
-              ${req.transcript_required ? badge({ label: 'Transcript required', color: 'rose' }) : ''}
+              ${req.transcript_required ? badge({ label: t('applications.details.transcript_required'), color: 'rose' }) : ''}
               ${chips(req.education, 'slate')}
               ${chips(req.majors, 'indigo')}
             </div>
             <div class="grid gap-1">
-              <dt class="text-sm font-semibold text-slate-500">Work authorization</dt>
-              <dd class="text-sm text-slate-700">${(req.work_authorization || '').trim() ? escapeHtml(req.work_authorization) : '<span class="text-slate-500">Not identified</span>'}</dd>
+              <dt class="text-sm font-semibold text-slate-500">${t('applications.details.work_auth')}</dt>
+              <dd class="text-sm text-slate-700">${(req.work_authorization || '').trim() ? escapeHtml(req.work_authorization) : `<span class="text-slate-500">${t('common.status.not_identified')}</span>`}</dd>
             </div>
             <div class="grid gap-1">
-              <dt class="text-sm font-semibold text-slate-500">Availability</dt>
+              <dt class="text-sm font-semibold text-slate-500">${t('applications.details.availability')}</dt>
               <dd class="text-sm text-slate-700">${(req.availability || []).length
                 ? `<div class="space-y-1">${req.availability.map(v => `<p>${escapeHtml(v)}</p>`).join('')}</div>`
-                : '<span class="text-slate-500">Not identified</span>'}</dd>
+                : `<span class="text-slate-500">${t('common.status.not_identified')}</span>`}</dd>
             </div>
           </dl>
         </div>
@@ -356,29 +362,29 @@ const structuredHtml = (parsed) => {
 
       <section class="grid gap-6 lg:grid-cols-3">
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">Languages</h3>
-          <div>${(s.languages || []).length ? chips(s.languages, 'emerald') : '<span class="text-sm text-slate-500">Not identified</span>'}</div>
+          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.languages')}</h3>
+          <div>${(s.languages || []).length ? chips(s.languages, 'emerald') : `<span class="text-sm text-slate-500">${t('common.status.not_identified')}</span>`}</div>
         </div>
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">Skills</h3>
-          <div>${(s.skills || []).length ? chips(s.skills, 'emerald') : '<span class="text-sm text-slate-500">Not identified</span>'}</div>
+          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.skills')}</h3>
+          <div>${(s.skills || []).length ? chips(s.skills, 'emerald') : `<span class="text-sm text-slate-500">${t('common.status.not_identified')}</span>`}</div>
         </div>
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">Domains</h3>
-          <div>${(s.domains || []).length ? chips(s.domains, 'emerald') : '<span class="text-sm text-slate-500">Not identified</span>'}</div>
+          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.domains')}</h3>
+          <div>${(s.domains || []).length ? chips(s.domains, 'emerald') : `<span class="text-sm text-slate-500">${t('common.status.not_identified')}</span>`}</div>
         </div>
       </section>
 
       <section class="space-y-3">
-        <h3 class="text-base font-semibold text-slate-900">Logistics</h3>
+        <h3 class="text-base font-semibold text-slate-900">${t('applications.details.logistics')}</h3>
         <dl class="grid gap-4 sm:grid-cols-2">
           <div class="grid gap-1 sm:col-span-2">
-            <dt class="text-sm font-semibold text-slate-500">Locations</dt>
-            <dd>${(s.locations || []).length ? chips(s.locations, 'blue') : '<span class="text-slate-500">Not identified</span>'}</dd>
+            <dt class="text-sm font-semibold text-slate-500">${t('applications.details.locations')}</dt>
+            <dd>${(s.locations || []).length ? chips(s.locations, 'blue') : `<span class="text-slate-500">${t('common.status.not_identified')}</span>`}</dd>
           </div>
           <div class="grid gap-1 sm:col-span-2">
-            <dt class="text-sm font-semibold text-slate-500">Location notes</dt>
-            <dd>${(s.location_notes || '').trim() ? escapeHtml(s.location_notes) : '<span class="text-slate-500">No additional notes.</span>'}</dd>
+            <dt class="text-sm font-semibold text-slate-500">${t('applications.details.location_notes')}</dt>
+            <dd>${(s.location_notes || '').trim() ? escapeHtml(s.location_notes) : `<span class="text-slate-500">${t('applications.details.location_notes_empty')}</span>`}</dd>
           </div>
         </dl>
       </section>
@@ -391,7 +397,7 @@ const attachmentCardHtml = (att) => {
     variant: 'linkMuted',
     label: att.original_filename,
     extraClass: 'js-download-attachment !text-slate-900 hover:!text-blue-700 hover:underline font-semibold',
-    ariaLabel: `Download ${att.original_filename}`,
+    ariaLabel: t('applications.aria.download_attachment', { name: att.original_filename }),
     dataset: {
       id: att.id,
       folder: att.folder,
@@ -404,7 +410,7 @@ const attachmentCardHtml = (att) => {
     variant: 'dangerIcon',
     icon: 'trash',
     iconOnly: true,
-    ariaLabel: `Delete attachment ${att.original_filename}`,
+    ariaLabel: t('applications.aria.delete_attachment', { name: att.original_filename }),
     extraClass: 'js-delete-attachment',
     dataset: { id: att.id },
   });
@@ -431,20 +437,20 @@ const attachmentsSectionHtml = (a, attachments) => {
   return `
     <div class="space-y-3">
       <div class="flex items-center justify-between gap-2">
-        <h3 class="text-lg font-semibold text-slate-900">Attachments</h3>
+        <h3 class="text-lg font-semibold text-slate-900">${t('applications.details.attachments')}</h3>
       </div>
       ${inlineError({ id: 'attachment-upload-error' })}
       <label class="${CLS.btnSecondaryCompact} cursor-pointer">
         <input id="attachment-upload-input" type="file" class="hidden">
-        <span id="attachment-upload-label">Upload file</span>
+        ${icon('arrowUpTray')}
+        <span id="attachment-upload-label">${t('applications.action.upload_file')}</span>
       </label>
       <p class="text-xs text-slate-500">
-        Saved to <code class="rounded bg-slate-100 px-1">attachments/${escapeHtml(folderPreview)}/</code>
-        on every connected backend.
+        ${t('applications.details.attachments_help', { folder: escapeHtml(folderPreview) })}
       </p>
       ${attachments.length
         ? `<ul class="space-y-3">${attachments.map(attachmentCardHtml).join('')}</ul>`
-        : emptyState({ message: 'No attachments yet.' })}
+        : emptyState({ message: t('applications.details.attachments_empty') })}
     </div>
   `;
 };
@@ -465,7 +471,8 @@ const timelineHtml = (events) => {
   return `
     <ul class="space-y-3">${timelineEventHtml(latest)}</ul>
     ${rest.length ? collapsible({
-      summary: `more (${rest.length}) …`,
+      summary: t('applications.details.more_events'),
+      openSummary: t('common.action.less'),
       content: `<ul class="mt-3 space-y-3">${rest.map(timelineEventHtml).join('')}</ul>`,
     }) : ''}
   `;
@@ -483,10 +490,11 @@ const detailsHtml = (a, events, attachments) => {
   return `
     <div class="${CLS.card}">
       <div class="flex items-baseline justify-between gap-3">
-        <p class="${CLS.eyebrow}">${escapeHtml(a.company_name) || 'Unknown company'}</p>
+        <p class="${CLS.eyebrow}">${escapeHtml(a.company_name) || t('applications.details.unknown_company')}</p>
         <div class="flex items-center gap-2">
-          ${hasRaw || hasURL ? button({ id: 'btn-details-extract', variant: 'secondaryCompact', icon: 'sparkles', label: 'Extract description' }) : ''}
-          ${button({ id: 'btn-details-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: 'Close' })}
+          ${hasRaw || hasURL ? outputLanguageSelect('out-lang-extract-jd') : ''}
+          ${hasRaw || hasURL ? button({ id: 'btn-details-extract', variant: 'secondaryCompact', icon: 'sparkles', label: t('applications.action.extract_description') }) : ''}
+          ${button({ id: 'btn-details-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
         </div>
       </div>
 
@@ -494,10 +502,10 @@ const detailsHtml = (a, events, attachments) => {
         <div class="flex flex-wrap items-center gap-3">
           <h2 class="text-2xl font-semibold tracking-tight text-slate-900">
             ${hasURL
-              ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="hover:text-blue-700 hover:underline">${escapeHtml(a.role_title) || '<span class="italic text-slate-400">Untitled role</span>'}</a>`
-              : (escapeHtml(a.role_title) || '<span class="italic text-slate-400">Untitled role</span>')}
+              ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="hover:text-blue-700 hover:underline">${escapeHtml(a.role_title) || `<span class="italic text-slate-400">${t('applications.list.untitled_role')}</span>`}</a>`
+              : (escapeHtml(a.role_title) || `<span class="italic text-slate-400">${t('applications.list.untitled_role')}</span>`)}
           </h2>
-          <span class="${pillClass}">${escapeHtml(humanize(status))}</span>
+          <span class="${pillClass}">${escapeHtml(statusLabel(status))}</span>
         </div>
         ${a.person_name ? `<p class="text-slate-600">${escapeHtml(a.person_name)}</p>` : ''}
       </div>
@@ -508,23 +516,23 @@ const detailsHtml = (a, events, attachments) => {
 
       <form id="quick-status-form" class="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 pt-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] sm:items-end">
         <div class="grid gap-2">
-          <label class="${CLS.label}" for="quick-status">Status</label>
+          <label class="${CLS.label}" for="quick-status">${t('applications.quickstatus.status.label')}</label>
           <select class="${CLS.select}" id="quick-status" name="status">
             ${APPLICATION_STATUSES.map(s => `
-              <option value="${s}" ${s === status ? 'selected' : ''}>${humanize(s)}</option>
+              <option value="${s}" ${s === status ? 'selected' : ''}>${statusLabel(s)}</option>
             `).join('')}
           </select>
         </div>
         <div class="grid gap-2">
-          <label class="${CLS.label}" for="quick-occurred-at">Date</label>
+          <label class="${CLS.label}" for="quick-occurred-at">${t('applications.quickstatus.date.label')}</label>
           <input class="${CLS.input}" id="quick-occurred-at" name="occurred_at" type="date">
         </div>
         <div class="grid gap-2">
-          <label class="${CLS.label}" for="quick-notes">Short notes</label>
-          <input class="${CLS.input}" id="quick-notes" name="notes" type="text" maxlength="255" placeholder="Optional context for the timeline">
+          <label class="${CLS.label}" for="quick-notes">${t('applications.quickstatus.short_notes.label')}</label>
+          <input class="${CLS.input}" id="quick-notes" name="notes" type="text" maxlength="255" placeholder="${t('applications.quickstatus.short_notes.placeholder')}">
         </div>
         <div>
-          ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: 'Update status' })}
+          ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('applications.action.update_status') })}
         </div>
       </form>
 
@@ -532,36 +540,36 @@ const detailsHtml = (a, events, attachments) => {
         <dl class="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
           ${hasPerson ? `
             <div class="grid gap-1">
-              <dt class="text-sm font-semibold text-slate-500">Point of contact</dt>
-              <dd>${escapeHtml(a.person_name || `Person #${a.person_id}`)}</dd>
+              <dt class="text-sm font-semibold text-slate-500">${t('applications.details.point_of_contact')}</dt>
+              <dd>${a.person_name ? escapeHtml(a.person_name) : t('applications.details.person_fallback', { id: a.person_id })}</dd>
             </div>` : ''}
           <div class="grid gap-1 sm:col-span-2">
-            <dt class="text-sm font-semibold text-slate-500">Notes</dt>
-            <dd>${hasNotes ? escapeHtml(a.notes) : '<span class="text-slate-500">No notes yet.</span>'}</dd>
+            <dt class="text-sm font-semibold text-slate-500">${t('applications.details.notes')}</dt>
+            <dd>${hasNotes ? escapeHtml(a.notes) : `<span class="text-slate-500">${t('applications.details.notes_empty')}</span>`}</dd>
           </div>
         </dl>` : ''}
 
       <div class="space-y-3">
-        <h3 class="text-lg font-semibold text-slate-900">Job description</h3>
+        <h3 class="text-lg font-semibold text-slate-900">${t('applications.details.jd_section')}</h3>
         ${structuredHtml(parsed)}
       </div>
 
       <div class="grid gap-4 lg:grid-cols-2">
         <div class="space-y-3">
-          <h3 class="text-lg font-semibold text-slate-900">Timeline</h3>
-          ${events.length ? timelineHtml(events) : emptyState({ message: 'No application events yet.' })}
+          <h3 class="text-lg font-semibold text-slate-900">${t('applications.details.timeline')}</h3>
+          ${events.length ? timelineHtml(events) : emptyState({ message: t('applications.details.timeline_empty') })}
         </div>
         ${attachmentsSectionHtml(a, attachments)}
       </div>
 
       ${collapsible({
-        title: 'Raw job description',
-        summary: 'Show',
-        openSummary: 'Hide',
+        title: t('applications.details.raw_jd'),
+        summary: t('common.action.show'),
+        openSummary: t('common.action.hide'),
         extraClass: 'rounded-2xl border border-slate-200 bg-slate-50 p-4',
         content: `<div class="mt-4">${hasRaw
           ? `<pre class="overflow-x-auto rounded-2xl bg-white p-4 text-sm whitespace-pre-wrap text-slate-700">${escapeHtml(a.job_description_raw)}</pre>`
-          : `<div class="rounded-2xl bg-white px-4 py-6 text-center text-sm text-slate-500">No raw job description saved yet.</div>`}</div>`,
+          : `<div class="rounded-2xl bg-white px-4 py-6 text-center text-sm text-slate-500">${t('applications.details.raw_jd_empty')}</div>`}</div>`,
       })}
     </div>
   `;
@@ -578,8 +586,8 @@ let companyFilter = null; // { id, name } | null
 
 const filterBannerHtml = () => companyFilter
   ? `<div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-900">
-       <span>Filtered by company: <span class="font-semibold">${escapeHtml(companyFilter.name)}</span></span>
-       <a href="/local/applications" class="font-semibold text-blue-700 underline hover:text-blue-800">Clear filter</a>
+       <span>${t('people.list.filter_by_company')} <span class="font-semibold">${escapeHtml(companyFilter.name)}</span></span>
+       <a href="/local/applications" class="font-semibold text-blue-700 underline hover:text-blue-800">${t('people.list.clear_filter')}</a>
      </div>`
   : '';
 
@@ -593,8 +601,8 @@ const refreshList = async () => {
   if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
   if (detailsID) mountInlinePanel('details-panel', detailsID);
   setPageCount('app-count', apps.length, n => companyFilter
-    ? `${n} application${n === 1 ? '' : 's'} at ${companyFilter.name}.`
-    : `${n} application${n === 1 ? '' : 's'} tracked locally.`);
+    ? t(n === 1 ? 'applications.list.count_one_at_company' : 'applications.list.count_many_at_company', { n, company: companyFilter.name })
+    : t(n === 1 ? 'applications.list.count_one_all' : 'applications.list.count_many_all', { n }));
   refreshSidebarCounts().catch(() => {});
   document.querySelectorAll('.js-edit').forEach(btn =>
     btn.addEventListener('click', () => openEditor({ id: Number(btn.dataset.id) })));
@@ -609,35 +617,30 @@ const refreshList = async () => {
 // Meant for starting a new time-period snapshot with the same longer-lived
 // companies/people data intact.
 const clearAllApplicationsFromList = async () => {
-  const msg = 'Clear ALL applications?\n\n'
-    + '• Deletes every application, its timeline events, and its attachment records\n'
-    + '• Keeps companies, people, and communications untouched\n'
-    + '• Attachment files on Drive/local disk are not deleted (they become orphaned)\n\n'
-    + 'This cannot be undone from inside the app. Restore from a snapshot if you need to recover.';
-  if (!confirm(msg)) return;
+  if (!confirm(t('applications.confirm.clear_all'))) return;
   setInlineError('list-error', '');
   try {
     if (editorMode) closeEditor();
     if (detailsID) closeDetails();
     const { deleted } = await clearAllApplications();
-    toast(`Cleared ${deleted} application${deleted === 1 ? '' : 's'}.`, 'ok');
+    toast(t(deleted === 1 ? 'applications.toast.cleared_one' : 'applications.toast.cleared_many', { n: deleted }), 'ok');
     await refreshList();
   } catch (err) {
-    setInlineError('list-error', `Clear failed: ${err.message}`);
+    setInlineError('list-error', t('applications.error.clear_failed', { err: err.message }));
   }
 };
 
 const deleteApplicationFromList = async (id, label) => {
-  if (!confirm(`Delete "${label}"? This will remove its timeline events and attachments.`)) return;
+  if (!confirm(t('applications.confirm.delete', { label }))) return;
   setInlineError('list-error', '');
   try {
     await deleteApplication(id);
     if (editorMode && editorMode !== 'new' && editorMode.id === id) closeEditor();
     if (detailsID === id) closeDetails();
-    toast('Application deleted', 'ok');
+    toast(t('applications.toast.deleted'), 'ok');
     await refreshList();
   } catch (err) {
-    setInlineError('list-error', `Delete failed: ${err.message}`);
+    setInlineError('list-error', t('common.error.delete_failed', { err: err.message }));
   }
 };
 
@@ -651,7 +654,7 @@ const openEditor = async (mode) => {
   if (mode !== 'new') {
     app = await getApplication(mode.id);
     if (!app) {
-      toast(`Application #${mode.id} not found`, 'error');
+      toast(t('applications.error.not_found', { id: mode.id }), 'error');
       closeEditor();
       return;
     }
@@ -715,13 +718,13 @@ const wireEditor = () => {
     setInlineError('editor-error', '');
     const data = readForm(form);
     if (!data.company_id || !data.role_title) {
-      setInlineError('editor-error', 'Company and role are required');
+      setInlineError('editor-error', t('applications.error.company_and_role_required'));
       return;
     }
     try {
       if (editorMode === 'new') {
         const id = await createApplication(data);
-        toast(`Created application #${id}`, 'ok');
+        toast(t('applications.toast.created', { id }), 'ok');
       } else {
         // person_id + company_id + notes come from the form; job_description_extracted_json
         // isn't exposed here so preserve whatever the row already has.
@@ -729,13 +732,13 @@ const wireEditor = () => {
           ...data,
           job_description_extracted_json: editorSubject?.job_description_extracted_json ?? '{}',
         });
-        toast('Application saved', 'ok');
+        toast(t('applications.toast.saved'), 'ok');
         if (detailsID === editorMode.id) await renderDetails();
       }
       closeEditor();
       await refreshList();
     } catch (err) {
-      setInlineError('editor-error', `Save failed: ${err.message}`);
+      setInlineError('editor-error', t('common.error.save_failed', { err: err.message }));
     }
   });
 };
@@ -754,7 +757,7 @@ const renderDetails = async () => {
   if (!detailsID) return;
   const app = await getApplication(detailsID);
   if (!app) {
-    toast(`Application #${detailsID} not found`, 'error');
+    toast(t('applications.error.not_found', { id: detailsID }), 'error');
     closeDetails();
     return;
   }
@@ -798,11 +801,11 @@ const wireDetails = (app) => {
     try {
       const before = app.status;
       await updateApplicationStatus({ id: app.id, status, occurred_at, notes });
-      toast(before === status ? 'Status unchanged' : `Status → ${humanize(status)}`, before === status ? 'warning' : 'ok');
+      toast(before === status ? t('applications.toast.status_unchanged') : t('applications.toast.status_changed', { status: statusLabel(status) }), before === status ? 'warning' : 'ok');
       await renderDetails();
       await refreshList();
     } catch (err) {
-      setInlineError('details-error', `Status update failed: ${err.message}`);
+      setInlineError('details-error', t('applications.error.status_update_failed', { err: err.message }));
     }
   });
 
@@ -826,7 +829,7 @@ const wireDetails = (app) => {
         role_title: app.role_title || '',
         job_posting_url: app.job_posting_url || '',
         job_description_raw: app.job_description_raw || '',
-      });
+      }, readOutputLanguage('out-lang-extract-jd'));
       await updateApplicationExtraction(app.id, {
         structuredJson: JSON.stringify(resp.structured || {}),
         jobDescriptionRaw: resp.job_description_raw || '',
@@ -835,10 +838,10 @@ const wireDetails = (app) => {
       const warning = (resp.warning || '').trim();
       await renderDetails();
       // renderDetails re-renders the panel; re-apply the note after paint.
-      setInlineNote('details-note', reason ? `Job description extracted. ${reason}` : 'Job description extracted.');
+      setInlineNote('details-note', reason ? t('applications.toast.jd_extracted_with_reason', { reason }) : t('applications.toast.jd_extracted'));
       setInlineWarning('details-warning', warning);
     } catch (err) {
-      setInlineError('details-error', `Extract failed: ${err.message}`);
+      setInlineError('details-error', t('applications.error.extract_failed', { err: err.message }));
       extractBtn.disabled = false;
       extractBtn.removeAttribute('aria-busy');
     }
@@ -869,12 +872,13 @@ const onAttachmentUpload = async (ev, app) => {
       size_bytes: meta.sizeBytes,
       sha256: meta.sha256,
     });
-    toast(`Uploaded ${meta.storedFilename}`, 'ok');
+    toast(t('applications.toast.uploaded', { name: meta.storedFilename }), 'ok');
     await renderDetails();
   } catch (err) {
     // Inline error under the Attachments heading — the toast lives out of
     // view when the details panel is scrolled below the fold.
-    setInlineError('attachment-upload-error', `Upload failed: ${err.message}`);
+    const detail = err.code === 'no_storage_backend' ? t('common.error.no_storage_backend') : err.message;
+    setInlineError('attachment-upload-error', t('applications.error.upload_failed', { err: detail }));
     input.disabled = false;
     if (label && prevLabel) label.textContent = prevLabel;
     input.value = '';
@@ -898,18 +902,18 @@ const downloadAttachmentFromDetails = async (btn) => {
     a.remove();
     URL.revokeObjectURL(url);
   } catch (err) {
-    setInlineError('attachment-upload-error', `Download failed: ${err.message}`);
+    setInlineError('attachment-upload-error', t('common.error.download_failed', { err: err.message }));
   }
 };
 
 const deleteAttachmentFromDetails = async (id) => {
-  if (!confirm('Delete this attachment record? The file on disk/Drive is not removed.')) return;
+  if (!confirm(t('applications.confirm.delete_attachment'))) return;
   try {
     await deleteAttachment(id);
-    toast('Attachment removed', 'ok');
+    toast(t('applications.toast.attachment_removed'), 'ok');
     await renderDetails();
   } catch (err) {
-    setInlineError('attachment-upload-error', `Delete failed: ${err.message}`);
+    setInlineError('attachment-upload-error', t('common.error.delete_failed', { err: err.message }));
   }
 };
 
@@ -926,7 +930,7 @@ export const mountApplications = async (root) => {
   if (rawCompanyID) {
     const company = await getCompany(rawCompanyID);
     if (company) companyFilter = { id: company.id, name: company.official_name };
-    else toast(`Company #${rawCompanyID} not found — showing all applications`, 'warning');
+    else toast(t('applications.toast.company_missing_filter', { id: rawCompanyID }), 'warning');
   }
 
   await refreshList();

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
 	apphttp "github.com/zuccamia/career-planner/internal/http"
+	"github.com/zuccamia/career-planner/internal/i18n"
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
@@ -19,7 +21,7 @@ type App struct {
 	Router http.Handler
 }
 
-// New wires the HTTP server for the local-first application. The server holds
+// New wires the HTTP server for the application. The server holds
 // no persistent data — the browser owns SQLite via OPFS.
 func New() App {
 	addr := strings.TrimSpace(os.Getenv("APP_ADDR"))
@@ -29,6 +31,10 @@ func New() App {
 		} else {
 			addr = ":8080"
 		}
+	}
+
+	if err := i18n.Load(); err != nil {
+		log.Fatalf("i18n: %v", err)
 	}
 
 	llmClient, serverLLM := newLLMClient()

@@ -8,14 +8,14 @@
 import { exec } from '../db/client.mjs';
 import { sanitizeURL } from '../ui/dom.mjs';
 
-const EDITABLE_COLS = ['full_name', 'title', 'company_id', 'linkedin_url', 'notes'];
+const EDITABLE_COLS = ['full_name', 'title', 'company_id', 'social_url', 'notes'];
 
 // Joins companies so callers can render the company name without a second
 // round-trip. Ordered by name for deterministic listing.
 export const listPeople = () => exec(`
   SELECT p.id, p.full_name, p.title, p.company_id,
          c.official_name AS company_name,
-         p.linkedin_url, p.notes,
+         p.social_url, p.notes,
          p.created_at, p.updated_at
   FROM people p
   LEFT JOIN companies c ON c.id = p.company_id
@@ -23,7 +23,7 @@ export const listPeople = () => exec(`
 `);
 
 export const listPeopleByCompanyID = (companyID) => exec(`
-  SELECT id, full_name, title, company_id, linkedin_url, notes,
+  SELECT id, full_name, title, company_id, social_url, notes,
          created_at, updated_at
   FROM people
   WHERE company_id = ?
@@ -56,7 +56,7 @@ const normalize = (data) => ({
   // company_id is nullable — coerce empty strings and zero to null so the FK
   // stays consistent with the Go side.
   company_id: data.company_id ? Number(data.company_id) : null,
-  linkedin_url: sanitizeURL(data.linkedin_url),
+  social_url: sanitizeURL(data.social_url),
   notes: data.notes ?? '',
 });
 

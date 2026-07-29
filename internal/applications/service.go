@@ -1,6 +1,6 @@
 package applications
 
-// LLM-driven job description extraction used by the local-first RPC surface.
+// LLM-driven job description extraction used by the RPC surface.
 
 import (
 	"context"
@@ -40,6 +40,9 @@ type ExtractJobDescriptionTextInput struct {
 	RoleTitle         string
 	JobPostingURL     string
 	JobDescriptionRaw string
+	// OutputLanguage selects the locale-specific prompt template; missing
+	// locales fall back to English via PickPromptSet.
+	OutputLanguage string
 }
 
 // JDExtractionContext carries the intermediate results of PrepareJDExtraction
@@ -102,11 +105,12 @@ func (s *Service) PrepareJDExtraction(ctx context.Context, input ExtractJobDescr
 		// department, etc.) would be lost on any later re-extraction from raw.
 		raw = enrichRawWithATSMetadata(posting, input.JobPostingURL, raw)
 	}
+	set := llm.PickPromptSet(extractJobDescriptionPrompts, input.OutputLanguage)
 	return JDExtractionContext{
 		Prompt: llm.Prompt{
-			System: extractJobDescriptionSystemPrompt,
+			System: set.System,
 			User: fmt.Sprintf(
-				extractJobDescriptionUserPrompt,
+				set.User,
 				input.CompanyName,
 				input.RoleTitle,
 				input.JobPostingURL,

@@ -144,13 +144,15 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// isBenignMigrationError treats "duplicate column" as a no-op so an ADD COLUMN
-// migration succeeds against DBs that already had the column (e.g. installs
-// created from a snapshot that predates versioned migrations).
+// isBenignMigrationError treats "duplicate column" and "no such column" as
+// no-ops so ADD COLUMN and RENAME COLUMN migrations succeed against DBs that
+// already reflect the target schema (e.g. installs created from a snapshot
+// that predates versioned migrations, or a legacy DB whose user_version was
+// manually reset).
 func isBenignMigrationError(err error) bool {
 	if err == nil {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "duplicate column")
+	return strings.Contains(msg, "duplicate column") || strings.Contains(msg, "no such column")
 }

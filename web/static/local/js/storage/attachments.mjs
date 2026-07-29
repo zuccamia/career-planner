@@ -76,7 +76,9 @@ export const uploadAttachment = async (folder, file) => {
   return navigator.locks.request(UPLOAD_LOCK, async () => {
     const backends = availableBackends();
     if (backends.length === 0) {
-      throw new Error('no storage backend available — connect local disk or Google Drive first');
+      const err = new Error();
+      err.code = 'no_storage_backend';
+      throw err;
     }
     const storedFilename = await pickStoredFilename(backends, folder, originalFilename);
     // Each backend gets its own Uint8Array view; Drive multipart Blob may

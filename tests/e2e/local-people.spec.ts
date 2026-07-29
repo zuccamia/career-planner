@@ -249,4 +249,33 @@ test.describe('local people page', () => {
     await expect(page.locator('#threads-error')).toContainText(/Couldn’t safely generate a draft/);
     await expect(page.locator('#draft-panel')).toHaveClass(/hidden/);
   });
+
+  // A person's full_name flows into the list card (innerHTML), the delete
+  // button's aria-label (via t() → button() which escapes), and the confirm
+  // dialog (plain text). Special characters should survive all three
+  // unchanged, with no visible &amp; and no HTML injection.
+  test('special characters in a person name render safely across the UI', async ({ page }) => {
+    const trickyName = 'Alex "The Great" <b>& Co</b>';
+    await gotoPeople(page);
+    await createPerson(page, { fullName: trickyName });
+
+    const card = page.locator('#list-content li', { hasText: trickyName });
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(trickyName);
+    await expect(card.locator('b')).toHaveCount(0);
+    await expect(card).not.toContainText('&amp;');
+
+    const dialogText = await new Promise<string>((resolve) => {
+      page.once('dialog', (dialog) => {
+        const msg = dialog.message();
+        dialog.dismiss();
+        resolve(msg);
+      });
+      card.getByRole('button', { name: `Delete ${trickyName}` }).click();
+    });
+    expect(dialogText).toContain(trickyName);
+    expect(dialogText).not.toContain('&amp;');
+    expect(dialogText).not.toContain('&lt;');
+    expect(dialogText).not.toContain('&quot;');
+  });
 });

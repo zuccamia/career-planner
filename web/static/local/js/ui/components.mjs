@@ -1,9 +1,10 @@
-// HTML component helpers for the local-first UI. All return raw HTML strings
+// HTML component helpers for the UI. All return raw HTML strings
 // (the local pages compose UI via innerHTML rather than a virtual DOM).
 
 import { escapeHtml } from './dom.mjs';
 import { CLS } from './classes.mjs';
 import { icon } from './icons.mjs';
+import { t } from '../i18n.mjs';
 
 // button renders a <button> or <a> styled to one of the CLS variants.
 //
@@ -56,17 +57,22 @@ export const button = ({
 
 // pageHeader renders the eyebrow title + tagline + optional count-line mount
 // (identified by countId so pages can populate it via textContent). Defaults
-// the tagline to the local-first storage note; pass tagline: null to omit.
+// the tagline to the default storage note; pass tagline: null to omit.
 // When countId is set, the tagline gets id `${countId}-tagline` so pages can
 // hide it once data exists (see setPageCount).
-const DEFAULT_TAGLINE = 'Your data lives locally in this browser.';
-export const pageHeader = ({ title, tagline = DEFAULT_TAGLINE, countId = '' } = {}) => `
+// Callers can pass an explicit tagline string, or pass `null` to omit. When
+// undefined, the default "data lives locally" note is used — resolved at call
+// time so the current locale wins.
+export const pageHeader = ({ title, tagline, countId = '' } = {}) => {
+  const line = tagline === undefined ? t('common.page_tagline') : tagline;
+  return `
   <div class="space-y-2">
     <p class="${CLS.eyebrow}">${escapeHtml(title)}</p>
-    ${tagline ? `<p class="text-sm text-slate-500"${countId ? ` id="${countId}-tagline"` : ''}>${escapeHtml(tagline)}</p>` : ''}
-    ${countId ? `<p class="text-sm text-slate-500" id="${countId}">Loading…</p>` : ''}
+    ${line ? `<p class="text-sm text-slate-500"${countId ? ` id="${countId}-tagline"` : ''}>${escapeHtml(line)}</p>` : ''}
+    ${countId ? `<p class="text-sm text-slate-500" id="${countId}">${t('app.loading')}</p>` : ''}
   </div>
 `;
+};
 
 // setPageCount updates the count line rendered by pageHeader and toggles the
 // tagline: shown when count is 0, hidden otherwise. Pass a formatter that

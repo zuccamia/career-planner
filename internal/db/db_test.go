@@ -226,6 +226,7 @@ func TestIsBenignMigrationError(t *testing.T) {
 		{name: "duplicate column", err: errString("duplicate column name: foo"), want: true},
 		{name: "mixed case", err: errString("SQL error: DUPLICATE COLUMN NAME"), want: true},
 		{name: "unrelated", err: errString("no such table: bar"), want: false},
+		{name: "no such column", err: errString("no such column: linkedin_url"), want: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

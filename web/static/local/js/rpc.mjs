@@ -14,6 +14,7 @@
 
 import { isByokActive, getByokConfig } from './storage/byok.mjs';
 import { callOpenAICompatible, getServerLLMStatus } from './llm-client.mjs';
+import { currentLocale } from './i18n.mjs';
 
 const post = async (url, body) => {
   const res = await fetch(url, {
@@ -32,14 +33,12 @@ const post = async (url, body) => {
 };
 
 // llmCall dispatches an LLM-touching request through BYOK when enabled,
-// otherwise through the single server-side endpoint.
-//   name          — endpoint slug shared by server-side + BYOK paths
-//                   (guess-candidate / extract-job-description / …).
-//   input         — the JSON body the server-side endpoint expects.
-//   serverPath    — the full server-side endpoint URL (each has its own
-//                   vanity path).
-// Returns whatever the server-side endpoint would return.
-const llmCall = async (name, input, serverPath) => {
+// otherwise through the single server-side endpoint. The caller-supplied
+// outputLanguage is threaded to both the prompts and (server-side) endpoints
+// so per-feature prompts can be authored per locale.
+const llmCall = async (name, input, serverPath, outputLanguage) => {
+  const lang = outputLanguage || currentLocale();
+  const withLang = { ...input, output_language: lang };
   if (!(await isByokActive())) {
     // Fail fast when no server-side LLM is configured — otherwise the request
     // would 502/503 with a raw "llm client is not configured" string that
@@ -48,12 +47,12 @@ const llmCall = async (name, input, serverPath) => {
     if (!serverLLM.available) {
       throw new Error('This server has no LLM key configured. Open Settings → AI provider and add your own key to use AI features.');
     }
-    return post(serverPath, input);
+    return post(serverPath, withLang);
   }
   const cfg = await getByokConfig();
   // 1. Ask the server to assemble the prompt (plus any pass-through context
   //    like enriched_raw + posting for JD extraction).
-  const prompt = await post(`/api/llm/prompts/${name}`, input);
+  const prompt = await post(`/api/llm/prompts/${name}`, withLang);
   // 2. Call the user's provider directly.
   const raw = await callOpenAICompatible(
     { system: prompt.system, user: prompt.user },
@@ -72,24 +71,24 @@ const llmCall = async (name, input, serverPath) => {
 
 // Ask the Go LLM pipeline to guess a canonical Company row from a typed name.
 // Returns { candidate: {official_name, website, tech_blog_url, ats_url, ats_provider, reasoning}, warning? }.
-export const guessCompanyCandidate = (name) =>
-  llmCall('guess-candidate', { name }, '/api/companies/guess-candidate');
+export const guessCompanyCandidate = (name, outputLanguage) =>
+  llmCall('guess-candidate', { name }, '/api/companies/guess-candidate', outputLanguage);
 
 // Extract structured facts from raw JD text. When input.job_description_raw is
 // empty and job_posting_url is set, the server fetches the posting and returns
 // the fetched text alongside the structured result:
 //   { structured: JobDescriptionStructured, job_description_raw: string }
-export const extractJobDescription = (input) =>
-  llmCall('extract-job-description', input, '/api/applications/extract-job-description');
+export const extractJobDescription = (input, outputLanguage) =>
+  llmCall('extract-job-description', input, '/api/applications/extract-job-description', outputLanguage);
 
 // Build a dossier for the given company shape. Returns the Dossier struct;
 // the caller writes it onto the companies row via updateCompanyDossier.
-export const buildDossier = (company) =>
-  llmCall('build-dossier', company, '/api/dossiers/build');
+export const buildDossier = (company, outputLanguage) =>
+  llmCall('build-dossier', company, '/api/dossiers/build', outputLanguage);
 
 // Generate suggested brag tags from the brag body only.
-export const generateBragTags = (payload) =>
-  llmCall('generate-brag-tags', payload, '/api/profile/generate-brag-tags');
+export const generateBragTags = (payload, outputLanguage) =>
+  llmCall('generate-brag-tags', payload, '/api/profile/generate-brag-tags', outputLanguage);
 
 // Ask the LLM to summarize one communication thread. Caller ships the full
 // thread + entries context (the server is stateless for local-first data) and
@@ -97,11 +96,11 @@ export const generateBragTags = (payload) =>
 //
 //   thread:  { person_name, person_notes, channel, subject, status, summary }
 //   entries: [{ direction, content, occurred_at }] — newest first
-export const summarizeThread = (payload) =>
-  llmCall('summarize-thread', payload, '/api/communications/summarize-thread');
+export const summarizeThread = (payload, outputLanguage) =>
+  llmCall('summarize-thread', payload, '/api/communications/summarize-thread', outputLanguage);
 
 // Ask the LLM to draft outreach or a reply from a thread's context. Same
 // payload shape as summarizeThread plus a `goal` of "outreach" or "reply".
 // Returns { message }. The caller decides whether to save the draft.
-export const generateMessage = (payload) =>
-  llmCall('generate-message', payload, '/api/communications/generate-message');
+export const generateMessage = (payload, outputLanguage) =>
+  llmCall('generate-message', payload, '/api/communications/generate-message', outputLanguage);

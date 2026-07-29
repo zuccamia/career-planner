@@ -296,7 +296,7 @@ test.describe('local applications page — attachments', () => {
 
     const errorBanner = panel.locator('#attachment-upload-error');
     await expect(errorBanner).toBeVisible();
-    await expect(errorBanner).toContainText('no storage backend available');
+    await expect(errorBanner).toContainText('No storage connected');
     // Toast surface must NOT carry the failure — the inline banner is the sole
     // failure UX. Success paths still toast.
     await expect(page.locator('#toast')).not.toContainText(/Upload failed/);
@@ -433,5 +433,35 @@ test.describe('local applications page — clear all', () => {
 
     await expect(page.locator('#list-content li')).toHaveCount(1);
     await expect(page.locator('#toast')).not.toContainText(/Cleared/);
+  });
+
+  // A role_title flows into the list card (innerHTML), the delete button's
+  // aria-label (via t() → button() which escapes), and the confirm dialog
+  // (plain text). Special characters should survive all three unchanged, with
+  // no visible &amp; and no HTML injection.
+  test('special characters in a role title render safely across the UI', async ({ page }) => {
+    const trickyRole = 'Sr. Engineer <img src=x onerror=alert(1)> & "Ops"';
+    await createCompany(page, 'Alpha Co.');
+    await createApplication(page, 'Alpha Co.', trickyRole);
+    await gotoApps(page);
+
+    const card = page.locator('#list-content li', { hasText: trickyRole });
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(trickyRole);
+    await expect(card.locator('img')).toHaveCount(0);
+    await expect(card).not.toContainText('&amp;');
+
+    const dialogText = await new Promise<string>((resolve) => {
+      page.once('dialog', (dialog) => {
+        const msg = dialog.message();
+        dialog.dismiss();
+        resolve(msg);
+      });
+      card.getByRole('button', { name: `Delete ${trickyRole}` }).click();
+    });
+    expect(dialogText).toContain(trickyRole);
+    expect(dialogText).not.toContain('&amp;');
+    expect(dialogText).not.toContain('&lt;');
+    expect(dialogText).not.toContain('&quot;');
   });
 });

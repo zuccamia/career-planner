@@ -383,7 +383,7 @@ func ensurePeople(ctx context.Context, database *sql.DB, companyID int64, compan
 		linkedin := fmt.Sprintf("https://www.linkedin.com/in/%s-%s",
 			slugify(p.FullName), slugify(company.Name))
 		result, err := database.ExecContext(ctx, `
-			INSERT INTO people (full_name, title, company_id, linkedin_url, notes, created_at, updated_at)
+			INSERT INTO people (full_name, title, company_id, social_url, notes, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
 		`,
 			p.FullName, p.Title, companyID, linkedin,
