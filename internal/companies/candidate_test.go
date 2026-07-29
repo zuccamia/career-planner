@@ -24,7 +24,7 @@ func TestGuessCandidateSanitizesURLs(t *testing.T) {
 	svc := NewService(&fakeClient{payload: `{
 		"official_name": "  Acme Corp  ",
 		"website": "https://acme.example ",
-		"tech_blog_url": "ftp://blog.acme.example",
+		"blog_url": "ftp://blog.acme.example",
 		"ats_url": "not a url",
 		"ats_provider": " Greenhouse ",
 		"reasoning": "  looks legit  "
@@ -40,8 +40,8 @@ func TestGuessCandidateSanitizesURLs(t *testing.T) {
 	if got.Website != "https://acme.example" {
 		t.Errorf("Website = %q, want %q", got.Website, "https://acme.example")
 	}
-	if got.TechBlogURL != "" {
-		t.Errorf("TechBlogURL = %q, want empty (ftp rejected)", got.TechBlogURL)
+	if got.BlogURL != "" {
+		t.Errorf("BlogURL = %q, want empty (ftp rejected)", got.BlogURL)
 	}
 	if got.ATSURL != "" {
 		t.Errorf("ATSURL = %q, want empty (unparseable)", got.ATSURL)

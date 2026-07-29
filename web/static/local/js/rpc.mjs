@@ -70,7 +70,7 @@ const llmCall = async (name, input, serverPath, outputLanguage) => {
 };
 
 // Ask the Go LLM pipeline to guess a canonical Company row from a typed name.
-// Returns { candidate: {official_name, website, tech_blog_url, ats_url, ats_provider, reasoning}, warning? }.
+// Returns { candidate: {official_name, website, blog_url, ats_url, ats_provider, reasoning}, warning? }.
 export const guessCompanyCandidate = (name, outputLanguage) =>
   llmCall('guess-candidate', { name }, '/api/companies/guess-candidate', outputLanguage);
 

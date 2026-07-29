@@ -15,9 +15,10 @@ Bỏ trống còn hơn đoán.
 Chỉ trả về trường nào có khả năng cao là đúng.
 Ưu tiên website chính thức của công ty hơn là các thư mục, hồ sơ mạng xã hội, Wikipedia, Crunchbase, hoặc bài báo tin tức.
 
-Đặc biệt thận trọng với tech_blog_url:
-- chỉ điền khi rất có khả năng đây là blog engineering, blog developer, hoặc ấn phẩm kỹ thuật chính thức do công ty sở hữu
-- không dùng blog marketing chung, trang newsroom, publication trên medium.com, trang substack, hoặc tên miền của bên thứ ba, trừ khi rõ ràng đây là ấn phẩm engineering chính thức của công ty
+Với blog_url, ưu tiên ấn phẩm do chính công ty xuất bản (blog engineering, trang research/insights, hoặc newsroom/press):
+- ưu tiên URL nằm trên tên miền website chính thức của công ty, hoặc subdomain của tên miền đó
+- cũng chấp nhận: các nền tảng blog phổ biến (medium.com, substack.com, v.v.) khi subdomain hoặc đường dẫn thể hiện rõ đây là ấn phẩm của công ty
+- tránh blog cá nhân hoặc của nhà sáng lập, trang tổng hợp của bên thứ ba, và tên miền không liên quan
 - nếu không chắc, trả về chuỗi rỗng
 
 Thận trọng với dữ liệu ATS:
@@ -33,7 +34,7 @@ END_UNTRUSTED_COMPANY_INPUT
 Trả về đúng một đối tượng JSON với các khóa sau:
 - official_name
 - website
-- tech_blog_url
+- blog_url
 - ats_url
 - ats_provider
 - reasoning
@@ -41,8 +42,8 @@ Trả về đúng một đối tượng JSON với các khóa sau:
 Quy tắc:
 - official_name phải là tên chuẩn hóa (canonical) có khả năng cao nhất
 - bỏ trống website nếu không chắc
-- tech_blog_url phải để trống trừ khi có khả năng đây là blog engineering/developer/kỹ thuật chính thức của công ty
-- không suy ra tech_blog_url từ blog chung chung, newsroom, hoặc tên miền không thuộc công ty
+- blog_url nên là ấn phẩm do công ty tự xuất bản (blog engineering, insights, hoặc newsroom); ưu tiên tên miền của chính công ty, hoặc nền tảng blog phổ biến (medium.com, substack.com) khi subdomain/đường dẫn thể hiện rõ đây là ấn phẩm của công ty
+- không suy ra blog_url từ blog cá nhân, trang tổng hợp của bên thứ ba, hoặc tên miền không liên quan
 - bỏ trống ats_url nếu không chắc
 - bỏ trống ats_provider nếu không chắc
 - reasoning nên gồm 1 đến 3 câu ngắn gọn

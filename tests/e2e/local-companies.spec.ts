@@ -21,7 +21,7 @@ const fillEditor = async (
   values: {
     officialName?: string;
     website?: string;
-    techBlogURL?: string;
+    blogURL?: string;
     atsURL?: string;
     atsProvider?: string;
   },
@@ -32,8 +32,8 @@ const fillEditor = async (
   if (values.website !== undefined) {
     await page.getByLabel('Website').fill(values.website);
   }
-  if (values.techBlogURL !== undefined) {
-    await page.getByLabel('Tech blog URL').fill(values.techBlogURL);
+  if (values.blogURL !== undefined) {
+    await page.getByLabel('Blog / insights URL').fill(values.blogURL);
   }
   if (values.atsURL !== undefined) {
     await page.getByLabel('ATS URL').fill(values.atsURL);
@@ -57,7 +57,7 @@ test.describe('local companies page', () => {
     await fillEditor(page, {
       officialName: 'Stripe Local Co.',
       website: 'https://stripe.com',
-      techBlogURL: 'https://stripe.com/blog/engineering',
+      blogURL: 'https://stripe.com/blog/engineering',
       atsURL: 'https://stripe.com/jobs',
       atsProvider: 'Greenhouse',
     });
@@ -73,8 +73,8 @@ test.describe('local companies page', () => {
       'href',
       /https:\/\/stripe\.com\/?$/,
     );
-    // Tech blog icon-link renders when tech_blog_url is set.
-    await expect(card.getByRole('link', { name: 'Tech blog' })).toBeVisible();
+    // Blog icon-link renders when blog_url is set.
+    await expect(card.getByRole('link', { name: 'Company blog' })).toBeVisible();
     // Page count line reflects state.
     await expect(page.locator('#companies-count')).toHaveText(/1 company tracked locally\./);
 
@@ -195,10 +195,8 @@ test.describe('local companies page', () => {
     await expect(betaCard.getByTitle('People at Beta Co.')).toContainText('0');
     await expect(betaCard.getByTitle('Applications at Beta Co.')).toContainText('0');
 
-    // Engineering-blog pill is inert (no local page yet). The header row
-    // should therefore only expose two anchor pills — the ones we titled
-    // above — plus no unrelated blog link.
-    const headerAnchors = alphaCard.locator('a[title^="People at "], a[title^="Applications at "], a[title^="Engineering blog"]');
+    // The header row should expose exactly the two anchor pills titled above.
+    const headerAnchors = alphaCard.locator('a[title^="People at "], a[title^="Applications at "]');
     await expect(headerAnchors).toHaveCount(2);
   });
 

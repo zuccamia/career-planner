@@ -23,7 +23,7 @@ var sampleResumeTypst string
 type companySeed struct {
 	Name        string
 	Website     string
-	TechBlogURL string
+	BlogURL     string
 	ATSProvider string
 }
 
@@ -167,10 +167,9 @@ func resetApplicationData(ctx context.Context, database *sql.DB) error {
 		`DELETE FROM applications`,
 		`DELETE FROM communication_entries`,
 		`DELETE FROM communication_threads`,
-		`DELETE FROM engineering_blog_notes`,
 		`DELETE FROM people`,
 		`DELETE FROM companies`,
-		`DELETE FROM sqlite_sequence WHERE name IN ('application_events', 'applications', 'communication_entries', 'communication_threads', 'engineering_blog_notes', 'people', 'companies')`,
+		`DELETE FROM sqlite_sequence WHERE name IN ('application_events', 'applications', 'communication_entries', 'communication_threads', 'people', 'companies')`,
 	}
 	for _, statement := range statements {
 		if _, err := database.ExecContext(ctx, statement); err != nil {
@@ -323,9 +322,9 @@ func ensureCompany(ctx context.Context, database *sql.DB, company companySeed, n
 		return 0, err
 	}
 	result, err := database.ExecContext(ctx, `
-		INSERT INTO companies (official_name, website, tech_blog_url, ats_url, ats_provider, created_at, updated_at)
+		INSERT INTO companies (official_name, website, blog_url, ats_url, ats_provider, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, company.Name, company.Website, company.TechBlogURL, company.Website+"/careers", company.ATSProvider, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
+	`, company.Name, company.Website, company.BlogURL, company.Website+"/careers", company.ATSProvider, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return 0, err
 	}
@@ -575,18 +574,18 @@ func transitionNote(fromStatus, toStatus string) string {
 
 func companySeeds() []companySeed {
 	return []companySeed{
-		{Name: "Stripe", Website: "https://stripe.com", TechBlogURL: "https://stripe.com/blog/engineering", ATSProvider: "greenhouse"},
-		{Name: "Notion", Website: "https://www.notion.so", TechBlogURL: "https://www.notion.so/blog/topic/engineering", ATSProvider: "ashby"},
-		{Name: "Figma", Website: "https://www.figma.com", TechBlogURL: "https://www.figma.com/blog/engineering", ATSProvider: "greenhouse"},
-		{Name: "Datadog", Website: "https://www.datadoghq.com", TechBlogURL: "https://www.datadoghq.com/blog/engineering", ATSProvider: "greenhouse"},
-		{Name: "Cloudflare", Website: "https://www.cloudflare.com", TechBlogURL: "https://blog.cloudflare.com", ATSProvider: "greenhouse"},
-		{Name: "Canva", Website: "https://www.canva.com", TechBlogURL: "https://www.canva.dev/blog/engineering", ATSProvider: "greenhouse"},
-		{Name: "Linear", Website: "https://linear.app", TechBlogURL: "https://linear.app/blog", ATSProvider: "ashby"},
-		{Name: "Vercel", Website: "https://vercel.com", TechBlogURL: "https://vercel.com/blog", ATSProvider: "greenhouse"},
-		{Name: "Dropbox", Website: "https://www.dropbox.com", TechBlogURL: "https://dropbox.tech", ATSProvider: "greenhouse"},
-		{Name: "Shopify", Website: "https://www.shopify.com", TechBlogURL: "https://shopify.engineering", ATSProvider: "greenhouse"},
-		{Name: "Ramp", Website: "https://ramp.com", TechBlogURL: "https://engineering.ramp.com", ATSProvider: "ashby"},
-		{Name: "Plaid", Website: "https://plaid.com", TechBlogURL: "https://plaid.com/blog/engineering", ATSProvider: "greenhouse"},
+		{Name: "Stripe", Website: "https://stripe.com", BlogURL: "https://stripe.com/blog/engineering", ATSProvider: "greenhouse"},
+		{Name: "Notion", Website: "https://www.notion.so", BlogURL: "https://www.notion.so/blog/topic/engineering", ATSProvider: "ashby"},
+		{Name: "Figma", Website: "https://www.figma.com", BlogURL: "https://www.figma.com/blog/engineering", ATSProvider: "greenhouse"},
+		{Name: "Datadog", Website: "https://www.datadoghq.com", BlogURL: "https://www.datadoghq.com/blog/engineering", ATSProvider: "greenhouse"},
+		{Name: "Cloudflare", Website: "https://www.cloudflare.com", BlogURL: "https://blog.cloudflare.com", ATSProvider: "greenhouse"},
+		{Name: "Canva", Website: "https://www.canva.com", BlogURL: "https://www.canva.dev/blog/engineering", ATSProvider: "greenhouse"},
+		{Name: "Linear", Website: "https://linear.app", BlogURL: "https://linear.app/blog", ATSProvider: "ashby"},
+		{Name: "Vercel", Website: "https://vercel.com", BlogURL: "https://vercel.com/blog", ATSProvider: "greenhouse"},
+		{Name: "Dropbox", Website: "https://www.dropbox.com", BlogURL: "https://dropbox.tech", ATSProvider: "greenhouse"},
+		{Name: "Shopify", Website: "https://www.shopify.com", BlogURL: "https://shopify.engineering", ATSProvider: "greenhouse"},
+		{Name: "Ramp", Website: "https://ramp.com", BlogURL: "https://engineering.ramp.com", ATSProvider: "ashby"},
+		{Name: "Plaid", Website: "https://plaid.com", BlogURL: "https://plaid.com/blog/engineering", ATSProvider: "greenhouse"},
 	}
 }
 

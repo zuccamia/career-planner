@@ -11,7 +11,7 @@
 import { exec } from '../db/client.mjs';
 import { sanitizeURL } from '../ui/dom.mjs';
 
-const EDITABLE_COLS = ['official_name', 'website', 'tech_blog_url', 'ats_url', 'ats_provider'];
+const EDITABLE_COLS = ['official_name', 'website', 'blog_url', 'ats_url', 'ats_provider'];
 
 const DOSSIER_JSON_COLS = {
   target_customers_json: [],
@@ -49,7 +49,7 @@ export const countCompanies = async () => {
 // the JSON dossier blobs to keep the payload small; the detail/dossier
 // panel calls getCompany for the full row.
 export const listCompanies = () => exec(`
-  SELECT id, official_name, website, tech_blog_url, ats_url, ats_provider,
+  SELECT id, official_name, website, blog_url, ats_url, ats_provider,
          has_internships, created_at, updated_at
   FROM companies
   ORDER BY official_name COLLATE NOCASE
@@ -73,7 +73,7 @@ export const findCompanyByName = async (name) => {
 const normalize = (data) => ({
   official_name: (data.official_name ?? '').toString().trim(),
   website: sanitizeURL(data.website),
-  tech_blog_url: sanitizeURL(data.tech_blog_url),
+  blog_url: sanitizeURL(data.blog_url),
   ats_url: sanitizeURL(data.ats_url),
   ats_provider: (data.ats_provider ?? '').toString().trim(),
 });
@@ -137,11 +137,3 @@ export const updateCompanyDossier = async (id, dossier) => {
   `, [...values, id]);
 };
 
-export const countEngineeringBlogsByCompany = async () => {
-  const rows = await exec(`
-    SELECT company_id, COUNT(*) AS n
-    FROM engineering_blog_notes
-    GROUP BY company_id
-  `);
-  return new Map(rows.map(r => [r.company_id, r.n]));
-};

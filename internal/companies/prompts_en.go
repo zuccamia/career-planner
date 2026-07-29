@@ -15,9 +15,10 @@ Prefer omission over guessing.
 Only return fields when they are likely correct.
 Prefer the official company website over directories, social profiles, Wikipedia, Crunchbase, or news articles.
 
-Be especially conservative with tech_blog_url:
-- only include it when it is very likely an official company engineering blog, developer blog, or technical publication owned by the company
-- do not use general marketing blogs, newsroom pages, medium.com publications, substack pages, or third-party domains unless they are clearly the company's official engineering publication
+For blog_url, prefer a company-authored publication (engineering blog, research/insights hub, or newsroom/press page):
+- prefer URLs on the company's own website domain, or a subdomain of it
+- also acceptable: common blog hosts (medium.com, substack.com, etc.) when the subdomain or path clearly identifies the company's own publication
+- avoid personal or founder blogs, third-party aggregators, and unrelated domains
 - if uncertain, return an empty string
 
 Be conservative with ATS data:
@@ -33,7 +34,7 @@ END_UNTRUSTED_COMPANY_INPUT
 Return exactly one JSON object with these keys:
 - official_name
 - website
-- tech_blog_url
+- blog_url
 - ats_url
 - ats_provider
 - reasoning
@@ -41,8 +42,8 @@ Return exactly one JSON object with these keys:
 Rules:
 - official_name should be the most likely canonical company name
 - leave website empty if uncertain
-- tech_blog_url must be empty unless it is likely an official company engineering/developer/technical blog
-- do not infer tech_blog_url from a generic blog, newsroom, or non-company domain
+- blog_url should be a company-authored publication (engineering blog, insights, or newsroom); prefer the company's own domain, or a common blog host (medium.com, substack.com) where the subdomain/path clearly identifies the company
+- do not infer blog_url from personal blogs, third-party aggregators, or unrelated domains
 - leave ats_url empty if uncertain
 - leave ats_provider empty if uncertain
 - reasoning should be 1 to 3 concise sentences

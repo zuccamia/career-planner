@@ -4,7 +4,7 @@
 
 import {
   listCompanies, getCompany, createCompany, updateCompany, deleteCompany,
-  findCompanyByName, countEngineeringBlogsByCompany, updateCompanyDossier,
+  findCompanyByName, updateCompanyDossier,
 } from '../entities/companies.mjs';
 import { countApplicationsByCompany } from '../entities/applications.mjs';
 import { countPeopleByCompany } from '../entities/people.mjs';
@@ -90,8 +90,8 @@ const editorHtml = (company) => {
                    placeholder="${t('common.placeholder.url')}" class="${CLS.input}">
           </div>
           <div class="grid gap-2">
-            <label class="${CLS.label}" for="tech_blog_url">${t('companies.field.tech_blog.label')}</label>
-            <input id="tech_blog_url" name="tech_blog_url" type="url" value="${escapeHtml(c.tech_blog_url)}"
+            <label class="${CLS.label}" for="blog_url">${t('companies.field.blog.label')}</label>
+            <input id="blog_url" name="blog_url" type="url" value="${escapeHtml(c.blog_url)}"
                    placeholder="${t('common.placeholder.url')}" class="${CLS.input}">
           </div>
           <div class="grid gap-2">
@@ -112,9 +112,9 @@ const editorHtml = (company) => {
 };
 
 // Small icons used on the card header line — website (via linked name) and
-// tech-blog (rss feed glyph).
-const techBlogIconLink = (url) => url
-  ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${t('companies.aria.tech_blog')}" aria-label="${t('companies.aria.tech_blog')}"
+// blog (rss feed glyph).
+const blogIconLink = (url) => url
+  ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${t('companies.aria.blog')}" aria-label="${t('companies.aria.blog')}"
         class="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-blue-700 transition">
       <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5a15 15 0 0 1 15 15M4.5 10.5a9 9 0 0 1 9 9M6 18.75a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
@@ -138,7 +138,7 @@ const countPill = (color, iconName, n, href, title) => {
              class="inline-flex transition hover:brightness-95 hover:ring-2 hover:ring-offset-1 hover:ring-slate-300 rounded-full">${pill}</a>`;
 };
 
-const listHtml = (companies, blogCounts, peopleCounts, appCounts) => {
+const listHtml = (companies, peopleCounts, appCounts) => {
   if (!companies.length) {
     return emptyState({ message: t('companies.list.empty') });
   }
@@ -156,8 +156,7 @@ const listHtml = (companies, blogCounts, peopleCounts, appCounts) => {
                 <div class="space-y-2 min-w-0">
                   <div class="flex flex-wrap items-center gap-2">
                     ${nameHtml}
-                    ${techBlogIconLink(c.tech_blog_url)}
-                    ${countPill('blue',    'clipboardList', blogCounts.get(c.id)   || 0, '', t('companies.list.tech_blog_notes_title'))}
+                    ${blogIconLink(c.blog_url)}
                     ${countPill('emerald', 'people',        peopleCounts.get(c.id) || 0, `/local/people?company_id=${c.id}`,       t('companies.list.people_title', { name: escapeHtml(c.official_name) }))}
                     ${countPill('amber',   'applications',  appCounts.get(c.id)    || 0, `/local/applications?company_id=${c.id}`, t('companies.list.applications_title', { name: escapeHtml(c.official_name) }))}
                   </div>
@@ -180,16 +179,15 @@ const listHtml = (companies, blogCounts, peopleCounts, appCounts) => {
 let editorMode = null;
 
 const refreshList = async () => {
-  const [companies, blogCounts, peopleCounts, appCounts] = await Promise.all([
+  const [companies, peopleCounts, appCounts] = await Promise.all([
     listCompanies(),
-    countEngineeringBlogsByCompany(),
     countPeopleByCompany(),
     countApplicationsByCompany(),
   ]);
   // Move panels back to their anchors before wiping list-content so their
   // DOM (and any in-progress form input) survives the re-render.
   restoreAllPanels(PANEL_IDS);
-  document.getElementById('list-content').innerHTML = listHtml(companies, blogCounts, peopleCounts, appCounts);
+  document.getElementById('list-content').innerHTML = listHtml(companies, peopleCounts, appCounts);
   // Reattach any open panel to its (possibly re-rendered) row.
   if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
   if (openDossierCompany) mountInlinePanel('dossier-panel', openDossierCompany.id);
@@ -457,7 +455,7 @@ const readForm = (form) => {
   return {
     official_name: (fd.get('official_name') || '').toString().trim(),
     website: (fd.get('website') || '').toString().trim(),
-    tech_blog_url: (fd.get('tech_blog_url') || '').toString().trim(),
+    blog_url: (fd.get('blog_url') || '').toString().trim(),
     ats_url: (fd.get('ats_url') || '').toString().trim(),
     ats_provider: (fd.get('ats_provider') || '').toString().trim(),
   };
@@ -474,7 +472,7 @@ const applyCandidate = (cand) => {
   };
   set('official_name', cand.official_name, { overwrite: true });
   set('website', cand.website);
-  set('tech_blog_url', cand.tech_blog_url);
+  set('blog_url', cand.blog_url);
   set('ats_url', cand.ats_url);
   set('ats_provider', cand.ats_provider);
 };

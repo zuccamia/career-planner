@@ -12,7 +12,6 @@ import {
   listDailyAppliedCounts,
 } from '../entities/applications.mjs';
 import { listDailyEntryCounts } from '../entities/communications.mjs';
-import { listDailyCreatedCounts } from '../entities/engineering_blogs.mjs';
 import { escapeHtml } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { emptyState } from '../ui/components.mjs';
@@ -147,14 +146,13 @@ const buildActivitySeries = async (endDay) => {
   const query = async (start, end) => {
     const startISO = asISO(start);
     const endISO = asISO(end);
-    const [applied, entries, blogs] = await Promise.all([
+    const [applied, entries] = await Promise.all([
       listDailyAppliedCounts(startISO, endISO),
       listDailyEntryCounts(startISO, endISO),
-      listDailyCreatedCounts(startISO, endISO),
     ]);
-    return { applied, entries, blogs };
+    return { applied, entries };
   };
-  const latestDay = ({ applied, entries, blogs }) => {
+  const latestDay = ({ applied, entries }) => {
     let latest = null;
     const consider = (row) => {
       const d = parseDayKey(row.day);
@@ -162,7 +160,6 @@ const buildActivitySeries = async (endDay) => {
     };
     applied.forEach(consider);
     entries.forEach(consider);
-    blogs.forEach(consider);
     return latest;
   };
 
@@ -174,9 +171,9 @@ const buildActivitySeries = async (endDay) => {
       d.setDate(d.getDate() - i);
       const entry = {
         date: d, label: shortDayLabel(d),
-        appliedCount: 0, threadEntryCount: 0, techBlogCount: 0,
+        appliedCount: 0, threadEntryCount: 0,
         totalCount: 0,
-        appliedHeight: 0, threadEntryHeight: 0, techBlogHeight: 0,
+        appliedHeight: 0, threadEntryHeight: 0,
       };
       days.push(entry);
       idx.set(dayKey(d), entry);
@@ -191,7 +188,7 @@ const buildActivitySeries = async (endDay) => {
   let counts = await query(start, endExclusive);
   let { days, idx } = buildWindow(endDay);
 
-  const anyInWindow = [...counts.applied, ...counts.entries, ...counts.blogs].some(r => idx.has(r.day));
+  const anyInWindow = [...counts.applied, ...counts.entries].some(r => idx.has(r.day));
   if (!anyInWindow) {
     // Legacy fallback: peek back up to two years to find the newest event day
     // and re-center the 30-day window on it so the chart isn't blank.
@@ -219,16 +216,14 @@ const buildActivitySeries = async (endDay) => {
       if (r.n > max) max = r.n;
     }
   };
-  const totals = { applied: 0, threadEntries: 0, techBlogs: 0, total: 0 };
+  const totals = { applied: 0, threadEntries: 0, total: 0 };
   apply(counts.applied, 'appliedCount', 'applied', totals);
   apply(counts.entries, 'threadEntryCount', 'threadEntries', totals);
-  apply(counts.blogs,   'techBlogCount', 'techBlogs', totals);
   for (const day of days) {
-    day.totalCount = day.appliedCount + day.threadEntryCount + day.techBlogCount;
+    day.totalCount = day.appliedCount + day.threadEntryCount;
     totals.total += day.totalCount;
     day.appliedHeight = scaledBarHeight(day.appliedCount, max);
     day.threadEntryHeight = scaledBarHeight(day.threadEntryCount, max);
-    day.techBlogHeight = scaledBarHeight(day.techBlogCount, max);
   }
   return { days, totals };
 };
@@ -295,10 +290,9 @@ const activityHtml = (days, totals) => {
             ${t('dashboard.activity.help', { visible: ACTIVITY_VISIBLE_DAYS, window: ACTIVITY_WINDOW_DAYS })}
           </p>
         </div>
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="grid grid-cols-3 gap-3 sm:grid-cols-3">
           ${totalCard(t('dashboard.activity.total.applied'), totals.applied, 'blue')}
           ${totalCard(t('dashboard.activity.total.threads'), totals.threadEntries, 'amber')}
-          ${totalCard(t('dashboard.activity.total.tech_blogs'), totals.techBlogs, 'emerald')}
           ${totalCard(t('dashboard.activity.total.total'), totals.total, 'slate')}
         </div>
       </div>
@@ -309,7 +303,6 @@ const activityHtml = (days, totals) => {
     <div class="flex flex-wrap items-center justify-end gap-4 text-sm text-slate-600">
       <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-blue-500"></span>${t('dashboard.activity.legend.applied')}</span>
       <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-amber-500"></span>${t('dashboard.activity.legend.threads')}</span>
-      <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-emerald-500"></span>${t('dashboard.activity.legend.tech_blogs')}</span>
     </div>
     <div id="activity-scroll" class="overflow-x-auto">
       <div class="min-w-[1440px]">
@@ -317,10 +310,9 @@ const activityHtml = (days, totals) => {
           ${days.map(d => `
             <div class="flex min-w-0 flex-1 flex-col items-center justify-end gap-3">
               <div class="flex h-40 items-end gap-1"
-                   aria-label="${escapeHtml(t('dashboard.activity.bar_aria', { label: d.label, applied: d.appliedCount, threads: d.threadEntryCount, techBlogs: d.techBlogCount }))}">
+                   aria-label="${escapeHtml(t('dashboard.activity.bar_aria', { label: d.label, applied: d.appliedCount, threads: d.threadEntryCount }))}">
                 <div class="w-3 rounded-t bg-blue-500"    style="height: ${d.appliedHeight}%;"     title="${escapeHtml(t('dashboard.activity.bar_applied', { n: d.appliedCount }))}"></div>
                 <div class="w-3 rounded-t bg-amber-500"   style="height: ${d.threadEntryHeight}%;" title="${escapeHtml(t('dashboard.activity.bar_threads', { n: d.threadEntryCount }))}"></div>
-                <div class="w-3 rounded-t bg-emerald-500" style="height: ${d.techBlogHeight}%;"    title="${escapeHtml(t('dashboard.activity.bar_tech_blogs', { n: d.techBlogCount }))}"></div>
               </div>
               <div class="space-y-1 text-center">
                 <p class="whitespace-nowrap text-xs font-semibold text-slate-700">${escapeHtml(d.label)}</p>

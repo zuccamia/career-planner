@@ -1,75 +1,92 @@
 # Career Planner
 
-Local-first web app for tracking a job search — companies, applications, people, and
-outreach threads — with LLM-assisted research and drafting.
-
-Your data lives in your browser (SQLite-WASM on OPFS). The Go server holds nothing:
-it serves the bundle, proxies Google OAuth for optional Drive snapshots, and relays
-LLM calls.
+Privacy-first job-search tracker with a built-in AI assistant. Your data lives
+in your browser (SQLite-WASM on OPFS) and backs up to a local folder on your
+machine — or to your own Google Drive if you want off-device backups.
 
 **Try it:** https://career-planner-ecuctbkvkq-uc.a.run.app
 
-## Your data stays yours
+![Dashboard overview](docs/screenshots/dashboard.png)
 
-The public demo is safe to share — the server has no database. Everything you
-enter lives in your browser's private OPFS storage, keyed to your origin and
-profile. Concretely:
+## What it's for
 
-- **Nobody else sees your data.** Two people opening the demo URL each get their
-  own empty SQLite file. There is no shared backend to leak from.
-- **Nothing syncs by default.** The Go server only forwards LLM API calls; it
-  does not store, log, or persist your rows. Snapshots to Google Drive are
-  opt-in and go to *your* Drive, not ours.
-- **Clearing browser data wipes it.** OPFS lives with your other site storage.
-  Clearing site data for the domain deletes your database — take a snapshot
-  first from Settings if you want a backup.
-- **Different browsers, browser profiles, and incognito windows have separate
-  databases.** They don't share OPFS.
+A place to keep track of your job search: companies you're researching,
+applications in flight, people you've talked to, conversations mid-thread,
+the résumé you shipped for each role, and a personal library of your
+accomplishments and career priorities the AI pulls from whenever it drafts
+a reply or tailors a CV. All connected in one place.
 
-If you want to guarantee no data ever leaves your machine, run it locally
-([Run it](#run-it)) with `LLM_*` unset — the app degrades gracefully and works
-purely on-device.
+Not an auto-apply app. You press submit yourself, whether that's five or
+fifty a week. The app just makes research, CV tailoring, and outreach
+logging fast enough that even at high volume, every application still ships
+with its own tailored CV and thread of context. And your record of the
+search stays yours: every draft, CV variant, thread, and dossier lives in a
+folder on your disk, not on someone else's servers that could vanish if they
+change pricing.
 
-### Where the LLM key lives
+### Best used for
 
-Two options:
+**"I just found a role I'd love — but I've never heard of the company."**
+Type the name. The assistant guesses the canonical name, website, blog, and
+ATS provider, then researches what the company actually does, target
+customers, tech stack, culture signals, and whether they run internships —
+all saved into your company page.
+![Company research](docs/screenshots/company-dossier.png)
 
-- **Server-side key.** Intended for self-hosters running this app for their
-  own use: set `LLM_*` on the machine you're running and the key persists
-  across browsers, private windows, and IndexedDB wipes — no re-entering it
-  every time. The public demo also happens to use this path (with a per-IP
-  rate limit) so first-time visitors have working AI features immediately,
-  but the primary audience is you-running-it-for-yourself.
-- **Browser-side key (BYOK).** Configured in Settings → AI provider against
-  any OpenAI-compatible endpoint (OpenAI, Groq, Together, Ollama Cloud,
-  MiniMax, self-hosted vLLM/LM Studio, etc.). The key is stored in this
-  browser's IndexedDB and **never sent to the server** — the browser calls
-  the provider directly. BYOK overrides the server-side key when both exist,
-  which is how demo visitors can opt out of the shared key.
+**"I'm tired of copy-pasting an entire LinkedIn thread into ChatGPT just to
+draft a reply."**
+Paste it here once. Every message you exchange with that person lives in
+one searchable thread, linked to their company and any application it
+belongs to. Drafts pull in your full history with them automatically, so
+replies sound like you and not like a generic recruiter response.
+![Thread with assistant draft](docs/screenshots/thread-draft.png)
 
-Either way the server assembles prompts and sanitizes responses, so results
-are identical across the two paths. With BYOK the server sees the prompt
-text and the raw model response — never the key.
+**"This role needs a tailored CV."**
+One button generates a custom résumé from your career profile + the specific
+application + what you know about the company, and saves it into a per-company
+folder — on your local disk or in your Drive. No new account for yet another
+résumé builder.
+![Tailored CV generation](docs/screenshots/resume-tailored.png)
 
-**CORS caveat (BYOK only):** OpenAI, Groq, and Together allow browser calls.
-Some OpenAI-compatible endpoints (notably older self-hosted setups) block
-cross-origin requests — if your test connection fails with a CORS error,
-either self-host the app on the same origin as your provider, or fall back
-to the server-side key path.
+**"Where does my pipeline actually stand?"**
+A dashboard with a Sankey of stage transitions and a 30-day activity chart
+of applications and outreach.
+![Dashboard pipeline](docs/screenshots/dashboard-pipeline.png)
 
-## Features
+## Data ownership
 
-- **Companies** — from a rough name, the LLM back-fills canonical name, website,
-  and ATS/tech-blog links, then researches product signals, tech stack, and
-  engineering-blog activity onto the company view.
-- **Applications** — LLM extracts role/level/stack from a pasted job description
-  or a link (link extraction is best-effort, not yet ATS-aware)
-- **People** — recruiters, hiring managers, referrals
-- **Threads** — communication log with LLM summaries and reply drafts
-- **Snapshots** — optional export to Google Drive or a picked local folder
-- **Sample data** — one-click 50-app / 12-company / 24-person seed from Settings
+- **Your browser owns the database.** OPFS-backed SQLite, one file per
+  browser profile. Different browsers = different databases; they don't sync
+  by default.
+- **Backups go to *your* filesystem.** Point Settings at a local folder on
+  your machine and snapshots land there directly — no external service in the
+  loop. Google Drive is offered as an off-device option for people who want
+  it; more independent hosting integrations are on the roadmap.
+- **Clearing site data wipes the local DB** — snapshot from Settings first.
 
-## Run it
+### Managing your data over time
+
+Browser storage isn't infinite. A few patterns that work:
+
+- **Snapshot per season/year.** Take a snapshot at the end of each cycle,
+  wipe the DB, and start fresh — reload the snapshot any time you want to
+  reference an older search.
+- **Work on one period at a time.** Keep the current snapshot loaded; older
+  snapshots stay parked in your folder until you need them.
+- **Wipe applications, keep companies and people.** Companies and the people
+  you know at them are worth preserving across cycles. Bulk-delete last
+  cycle's applications from the applications list — companies and contacts
+  stay, so next season's applications still match up to the same records.
+
+### The AI assistant
+
+Bring your own key against any OpenAI-compatible endpoint (OpenAI, Groq,
+Together, Ollama Cloud, MiniMax, vLLM, LM Studio…). It's configured in
+Settings → AI provider and stored in your browser's IndexedDB; the browser
+calls the provider directly. If you're self-hosting for personal use, you
+can also set `LLM_*` env vars so the key persists across browser wipes.
+
+## Run it locally
 
 Requires Go 1.25+ and Node.
 
@@ -77,34 +94,45 @@ Requires Go 1.25+ and Node.
 git clone git@github.com:zuccamia/career-planner.git
 cd career-planner
 npm install
-cp .env.example .env   # fill in LLM + optional Google OAuth creds
-make dev               # → http://localhost:8080
+cp .env.example .env    # optional: fill in LLM_* and/or Google OAuth
+make dev                # → http://localhost:8080
 ```
 
-## Configuration
+Leave `LLM_*` unset to run fully on-device (BYOK from Settings).
 
-All via env vars.
+## Configuration
 
 | Var | Purpose |
 |---|---|
 | `APP_ADDR` | bind address (default `:8080`) |
-| `LLM_PROVIDER` | `anthropic` or `openai-compatible` — optional (see below) |
-| `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY` | LLM endpoint — optional (see below) |
-| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | required only for Drive snapshots |
-| `GOOGLE_OAUTH_SCOPES` | override Drive scopes (defaults to appdata + file) |
+| `LLM_PROVIDER` | `anthropic` or `openai-compatible` — optional |
+| `LLM_MODEL`, `LLM_BASE_URL`, `LLM_API_KEY` | LLM endpoint — optional |
 
-**LLM config is optional.** Set `LLM_*` if you're running the app for your
-own use — the key lives on the server so it survives browser wipes and
-switching browsers. Leave them unset to use the browser-only path: configure
-the key in Settings → AI provider (kept in this browser's IndexedDB). See
-[Where the LLM key lives](#where-the-llm-key-lives) for the tradeoffs.
+### Google Drive snapshots (optional)
+
+Only needed if you're self-hosting and want Drive snapshots. Register your
+own OAuth client in Google Cloud Console, add your redirect URI
+(`localhost:PORT` or your deployed domain), and drop the ID + secret into
+`.env`. You can reuse the demo's credentials for a quick test at
+`localhost:8080`, but for anything you actually use, register your own so
+the OAuth grant doesn't route through the demo's Google Cloud project.
+
+| Var | Purpose |
+|---|---|
+| `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | your OAuth client credentials |
+| `GOOGLE_OAUTH_SCOPES` | override Drive scopes (default: appdata + file) |
+
+### BYOK CORS caveat
+
+OpenAI, Groq, and Together allow browser calls. Some self-hosted
+OpenAI-compatible endpoints block cross-origin — if the test call fails with
+a CORS error, self-host the app on the same origin as your provider.
 
 ## Commands
 
 - `make dev` — build CSS, build, run on `:8080`
 - `make test` — Go tests
 - `npm run test:e2e` — Playwright (runs on `:8081`, LLM disabled, fresh OPFS per test)
-- `go run ./cmd/seed` — regenerate `web/static/local/samples/sample.sqlite` (add `-append` to keep existing rows)
 
 ## Contributing
 

@@ -59,7 +59,7 @@ func (s *Service) FinalizeCandidate(candidate Candidate, input string) Candidate
 func sanitizeCandidate(candidate Candidate, fallbackName string) Candidate {
 	candidate.OfficialName = strings.TrimSpace(candidate.OfficialName)
 	candidate.Website = sanitizeHTTPURL(candidate.Website)
-	candidate.TechBlogURL = sanitizeHTTPURL(candidate.TechBlogURL)
+	candidate.BlogURL = sanitizeHTTPURL(candidate.BlogURL)
 	candidate.ATSURL = sanitizeHTTPURL(candidate.ATSURL)
 	candidate.ATSProvider = strings.TrimSpace(candidate.ATSProvider)
 	candidate.Reasoning = llm.SanitizeText(candidate.Reasoning)

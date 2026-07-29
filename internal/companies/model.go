@@ -11,7 +11,7 @@ import "github.com/zuccamia/career-planner/internal/sources/llm"
 type Candidate struct {
 	OfficialName string `json:"official_name"`
 	Website      string `json:"website"`
-	TechBlogURL  string `json:"tech_blog_url"`
+	BlogURL      string `json:"blog_url"`
 	ATSURL       string `json:"ats_url"`
 	ATSProvider  string `json:"ats_provider"`
 	Reasoning    string `json:"reasoning"`
@@ -23,7 +23,7 @@ type Candidate struct {
 type Company struct {
 	OfficialName string
 	Website      string
-	TechBlogURL  string
+	BlogURL      string
 	ATSURL       string
 	ATSProvider  string
 }
