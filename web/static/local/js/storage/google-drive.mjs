@@ -309,6 +309,21 @@ export class GoogleDriveBackend {
     return new Uint8Array(await res.arrayBuffer());
   }
 
+  // Idempotent: a missing file is not an error (404).
+  async deleteAttachment(folder, filename) {
+    if (!this.isReady()) throw new Error('not connected');
+    const parent = await this._entityFolderId(folder);
+    const q = new URLSearchParams({
+      q: `name='${this._escapeQ(filename)}' and '${parent}' in parents and trashed=false`,
+      fields: 'files(id)',
+      pageSize: '1',
+    });
+    const listRes = await this.apiFetch(driveFilesListURL(q));
+    const file = (await listRes.json()).files?.[0];
+    if (!file) return;
+    await this.apiFetch(driveFileURL(file.id), { method: 'DELETE' });
+  }
+
   async _multipartBody(metadata, contentType, bytes) {
     const boundary = '----cp-boundary-' + Math.random().toString(36).slice(2);
     const enc = new TextEncoder();

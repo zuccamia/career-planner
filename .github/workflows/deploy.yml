@@ -15,6 +15,8 @@ env:
   GCP_REGION: us-central1
   AR_REPO: career-planner
   SERVICE: career-planner
+  SCRAPER_SERVICE: scraper-demo
+  SCRAPER_IMAGE: unclecode/crawl4ai:latest
 
 jobs:
   deploy:
@@ -60,6 +62,9 @@ jobs:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND }}
+          SCRAPER_BASE_URL: ${{ secrets.SCRAPER_BASE_URL }}
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
         run: |
           set -euo pipefail
 
@@ -82,6 +87,66 @@ jobs:
           upsert_secret cp-llm-api-key               "$LLM_API_KEY"
           upsert_secret cp-google-oauth-client-id     "$GOOGLE_OAUTH_CLIENT_ID"
           upsert_secret cp-google-oauth-client-secret "$GOOGLE_OAUTH_CLIENT_SECRET"
+          upsert_secret cp-scraper-backend            "$SCRAPER_BACKEND"
+          upsert_secret cp-scraper-base-url           "$SCRAPER_BASE_URL"
+          upsert_secret cp-scraper-api-key            "$SCRAPER_API_KEY"
+
+      - name: Deploy Crawl4AI scraper to Cloud Run (optional)
+        # Only deploys the scraper service when SCRAPER_BACKEND is set to
+        # "crawl4ai" and SCRAPER_BASE_URL is either empty (we'll fill it in
+        # from the deployed URL) or points at a scraper-demo.run.app URL.
+        # If you're pointing at Firecrawl hosted or an external instance,
+        # this step is a no-op.
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND }}
+        if: ${{ secrets.SCRAPER_BACKEND == 'crawl4ai' }}
+        run: |
+          set -euo pipefail
+          # Copy upstream image into our Artifact Registry so Cloud Run can
+          # deploy it (Cloud Run doesn't pull directly from Docker Hub).
+          UPSTREAM="${SCRAPER_IMAGE}"
+          MIRROR="${GCP_REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/scraper:latest"
+          docker pull "$UPSTREAM"
+          docker tag  "$UPSTREAM" "$MIRROR"
+          docker push "$MIRROR"
+
+          # Crawl4AI ≥ 0.9.0 enforces its own API token. Reuse the same
+          # cp-scraper-api-key we bind on the main service so both sides
+          # see the same token and Authorization: Bearer works end-to-end.
+          gcloud run deploy "$SCRAPER_SERVICE" \
+            --image "$MIRROR" \
+            --project "$PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --platform managed \
+            --no-allow-unauthenticated \
+            --port 11235 \
+            --cpu 2 \
+            --memory 2Gi \
+            --concurrency 4 \
+            --min-instances 0 \
+            --max-instances 2 \
+            --service-account "cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --set-secrets="CRAWL4AI_API_TOKEN=cp-scraper-api-key:latest"
+
+          # Grant the main service's runtime SA permission to invoke the
+          # scraper. Idempotent — re-binding a role is a no-op.
+          gcloud run services add-iam-policy-binding "$SCRAPER_SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --member="serviceAccount:cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --role=roles/run.invoker
+
+          # Auto-fill cp-scraper-base-url with the just-deployed URL so the
+          # main service can find it. If the operator set SCRAPER_BASE_URL
+          # in GitHub Secrets to a non-Cloud-Run URL, they can leave that
+          # secret populated to override.
+          if [ -z "${{ secrets.SCRAPER_BASE_URL }}" ]; then
+            SCRAPER_URL=$(gcloud run services describe "$SCRAPER_SERVICE" \
+              --project "$PROJECT_ID" --region "$GCP_REGION" --format='value(status.url)')
+            printf '%s' "$SCRAPER_URL" | gcloud secrets versions add cp-scraper-base-url \
+              --project="$PROJECT_ID" --data-file=-
+          fi
 
       - name: Deploy to Cloud Run
         env:
@@ -92,6 +157,14 @@ jobs:
           HAS_LLM_API_KEY: ${{ secrets.LLM_API_KEY != '' }}
           HAS_OAUTH_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID != '' }}
           HAS_OAUTH_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET != '' }}
+          HAS_SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND != '' }}
+          HAS_SCRAPER_BASE_URL: ${{ secrets.SCRAPER_BASE_URL != '' }}
+          HAS_SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY != '' }}
+          # If we auto-populated cp-scraper-base-url from the scraper-demo
+          # deployment above, also bind that env var so the main service can
+          # reach it. Otherwise SCRAPER_BASE_URL is only bound when GitHub
+          # secrets provided a value.
+          AUTO_POPULATED_SCRAPER_URL: ${{ secrets.SCRAPER_BACKEND == 'crawl4ai' && secrets.SCRAPER_BASE_URL == '' }}
         run: |
           set -euo pipefail
 
@@ -110,6 +183,9 @@ jobs:
           [ "$HAS_LLM_API_KEY"  = "true" ] && append_secret "LLM_API_KEY=cp-llm-api-key:latest"
           [ "$HAS_OAUTH_ID"     = "true" ] && append_secret "GOOGLE_OAUTH_CLIENT_ID=cp-google-oauth-client-id:latest"
           [ "$HAS_OAUTH_SECRET" = "true" ] && append_secret "GOOGLE_OAUTH_CLIENT_SECRET=cp-google-oauth-client-secret:latest"
+          [ "$HAS_SCRAPER_BACKEND" = "true" ]                                    && append_secret "SCRAPER_BACKEND=cp-scraper-backend:latest"
+          { [ "$HAS_SCRAPER_BASE_URL" = "true" ] || [ "$AUTO_POPULATED_SCRAPER_URL" = "true" ]; } && append_secret "SCRAPER_BASE_URL=cp-scraper-base-url:latest"
+          [ "$HAS_SCRAPER_API_KEY" = "true" ]                                    && append_secret "SCRAPER_API_KEY=cp-scraper-api-key:latest"
 
           SET_SECRETS_ARG=()
           if [ -n "$SECRETS" ]; then

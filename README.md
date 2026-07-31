@@ -128,6 +128,29 @@ OpenAI, Groq, and Together allow browser calls. Some self-hosted
 OpenAI-compatible endpoints block cross-origin — if the test call fails with
 a CORS error, self-host the app on the same origin as your provider.
 
+### Web scraping (optional)
+
+The dossier builder can pull live company website content, and JD extraction
+can fall back to a rendered scrape for non-Greenhouse/Lever/Ashby URLs, when
+a scraper is configured. Two backends behind one interface:
+
+| Backend | Setup | Best for |
+|---|---|---|
+| **Firecrawl** (`api.firecrawl.dev`) | `SCRAPER_BACKEND=firecrawl SCRAPER_API_KEY=fc-…` | Zero infra; widest features (scrape/map/crawl/search) |
+| **Crawl4AI** (self-host) | `docker run -p 11235:11235 unclecode/crawl4ai:latest`, then `SCRAPER_BACKEND=crawl4ai SCRAPER_BASE_URL=http://localhost:11235` | Fully local, single container |
+
+Or leave `SCRAPER_*` unset and configure per-user in the browser
+(Settings → Web scraper). BYOK mode calls the scraper directly from the
+browser; the app server never sees the key.
+
+| Var | Purpose |
+|---|---|
+| `SCRAPER_BACKEND` | `firecrawl` or `crawl4ai` — optional |
+| `SCRAPER_BASE_URL` | override backend endpoint (defaults to Firecrawl hosted) |
+| `SCRAPER_API_KEY` | required for Firecrawl, optional for Crawl4AI |
+
+Full deploy docs (including Cloud Run + CORS setup): `deploy/scraper/README.md`.
+
 ## Commands
 
 - `make dev` — build CSS, build, run on `:8080`

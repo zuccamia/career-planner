@@ -36,7 +36,7 @@ BEGIN_UNTRUSTED_COMPANY_DETAILS
 - ats_url: %q
 - ats_provider: %q
 END_UNTRUSTED_COMPANY_DETAILS
-
+%s%s%s
 Quy tắc:
 - company_summary nên dài 3 đến 6 câu
 - what_the_company_does nên gồm 1 đến 3 câu súc tích, mô tả rõ sản phẩm hoặc dịch vụ cốt lõi của công ty

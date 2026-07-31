@@ -1,20 +1,48 @@
-// Thin JSON-over-HTTP client for the Go RPC surface.
-// Endpoints are stateless — the browser owns all persistent data locally and
-// only calls Go for shared business logic (LLM prompts + sanitization).
+// Thin JSON-over-HTTP client for the Go RPC surface. Endpoints are stateless
+// — the browser owns persistent data locally and calls Go only for shared
+// business logic (LLM prompts + sanitization).
 //
-// LLM calls route through BYOK when the user has configured a personal key
-// (see storage/byok.mjs). In BYOK mode we:
-//   1. POST the input to /api/llm/prompts/:name → get {system, user, ...}.
-//   2. Call the user's provider directly from the browser (llm-client.mjs).
-//   3. POST the raw response to /api/llm/parse/:name → get the same shape
-//      the server-side endpoint would return.
-// The user's API key never leaves the browser. The server-side path is
-// unchanged — llmCall falls through to the single-round-trip endpoint when
-// BYOK is off.
+// When the user has BYOK configured (see storage/byok.mjs), llmCall assembles
+// the prompt via /api/llm/prompts/:name, calls the user's provider directly
+// from the browser, and posts the raw response to /api/llm/parse/:name for
+// sanitization — the user's API key never touches the server.
+//
+// LLM callers accept an optional `onStep({name, status, error?})` callback
+// so the UI can show a step-list progress indicator. Status: 'running' |
+// 'done' | 'failed'. Step names: scrape, discover, prompt, generate, parse.
 
 import { isByokActive, getByokConfig } from './storage/byok.mjs';
+import { isScraperActive } from './storage/scraper.mjs';
+import { scrapeWithCache, scrapeInParallel } from './scrape-with-cache.mjs';
+import { discoverATSURL } from './discover-ats.mjs';
 import { callOpenAICompatible, getServerLLMStatus } from './llm-client.mjs';
-import { currentLocale } from './i18n.mjs';
+import { getServerScraperStatus } from './scrape-client.mjs';
+import { currentLocale, t } from './i18n.mjs';
+
+const DOSSIER_SCRAPE_TTL_SECONDS = 24 * 3600;
+const JD_SCRAPE_TTL_SECONDS = 3600;
+
+// Default onStep so LLM callers can invoke the callback unconditionally
+// without guarding on undefined. Pages that want progress reporting pass a
+// real callback (see ui/progress.mjs).
+const noopStep = () => {};
+
+// stepped wraps an async block with running/done/failed emissions on onStep.
+// The wrapped fn's result is returned on success; on failure the error is
+// re-thrown after the failed emit. hintKey (optional) renders as a sub-line
+// under the step label — set it when the step encompasses hidden work the
+// user might otherwise not know is happening.
+const stepped = async (onStep, name, fn, hintKey) => {
+  onStep({ name, status: 'running', hintKey });
+  try {
+    const out = await fn();
+    onStep({ name, status: 'done' });
+    return out;
+  } catch (err) {
+    onStep({ name, status: 'failed', error: err && (err.message || String(err)) });
+    throw err;
+  }
+};
 
 const post = async (url, body) => {
   const res = await fetch(url, {
@@ -32,11 +60,7 @@ const post = async (url, body) => {
   return payload;
 };
 
-// llmCall dispatches an LLM-touching request through BYOK when enabled,
-// otherwise through the single server-side endpoint. The caller-supplied
-// outputLanguage is threaded to both the prompts and (server-side) endpoints
-// so per-feature prompts can be authored per locale.
-const llmCall = async (name, input, serverPath, outputLanguage) => {
+const llmCall = async (name, input, serverPath, outputLanguage, onStep = noopStep) => {
   const lang = outputLanguage || currentLocale();
   const withLang = { ...input, output_language: lang };
   if (!(await isByokActive())) {
@@ -45,50 +69,114 @@ const llmCall = async (name, input, serverPath, outputLanguage) => {
     // gives the user no path forward.
     const serverLLM = await getServerLLMStatus();
     if (!serverLLM.available) {
-      throw new Error('This server has no LLM key configured. Open Settings → AI provider and add your own key to use AI features.');
+      throw new Error(t('settings.ai.error.no_llm_configured'));
     }
-    return post(serverPath, withLang);
+    // Server-side single round trip. From the caller's POV this is one step:
+    // "generate" (the server does prompt-assembly + LLM + parse internally,
+    // and — when SCRAPER_* is set — may also fetch web content). When the
+    // server has a scraper, surface a hint so users understand the extra
+    // latency this step can include.
+    const serverScrape = await getServerScraperStatus();
+    const hintKey = serverScrape.available ? 'progress.hint.server_scrape' : undefined;
+    return stepped(onStep, 'generate', () => post(serverPath, withLang), hintKey);
   }
   const cfg = await getByokConfig();
-  // 1. Ask the server to assemble the prompt (plus any pass-through context
-  //    like enriched_raw + posting for JD extraction).
-  const prompt = await post(`/api/llm/prompts/${name}`, withLang);
-  // 2. Call the user's provider directly.
-  const raw = await callOpenAICompatible(
+  const prompt = await stepped(onStep, 'prompt', () => post(`/api/llm/prompts/${name}`, withLang));
+  const raw = await stepped(onStep, 'generate', () => callOpenAICompatible(
     { system: prompt.system, user: prompt.user },
     cfg,
-  );
-  // 3. Send the raw response back for sanitization. For JD extraction we
-  //    also echo the pass-through context so the server doesn't refetch the
-  //    posting URL.
+  ));
   const parseBody = { raw, input };
   if (name === 'extract-job-description') {
     parseBody.enriched_raw = prompt.enriched_raw;
     parseBody.posting = prompt.posting;
   }
-  return post(`/api/llm/parse/${name}`, parseBody);
+  return stepped(onStep, 'parse', () => post(`/api/llm/parse/${name}`, parseBody));
 };
 
 // Ask the Go LLM pipeline to guess a canonical Company row from a typed name.
 // Returns { candidate: {official_name, website, blog_url, ats_url, ats_provider, reasoning}, warning? }.
-export const guessCompanyCandidate = (name, outputLanguage) =>
-  llmCall('guess-candidate', { name }, '/api/companies/guess-candidate', outputLanguage);
+export const guessCompanyCandidate = (name, outputLanguage, onStep) =>
+  llmCall('guess-candidate', { name }, '/api/companies/guess-candidate', outputLanguage, onStep);
 
-// Extract structured facts from raw JD text. When input.job_description_raw is
-// empty and job_posting_url is set, the server fetches the posting and returns
-// the fetched text alongside the structured result:
-//   { structured: JobDescriptionStructured, job_description_raw: string }
-export const extractJobDescription = (input, outputLanguage) =>
-  llmCall('extract-job-description', input, '/api/applications/extract-job-description', outputLanguage);
+// Known ATS host patterns. When a posting URL matches, we let the server's
+// Greenhouse/Lever/Ashby providers extract structured fields the raw markdown
+// would lose; otherwise the browser BYOK scraper handles it if active.
+const KNOWN_ATS_HOSTS = [
+  /^(job-)?boards\.greenhouse\.io$|\.greenhouse\.io$/i,
+  /^jobs\.lever\.co$/i,
+  /\.ashbyhq\.com$|^jobs\.ashbyhq\.com$/i,
+];
 
-// Build a dossier for the given company shape. Returns the Dossier struct;
-// the caller writes it onto the companies row via updateCompanyDossier.
-export const buildDossier = (company, outputLanguage) =>
-  llmCall('build-dossier', company, '/api/dossiers/build', outputLanguage);
+const isKnownATSHost = (rawURL) => {
+  try {
+    const host = new URL(rawURL).hostname;
+    return KNOWN_ATS_HOSTS.some(rx => rx.test(host));
+  } catch { return false; }
+};
+
+// Extract structured facts from raw JD text. When job_description_raw is
+// empty and job_posting_url is set, the source is fetched — client-side via
+// the BYOK scraper for unknown ATS hosts, otherwise server-side.
+export const extractJobDescription = async (input, outputLanguage, onStep = noopStep) => {
+  const enriched = { ...input };
+  const url = (input.job_posting_url || '').trim();
+  const rawEmpty = !(input.job_description_raw || '').trim();
+  if (rawEmpty && url && !isKnownATSHost(url) && (await isScraperActive())) {
+    // Non-fatal — if the browser scrape fails we still let the server try.
+    try {
+      const md = await scrapeWithCache(url, {
+        ttlSeconds: JD_SCRAPE_TTL_SECONDS,
+        stepName: 'scrape',
+        onStep,
+      });
+      if (md) enriched.job_description_raw = md;
+    } catch (err) {
+      console.warn('extractJobDescription: browser scrape failed, letting server try:', err);
+    }
+  }
+  return llmCall('extract-job-description', enriched, '/api/applications/extract-job-description', outputLanguage, onStep);
+};
+
+// Build a dossier for the given company shape. When the browser has an
+// active BYOK scraper, we scrape website + blog + ATS/careers page in
+// parallel (cache-first) and — if ats_url is empty — try to discover it
+// from the domain map. Scrape and discover failures are non-fatal: the
+// dossier is built from whatever succeeded plus the structured fields.
+export const buildDossier = async (company, outputLanguage, onStep = noopStep) => {
+  const enriched = { ...company };
+  const website = (company.website || '').trim();
+  const blogURL = (company.blog_url || '').trim();
+
+  if (await isScraperActive()) {
+    // ATS discovery first (sequential) — if we discover an ATS URL here we
+    // can also scrape it in the same parallel batch below. Best-effort.
+    if (website && !enriched.ats_url) {
+      try {
+        const { atsURL, provider } = await stepped(onStep, 'discover', () => discoverATSURL(website));
+        if (atsURL) {
+          enriched.ats_url = atsURL;
+          if (!enriched.ats_provider && provider) enriched.ats_provider = provider;
+        }
+      } catch (err) {
+        console.warn('buildDossier: ATS discovery failed:', err);
+      }
+    }
+
+    const scraped = await scrapeInParallel([
+      { stepName: 'scrape_website', url: website,             key: 'website_content' },
+      { stepName: 'scrape_blog',    url: blogURL,             key: 'blog_content'    },
+      { stepName: 'scrape_careers', url: enriched.ats_url,    key: 'careers_content' },
+    ], { ttlSeconds: DOSSIER_SCRAPE_TTL_SECONDS, onStep });
+    Object.assign(enriched, scraped);
+  }
+
+  return llmCall('build-dossier', enriched, '/api/dossiers/build', outputLanguage, onStep);
+};
 
 // Generate suggested brag tags from the brag body only.
-export const generateBragTags = (payload, outputLanguage) =>
-  llmCall('generate-brag-tags', payload, '/api/profile/generate-brag-tags', outputLanguage);
+export const generateBragTags = (payload, outputLanguage, onStep) =>
+  llmCall('generate-brag-tags', payload, '/api/profile/generate-brag-tags', outputLanguage, onStep);
 
 // Ask the LLM to summarize one communication thread. Caller ships the full
 // thread + entries context (the server is stateless for local-first data) and
@@ -96,11 +184,11 @@ export const generateBragTags = (payload, outputLanguage) =>
 //
 //   thread:  { person_name, person_notes, channel, subject, status, summary }
 //   entries: [{ direction, content, occurred_at }] — newest first
-export const summarizeThread = (payload, outputLanguage) =>
-  llmCall('summarize-thread', payload, '/api/communications/summarize-thread', outputLanguage);
+export const summarizeThread = (payload, outputLanguage, onStep) =>
+  llmCall('summarize-thread', payload, '/api/communications/summarize-thread', outputLanguage, onStep);
 
 // Ask the LLM to draft outreach or a reply from a thread's context. Same
 // payload shape as summarizeThread plus a `goal` of "outreach" or "reply".
 // Returns { message }. The caller decides whether to save the draft.
-export const generateMessage = (payload, outputLanguage) =>
-  llmCall('generate-message', payload, '/api/communications/generate-message', outputLanguage);
+export const generateMessage = (payload, outputLanguage, onStep) =>
+  llmCall('generate-message', payload, '/api/communications/generate-message', outputLanguage, onStep);

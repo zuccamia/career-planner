@@ -1,18 +1,23 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zuccamia/career-planner/internal/applications"
 	"github.com/zuccamia/career-planner/internal/brags"
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
+	"github.com/zuccamia/career-planner/internal/dossiers"
 	"github.com/zuccamia/career-planner/internal/people"
+	"github.com/zuccamia/career-planner/internal/sources/ats"
+	"github.com/zuccamia/career-planner/internal/sources/scrape"
 )
 
 // Stateless RPC endpoints for the local-first browser client. These handlers
@@ -68,9 +73,17 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		OfficialName   string `json:"official_name"`
 		Website        string `json:"website"`
+		BlogURL        string `json:"blog_url"`
 		ATSURL         string `json:"ats_url"`
 		ATSProvider    string `json:"ats_provider"`
 		OutputLanguage string `json:"output_language"`
+		// Optional pre-scraped markdown for each URL. When the caller
+		// (browser) has its own BYOK scraper active, it pre-scrapes and
+		// passes content here. Empty fields cause the server to scrape
+		// itself when a server-side scraper is configured. All non-required.
+		WebsiteContent string `json:"website_content"`
+		BlogContent    string `json:"blog_content"`
+		CareersContent string `json:"careers_content"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -81,17 +94,80 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "official_name is required")
 		return
 	}
+	website := strings.TrimSpace(body.Website)
+	blogURL := strings.TrimSpace(body.BlogURL)
+	atsURL := strings.TrimSpace(body.ATSURL)
+	atsProvider := strings.TrimSpace(body.ATSProvider)
+	enrichment := dossiers.WebsiteEnrichment{
+		Website: strings.TrimSpace(body.WebsiteContent),
+		Blog:    strings.TrimSpace(body.BlogContent),
+		Careers: strings.TrimSpace(body.CareersContent),
+	}
+
+	// Server-side scrape fallback: run in parallel for any URL the browser
+	// didn't pre-scrape, when a scraper is configured. Best-effort per URL —
+	// individual failures are logged and dropped; the dossier still builds
+	// from whatever succeeded plus the structured fields.
+	if s.scrape != nil {
+		s.scrapeMissingIntoEnrichment(r.Context(), &enrichment, website, blogURL, atsURL)
+	}
+
+	// Best-effort ATS discovery when the caller didn't supply an ats_url.
+	if s.scrape != nil && website != "" && atsURL == "" {
+		if got, prov, err := ats.DiscoverATSURL(r.Context(), s.scrape, website); err != nil {
+			log.Printf("dossier: ats discovery failed for %s: %v", website, err)
+		} else if got != "" {
+			atsURL = got
+			if atsProvider == "" {
+				atsProvider = prov
+			}
+		}
+	}
+
 	out, err := s.dossiers.BuildText(r.Context(), companies.Company{
 		OfficialName: name,
-		Website:      strings.TrimSpace(body.Website),
-		ATSURL:       strings.TrimSpace(body.ATSURL),
-		ATSProvider:  strings.TrimSpace(body.ATSProvider),
-	}, body.OutputLanguage)
+		Website:      website,
+		BlogURL:      blogURL,
+		ATSURL:       atsURL,
+		ATSProvider:  atsProvider,
+	}, body.OutputLanguage, enrichment)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// scrapeMissingIntoEnrichment scrapes each URL in parallel and writes the
+// markdown into the matching enrichment field. Skips URLs already prefilled
+// by the browser's BYOK scraper. Per-URL failures are logged.
+func (s *Server) scrapeMissingIntoEnrichment(ctx context.Context, e *dossiers.WebsiteEnrichment, website, blog, careers string) {
+	var wg sync.WaitGroup
+	fanout := func(label, url string, dst *string) {
+		if url == "" || *dst != "" {
+			return
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			s.scrapeInto(ctx, label, url, dst)
+		}()
+	}
+	fanout("website", website, &e.Website)
+	fanout("blog", blog, &e.Blog)
+	fanout("careers", careers, &e.Careers)
+	wg.Wait()
+}
+
+func (s *Server) scrapeInto(ctx context.Context, label, url string, dst *string) {
+	res, err := s.scrape.Scrape(ctx, url, scrape.ScrapeOptions{
+		Formats: []string{"markdown"}, OnlyMainContent: true,
+	})
+	if err != nil {
+		log.Printf("dossier: %s scrape failed for %s: %v", label, url, err)
+		return
+	}
+	*dst = res.Markdown
 }
 
 // rpcGenerateBragTags wraps brags.Service.GenerateTags for the browser client.

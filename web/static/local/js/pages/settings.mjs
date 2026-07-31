@@ -15,9 +15,12 @@ import {
 } from '../storage/current-snapshot.mjs';
 import { refreshCurrentSnapshotBadge } from '../ui/current_snapshot.mjs';
 import { refreshAiModeBadge } from '../ui/ai_mode_badge.mjs';
+import { refreshScraperModeBadge, invalidateScraperServerStatus } from '../ui/scraper_mode_badge.mjs';
 import { idbWipe } from '../storage/idb.mjs';
 import { getByokConfig, saveByokConfig, clearByokConfig } from '../storage/byok.mjs';
+import { getScraperConfig, saveScraperConfig, clearScraperConfig } from '../storage/scraper.mjs';
 import { testConnection, getServerLLMStatus } from '../llm-client.mjs';
+import { testConnection as testScraperConnection } from '../scrape-client.mjs';
 import { escapeHtml } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
@@ -159,6 +162,47 @@ const render = (root) => {
             ${button({ id: 'btn-byok-clear', variant: 'dangerCompact', icon: 'trash', label: t('settings.ai.action.clear') })}
             <span id="byok-test-result" class="text-sm text-slate-600"></span>
           </div>
+        </div>
+      </section>
+
+      <section id="scraper-provider" class="${CLS.card}">
+        <header class="space-y-1">
+          <div class="flex items-center gap-2">
+            <p class="${CLS.eyebrow}">${t('settings.scraper.eyebrow')}</p>
+            <span id="scraper-status"></span>
+          </div>
+          <p class="text-sm text-slate-500">
+            ${t('settings.scraper.help')}
+          </p>
+        </header>
+        ${inlineError({ id: 'scraper-error' })}
+        <div id="scraper-fields" class="space-y-3">
+          <label class="block text-sm text-slate-700">
+            ${t('settings.scraper.field.backend.label')}
+            <select id="scraper-backend" class="${CLS.input} mt-1">
+              <option value="firecrawl">${t('settings.scraper.field.backend.firecrawl')}</option>
+              <option value="crawl4ai">${t('settings.scraper.field.backend.crawl4ai')}</option>
+            </select>
+          </label>
+          <label class="block text-sm text-slate-700">
+            ${t('settings.scraper.field.base_url.label')}
+            <input id="scraper-base-url" type="url" placeholder="https://api.firecrawl.dev" class="${CLS.input} mt-1">
+          </label>
+          <label class="block text-sm text-slate-700">
+            ${t('settings.scraper.field.api_key.label')}
+            <span class="ml-1 text-xs text-slate-500">${t('settings.scraper.field.api_key.note')}</span>
+            <div class="mt-1 flex items-center gap-2">
+              <input id="scraper-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="fc-…" class="${CLS.input} flex-1">
+              ${button({ id: 'btn-scraper-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: t('settings.scraper.field.api_key.show') })}
+            </div>
+          </label>
+          <div class="flex flex-wrap items-center gap-3">
+            ${button({ id: 'btn-scraper-save', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('settings.scraper.action.save'), disabled: true })}
+            ${button({ id: 'btn-scraper-test', variant: 'secondaryCompact', icon: 'link', label: t('settings.scraper.action.test') })}
+            ${button({ id: 'btn-scraper-clear', variant: 'dangerCompact', icon: 'trash', label: t('settings.scraper.action.clear') })}
+            <span id="scraper-test-result" class="text-sm text-slate-600"></span>
+          </div>
+          <p class="text-xs text-slate-500">${t('settings.scraper.capabilities')}</p>
         </div>
       </section>
 
@@ -435,6 +479,121 @@ const wireByok = async () => {
   });
 };
 
+const refreshScraperStatus = async () => {
+  const status = document.getElementById('scraper-status');
+  if (!status) return;
+  const [cfg, server] = await Promise.all([
+    getScraperConfig(),
+    fetch('/api/scrape/server-status').then(r => r.json()).catch(() => ({ available: false })),
+  ]);
+  const active = !!(cfg && cfg.enabled && cfg.baseUrl && cfg.backend && (cfg.backend !== 'firecrawl' || cfg.apiKey));
+  if (active) {
+    status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: t('settings.scraper.badge.byok', { backend: cfg.backend }) });
+  } else if (server && server.available) {
+    status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'link', label: t('settings.scraper.badge.server', { backend: server.backend || '' }) });
+  } else {
+    status.innerHTML = '';
+  }
+  // Sidebar badge tracks the same state — refresh it so saves/clears here are
+  // reflected immediately without a page reload. Server-status is cached in
+  // the badge module; the server-side value cannot change without a redeploy,
+  // so we only need to invalidate when we know something changed above.
+  invalidateScraperServerStatus();
+  refreshScraperModeBadge();
+};
+
+const readScraperForm = () => ({
+  enabled: true,
+  backend: document.getElementById('scraper-backend').value,
+  baseUrl: document.getElementById('scraper-base-url').value,
+  apiKey: document.getElementById('scraper-api-key').value,
+});
+
+const wireScraper = async () => {
+  const cfg = await getScraperConfig();
+  const backend = document.getElementById('scraper-backend');
+  const baseUrl = document.getElementById('scraper-base-url');
+  const apiKey = document.getElementById('scraper-api-key');
+  const result = document.getElementById('scraper-test-result');
+  const saveBtn = document.getElementById('btn-scraper-save');
+
+  backend.value = cfg?.backend || 'firecrawl';
+  baseUrl.value = cfg?.baseUrl || (backend.value === 'crawl4ai' ? 'http://localhost:11235' : 'https://api.firecrawl.dev');
+  apiKey.value = cfg?.apiKey || '';
+
+  // Test-before-save gate (mirrors AI provider panel).
+  const fingerprint = (b, u, k) => `${b}|${u}|${k}`;
+  let lastTestedFingerprint = cfg ? fingerprint(cfg.backend, cfg.baseUrl, cfg.apiKey) : null;
+  const currentFingerprint = () => fingerprint(backend.value.trim(), baseUrl.value.trim(), apiKey.value.trim());
+  const syncSaveEnabled = () => {
+    saveBtn.disabled = !lastTestedFingerprint || lastTestedFingerprint !== currentFingerprint();
+  };
+  syncSaveEnabled();
+  [backend, baseUrl, apiKey].forEach(el => el.addEventListener('input', syncSaveEnabled));
+  backend.addEventListener('change', () => {
+    // Swap the default base URL when the backend changes and the field still
+    // holds the old default. Explicit edits are preserved.
+    const isFCDefault = baseUrl.value === 'https://api.firecrawl.dev';
+    const isC4Default = baseUrl.value === 'http://localhost:11235';
+    if (backend.value === 'crawl4ai' && isFCDefault) baseUrl.value = 'http://localhost:11235';
+    if (backend.value === 'firecrawl' && isC4Default) baseUrl.value = 'https://api.firecrawl.dev';
+    syncSaveEnabled();
+  });
+
+  const revealBtn = document.getElementById('btn-scraper-reveal');
+  revealBtn.addEventListener('click', () => {
+    const revealed = apiKey.type === 'password';
+    apiKey.type = revealed ? 'text' : 'password';
+    revealBtn.innerHTML = icon(revealed ? 'eyeSlash' : 'eye');
+    revealBtn.setAttribute('aria-label', revealed ? t('settings.scraper.field.api_key.hide') : t('settings.scraper.field.api_key.show'));
+  });
+
+  document.getElementById('btn-scraper-test').addEventListener('click', async () => {
+    setInlineError('scraper-error', '');
+    result.textContent = t('settings.scraper.test.running');
+    const form = readScraperForm();
+    if (!form.backend || !form.baseUrl || (form.backend === 'firecrawl' && !form.apiKey)) {
+      result.textContent = '';
+      setInlineError('scraper-error', t('settings.scraper.error.test_missing_fields'));
+      return;
+    }
+    const res = await testScraperConnection(form);
+    if (res.ok) {
+      result.textContent = t('settings.scraper.test.success', { sampleLength: res.sampleLength });
+      lastTestedFingerprint = currentFingerprint();
+      syncSaveEnabled();
+    } else {
+      result.textContent = '';
+      setInlineError('scraper-error', t('settings.scraper.test.failure', { err: res.error }));
+    }
+  });
+
+  document.getElementById('btn-scraper-save').addEventListener('click', async () => {
+    setInlineError('scraper-error', '');
+    const form = readScraperForm();
+    if (!form.backend || !form.baseUrl || (form.backend === 'firecrawl' && !form.apiKey)) {
+      setInlineError('scraper-error', t('settings.scraper.error.save_missing_fields'));
+      return;
+    }
+    await saveScraperConfig(form);
+    toast(t('settings.scraper.toast.enabled', { backend: form.backend }), 'ok');
+    await refreshScraperStatus();
+  });
+
+  document.getElementById('btn-scraper-clear').addEventListener('click', async () => {
+    if (!confirm(t('settings.scraper.confirm.clear'))) return;
+    await clearScraperConfig();
+    apiKey.value = '';
+    result.textContent = '';
+    lastTestedFingerprint = null;
+    syncSaveEnabled();
+    toast(t('settings.scraper.toast.cleared'), 'info');
+    await refreshScraperStatus();
+  });
+
+  await refreshScraperStatus();
+};
+
 const wireLocalDisk = () => {
   const supportEl = document.getElementById('local-disk-support');
   const connect = document.getElementById('btn-connect-disk');
@@ -620,6 +779,7 @@ export const mountSettings = async (root) => {
   render(root);
   wireLocale();
   await wireByok();
+  await wireScraper();
   wireLocalDisk();
   wireDrive();
   wireSnapshotActions();

@@ -9,28 +9,61 @@ import (
 	"log"
 	"strings"
 
+	"github.com/zuccamia/career-planner/internal/i18n"
 	"github.com/zuccamia/career-planner/internal/sources/ats"
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
-// postingFetcher retrieves a normalized job Posting for a URL. The service
-// depends on this seam (not a concrete type) so tests can substitute a stub
-// without touching the network.
-type postingFetcher func(ctx context.Context, url string) (ats.Posting, error)
+// Typed as functions so tests can substitute stubs without pulling in the
+// concrete registry / scraper.
+type (
+	postingFetcher  func(ctx context.Context, url string) (ats.Posting, error)
+	atsKnownChecker func(url string) bool
+	markdownScraper func(ctx context.Context, url string) (string, error)
+)
 
-// Service composes the extraction prompt, optionally fetches the JD from a
-// posting URL via an ATS provider, and returns structured output. All
-// persistence lives in the browser.
+// Service composes the extraction prompt, resolves the JD from a posting URL,
+// and returns structured output. URL resolution follows an explicit routing
+// order: known-ATS provider (structured fields) → server-side scraper if
+// available → generic HTTP fetch (registry fallback). All persistence lives
+// in the browser.
 type Service struct {
 	client       llm.Client
 	fetchPosting postingFetcher
+	isKnownATS   atsKnownChecker
+	scrapePage   markdownScraper
 }
 
-// NewService constructs an applications service. A nil client causes
-// ExtractJobDescriptionText to return an error — extraction is LLM-only.
-func NewService(client llm.Client) *Service {
-	registry := ats.NewRegistry(ats.NewGeneric(), ats.NewGreenhouse(), ats.NewLever(), ats.NewAshby())
-	return &Service{client: client, fetchPosting: registry.Fetch}
+// NewService constructs an applications service. Arguments:
+//   - client: LLM client. Nil disables extraction entirely.
+//   - fetcher: given a job-posting URL, returns the fetched Posting. Usually
+//     ats.Registry.Fetch. Nil disables JD-from-URL (paste-text still works).
+//   - isKnown: true when a URL matches a structured ATS provider (Greenhouse,
+//     Lever, Ashby). Used to route between fetcher and scraper.
+//   - scraper: given a URL, returns page content as markdown. Optional — when
+//     nil, unknown-host URLs fall through to fetcher's Generic HTTP fallback
+//     instead of using a real web scraper.
+func NewService(client llm.Client, fetcher postingFetcher, isKnown atsKnownChecker, scraper markdownScraper) *Service {
+	return &Service{
+		client:       client,
+		fetchPosting: fetcher,
+		isKnownATS:   isKnown,
+		scrapePage:   scraper,
+	}
+}
+
+// scrapeAsPosting wraps a scraper's markdown output in an ats.Posting so it
+// can flow through the same downstream code as a registry-fetched posting.
+func scrapeAsPosting(ctx context.Context, scraper markdownScraper, rawURL string) (ats.Posting, error) {
+	md, err := scraper(ctx, rawURL)
+	if err != nil {
+		return ats.Posting{}, err
+	}
+	return ats.Posting{
+		Provider:        "scrape",
+		ApplyURL:        rawURL,
+		DescriptionText: md,
+	}, nil
 }
 
 // ExtractJobDescriptionTextInput is the DB-free input for JD extraction. Fields
@@ -85,25 +118,46 @@ func (s *Service) PrepareJDExtraction(ctx context.Context, input ExtractJobDescr
 	raw := strings.TrimSpace(input.JobDescriptionRaw)
 	var posting ats.Posting
 	if raw == "" {
-		if strings.TrimSpace(input.JobPostingURL) == "" {
-			return JDExtractionContext{}, errors.New("job description raw or posting URL is required")
+		url := strings.TrimSpace(input.JobPostingURL)
+		if url == "" {
+			return JDExtractionContext{}, errors.New(i18n.T(input.OutputLanguage, "applications.error.jd_input_required"))
 		}
 		if s.fetchPosting == nil {
 			return JDExtractionContext{}, errors.New("job posting fetcher is not configured")
 		}
-		fetched, err := s.fetchPosting(ctx, input.JobPostingURL)
+		// Routing order:
+		//   1. Known ATS host (Greenhouse/Lever/Ashby) → structured provider,
+		//      which extracts JSON-LD or ATS JSON with typed fields (title,
+		//      compensation, department, ...) the LLM can rely on.
+		//   2. Unknown host + server-side scraper (Firecrawl/Crawl4AI) →
+		//      direct scrape; renders JS-heavy careers pages the Generic
+		//      plain-HTTP fetcher would return empty for.
+		//   3. Otherwise → fall through to fetchPosting, which uses the
+		//      registry's Generic fallback (plain HTTP + JSON-LD/HTML strip).
+		var (
+			fetched ats.Posting
+			err     error
+		)
+		switch {
+		case s.isKnownATS != nil && s.isKnownATS(url):
+			fetched, err = s.fetchPosting(ctx, url)
+		case s.scrapePage != nil:
+			fetched, err = scrapeAsPosting(ctx, s.scrapePage, url)
+		default:
+			fetched, err = s.fetchPosting(ctx, url)
+		}
 		if err != nil {
-			return JDExtractionContext{}, fmt.Errorf("could not extract job description from %s: %w — paste the description text instead", input.JobPostingURL, err)
+			return JDExtractionContext{}, fmt.Errorf("%s: %w", i18n.T(input.OutputLanguage, "applications.error.jd_fetch_failed", url), err)
 		}
 		posting = fetched
 		raw = strings.TrimSpace(posting.DescriptionText)
 		if raw == "" {
-			return JDExtractionContext{}, fmt.Errorf("no job description text found at %s — paste the description text instead", input.JobPostingURL)
+			return JDExtractionContext{}, errors.New(i18n.T(input.OutputLanguage, "applications.error.jd_no_text", url))
 		}
 		// Fold structured ATS facts into the raw text so it's a self-contained
 		// record. Otherwise metadata that lived only in JSON-LD (compensation,
 		// department, etc.) would be lost on any later re-extraction from raw.
-		raw = enrichRawWithATSMetadata(posting, input.JobPostingURL, raw)
+		raw = enrichRawWithATSMetadata(posting, url, raw)
 	}
 	set := llm.PickPromptSet(extractJobDescriptionPrompts, input.OutputLanguage)
 	return JDExtractionContext{

@@ -26,6 +26,7 @@ import { toast } from '../ui/toast.mjs';
 import { badge, badgeClasses, button, collapsible, emptyState, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, pageHeader, setPageCount } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { extractJobDescription } from '../rpc.mjs';
+import { createProgress } from '../ui/progress.mjs';
 import { outputLanguageSelect, readOutputLanguage } from '../ui/output_language.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
@@ -513,6 +514,7 @@ const detailsHtml = (a, events, attachments) => {
       ${inlineError({ id: 'details-error' })}
       ${inlineNote({ id: 'details-note' })}
       ${inlineWarning({ id: 'details-warning' })}
+      <div id="details-progress" class="hidden"></div>
 
       <form id="quick-status-form" class="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 pt-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] sm:items-end">
         <div class="grid gap-2">
@@ -823,13 +825,15 @@ const wireDetails = (app) => {
     setInlineError('details-error', '');
     setInlineNote('details-note', '');
     setInlineWarning('details-warning', '');
+    const progress = createProgress(document.getElementById('details-progress'));
+    progress.reset();
     try {
       const resp = await extractJobDescription({
         company_name: app.company_name || '',
         role_title: app.role_title || '',
         job_posting_url: app.job_posting_url || '',
         job_description_raw: app.job_description_raw || '',
-      }, readOutputLanguage('out-lang-extract-jd'));
+      }, readOutputLanguage('out-lang-extract-jd'), progress.asCallback());
       await updateApplicationExtraction(app.id, {
         structuredJson: JSON.stringify(resp.structured || {}),
         jobDescriptionRaw: resp.job_description_raw || '',

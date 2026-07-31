@@ -72,6 +72,38 @@ func sanitizeTechStacks(stacks MajorTechStacks) MajorTechStacks {
 	return stacks
 }
 
+// ScrapedContentMaxBytes caps each scraped block folded into the dossier
+// prompt. With up to three blocks (website + blog + careers) this bounds the
+// total scraped context to ~36KB — comfortable inside small LLM windows
+// alongside the system + user prompt without truncating the response budget.
+const ScrapedContentMaxBytes = 12000
+
+// WebsiteEnrichment carries optional pre-scraped markdown for each of the
+// three URLs the dossier prompt can consume. Empty fields are omitted from
+// the prompt entirely (no empty header). Callers scrape URLs they care about
+// and pass through only what succeeded — this struct is a pure carrier, not
+// a scraper.
+type WebsiteEnrichment struct {
+	Website string
+	Blog    string
+	Careers string
+}
+
+// formatScrapedBlock returns "" when raw is blank, else a labeled block ready
+// for interpolation. `label` is the untrusted-content marker (e.g.
+// "WEBSITE_CONTENT"), used as BEGIN_UNTRUSTED_<label> / END_UNTRUSTED_<label>.
+// Content is truncated to ScrapedContentMaxBytes.
+func formatScrapedBlock(label, raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if len(trimmed) > ScrapedContentMaxBytes {
+		trimmed = trimmed[:ScrapedContentMaxBytes]
+	}
+	return "\nBEGIN_UNTRUSTED_" + label + "\n" + trimmed + "\nEND_UNTRUSTED_" + label + "\n"
+}
+
 // sanitizeURL returns the input only if it parses with a scheme and host.
 func sanitizeURL(raw string) string {
 	trimmed := strings.TrimSpace(raw)

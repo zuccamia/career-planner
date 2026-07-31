@@ -49,6 +49,29 @@ func NewRegistry(fallback Provider, providers ...Provider) *Registry {
 	return &Registry{providers: providers, fallback: fallback}
 }
 
+// HasSupportingProvider reports whether any of the ordered ATS-specific
+// providers recognizes the URL — i.e. whether Fetch would use a structured
+// provider (Greenhouse/Lever/Ashby) rather than fall through to the fallback.
+// Callers use this to branch on "known ATS vs generic web page" before
+// deciding whether to reach for a scraper instead.
+func (r *Registry) HasSupportingProvider(rawURL string) bool {
+	if r == nil {
+		return false
+	}
+	canonical := Canonicalize(rawURL)
+	parsed, err := ValidateFetchURL(canonical)
+	if err != nil {
+		return false
+	}
+	canonical = parsed.String()
+	for _, p := range r.providers {
+		if p != nil && p.Supports(canonical) {
+			return true
+		}
+	}
+	return false
+}
+
 // Fetch picks the first supporting provider and delegates. If no provider
 // matches, the fallback is used. A nil registry or nil fallback with no match
 // returns an error.

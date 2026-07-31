@@ -76,7 +76,7 @@ test.describe('local companies page', () => {
     // Blog icon-link renders when blog_url is set.
     await expect(card.getByRole('link', { name: 'Company blog' })).toBeVisible();
     // Page count line reflects state.
-    await expect(page.locator('#companies-count')).toHaveText(/1 company tracked locally\./);
+    await expect(page.locator('#companies-count')).toHaveText(/1 company tracked\./);
 
     // Edit: update name + provider.
     await card.getByRole('button', { name: 'Edit company' }).click();

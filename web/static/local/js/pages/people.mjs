@@ -16,6 +16,7 @@ import {
   listEntriesByThreadID, createEntry, deleteEntry,
 } from '../entities/communications.mjs';
 import { summarizeThread, generateMessage } from '../rpc.mjs';
+import { createProgress } from '../ui/progress.mjs';
 import { escapeHtml, formatDate } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
@@ -232,6 +233,7 @@ const threadsHeaderHtml = (person) => `
     </div>
   </div>
   ${inlineError({ id: 'threads-error' })}
+  <div id="threads-progress" class="hidden"></div>
 `;
 
 const newThreadFormHtml = () => `
@@ -790,12 +792,15 @@ const runSummarize = async (thread, entries) => {
   btn.disabled = true;
   btn.innerHTML = '<span>Summarizing…</span>';
   setInlineError('threads-error', '');
+  const progress = createProgress(document.getElementById('threads-progress'));
+  progress.reset();
   try {
-    const { summary } = await summarizeThread(buildPayload(thread, entries), readOutputLanguage('out-lang-summary'));
+    const { summary } = await summarizeThread(buildPayload(thread, entries), readOutputLanguage('out-lang-summary'), progress.asCallback());
     await updateThreadSummary(thread.id, summary);
     toast(t('people.toast.summary_saved'), 'ok');
     // Re-render the whole threads panel so the list-line summary
-    // ("Last activity … · <summary>") reflects the update.
+    // ("Last activity … · <summary>") reflects the update. The re-render
+    // removes the progress panel as a side effect.
     await renderThreads();
   } catch (err) {
     setInlineError('threads-error', t('people.error.summarize_failed', { err: err.message }));
@@ -811,9 +816,12 @@ const runGenerate = async (thread, entries, goal) => {
   btn.disabled = true;
   btn.innerHTML = '<span>Drafting…</span>';
   setInlineError('threads-error', '');
+  const progress = createProgress(document.getElementById('threads-progress'));
+  progress.reset();
   try {
-    const { message } = await generateMessage({ ...buildPayload(thread, entries), goal });
+    const { message } = await generateMessage({ ...buildPayload(thread, entries), goal }, '', progress.asCallback());
     renderDraftPanel(thread.id, goal, message);
+    progress.reset();
   } catch (err) {
     setInlineError('threads-error', t('people.error.draft_failed', { err: err.message }));
   } finally {

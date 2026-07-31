@@ -6,6 +6,7 @@
 // row must remember what name it wrote under regardless of later renames.
 
 import { exec } from '../db/client.mjs';
+import { removeAttachment } from '../storage/attachments.mjs';
 
 export const listAttachmentsByParent = (entityType, entityID) => exec(
   `SELECT id, entity_type, entity_id, folder, filename, original_filename,
@@ -41,7 +42,19 @@ export const createAttachment = async ({
   return rows[0].id;
 };
 
-// Removes only the metadata row. The underlying blob file is left in place
-// and becomes orphaned — no GC sweep exists yet.
-export const deleteAttachment = (id) =>
-  exec('DELETE FROM attachments WHERE id = ?', [id]);
+// Deletes both the blob (fan-out across available storage backends) and the
+// metadata row. Blob-delete failures are logged but not fatal — better to have
+// an orphan blob on one backend than to leave the UI showing a row that can
+// never be removed.
+export const deleteAttachment = async (id) => {
+  const rows = await exec(
+    'SELECT folder, filename FROM attachments WHERE id = ?',
+    [id],
+  );
+  const row = rows[0];
+  if (row && row.folder && row.filename) {
+    try { await removeAttachment(row.folder, row.filename); }
+    catch (err) { console.warn('deleteAttachment: blob delete failed:', err); }
+  }
+  await exec('DELETE FROM attachments WHERE id = ?', [id]);
+};

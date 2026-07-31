@@ -108,3 +108,25 @@ export const downloadAttachment = async (folder, filename) => {
   }
   throw new Error(`attachment unreachable on any backend: ${folder}/${filename}${lastErr ? ` — ${lastErr.message}` : ''}`);
 };
+
+// Delete an attachment from every backend that has it. Best-effort: per-backend
+// failures are logged and included in the returned status, not thrown — better
+// to have an orphan blob on one backend than to fail the whole delete.
+// Serialized via the same Web Lock as uploads to keep probe/write/delete
+// consistent across tabs.
+export const removeAttachment = async (folder, filename) => {
+  return navigator.locks.request(UPLOAD_LOCK, async () => {
+    const backends = availableBackends();
+    const results = [];
+    for (const b of backends) {
+      try {
+        await b.deleteAttachment(folder, filename);
+        results.push({ backend: b.name, ok: true });
+      } catch (err) {
+        console.warn(`removeAttachment: ${b.name} failed for ${folder}/${filename}:`, err);
+        results.push({ backend: b.name, ok: false, error: err && err.message });
+      }
+    }
+    return results;
+  });
+};

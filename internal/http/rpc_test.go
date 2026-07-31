@@ -42,7 +42,7 @@ func newTestServer(t *testing.T, cLLM, dLLM, aLLM, bragLLM, commLLM llm.Client) 
 	return &Server{
 		companies:      companies.NewService(cLLM),
 		dossiers:       dossiers.NewService(dLLM),
-		applications:   applications.NewService(aLLM),
+		applications:   applications.NewService(aLLM, nil, nil, nil),
 		brags:          brags.NewService(bragLLM),
 		communications: communications.NewService(commLLM),
 	}

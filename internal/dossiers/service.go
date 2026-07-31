@@ -24,12 +24,14 @@ func (s *Service) ParseAndFinalize(raw string) (Dossier, error) {
 
 // BuildText generates a dossier for a company via the LLM without persisting
 // it. Composed from BuildDossierPrompt + FinalizeDossier so the BYOK path can
-// call each half independently.
-func (s *Service) BuildText(ctx context.Context, company companies.Company, outputLanguage string) (Dossier, error) {
+// call each half independently. `enrichment` carries optional pre-scraped
+// markdown for the website/blog/careers URLs — empty fields are omitted from
+// the prompt (today's default behavior when no scraper is configured).
+func (s *Service) BuildText(ctx context.Context, company companies.Company, outputLanguage string, enrichment WebsiteEnrichment) (Dossier, error) {
 	if s.client == nil {
 		return Dossier{}, fmt.Errorf("llm client is not configured")
 	}
-	prompt := s.BuildDossierPrompt(company, outputLanguage)
+	prompt := s.BuildDossierPrompt(company, outputLanguage, enrichment)
 	var generated llmResult
 	if err := s.client.GenerateJSON(ctx, prompt, &generated); err != nil {
 		return Dossier{}, fmt.Errorf("generate dossier: %w", err)
@@ -39,8 +41,10 @@ func (s *Service) BuildText(ctx context.Context, company companies.Company, outp
 
 // BuildDossierPrompt assembles the LLM prompt for a company dossier. Pure —
 // no I/O, no LLM call. outputLanguage selects the locale-specific prompt
-// template; missing locales fall back to English.
-func (s *Service) BuildDossierPrompt(company companies.Company, outputLanguage string) llm.Prompt {
+// template; missing locales fall back to English. `enrichment` interpolates
+// up to three labeled scraped-content blocks (website / blog / careers page),
+// each capped at ScrapedContentMaxBytes and omitted when empty.
+func (s *Service) BuildDossierPrompt(company companies.Company, outputLanguage string, enrichment WebsiteEnrichment) llm.Prompt {
 	set := llm.PickPromptSet(dossierPrompts, outputLanguage)
 	return llm.Prompt{
 		System: set.System,
@@ -50,6 +54,9 @@ func (s *Service) BuildDossierPrompt(company companies.Company, outputLanguage s
 			company.Website,
 			company.ATSURL,
 			company.ATSProvider,
+			formatScrapedBlock("WEBSITE_CONTENT", enrichment.Website),
+			formatScrapedBlock("BLOG_CONTENT", enrichment.Blog),
+			formatScrapedBlock("CAREERS_CONTENT", enrichment.Careers),
 		),
 	}
 }

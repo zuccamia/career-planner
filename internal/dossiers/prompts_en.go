@@ -34,7 +34,7 @@ BEGIN_UNTRUSTED_COMPANY_DETAILS
 - ats_url: %q
 - ats_provider: %q
 END_UNTRUSTED_COMPANY_DETAILS
-
+%s%s%s
 Rules:
 - company_summary should be 3 to 6 sentences
 - what_the_company_does should be 1 to 3 concise sentences and should clearly describe the company's core product or service

@@ -28,7 +28,9 @@ const mockProviderModels = async (page: Page, ok = true) => {
 
 const fillAndTest = async (page: Page, key = 'sk-test-abcdef') => {
   await page.locator('#byok-api-key').fill(key);
-  await page.getByRole('button', { name: 'Test connection' }).click();
+  // The scraper panel also has a "Test connection" button. Click the AI
+  // panel's directly by id to disambiguate.
+  await page.locator('#btn-byok-test').click();
   await expect(page.locator('#byok-test-result')).toContainText(/Reached provider/);
 };
 
@@ -98,7 +100,8 @@ test.describe('local settings — AI provider (server-side LLM available, mocked
     await expect(page.locator('#byok-status')).toContainText(/gpt-4o-mini/);
 
     page.once('dialog', d => d.accept());
-    await page.getByRole('button', { name: 'Clear key' }).click();
+    // The scraper panel also has a "Clear key" button; scope to the AI one.
+    await page.locator('#btn-byok-clear').click();
     await expect(page.locator('#byok-api-key')).toHaveValue('');
     await expect(page.locator('#byok-status')).toBeEmpty();
     await expect(page.getByRole('button', { name: 'Save AI provider settings' })).toBeDisabled();

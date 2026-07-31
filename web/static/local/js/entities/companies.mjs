@@ -50,7 +50,7 @@ export const countCompanies = async () => {
 // panel calls getCompany for the full row.
 export const listCompanies = () => exec(`
   SELECT id, official_name, website, blog_url, ats_url, ats_provider,
-         has_internships, created_at, updated_at
+         has_internships, dossier_updated_at, created_at, updated_at
   FROM companies
   ORDER BY official_name COLLATE NOCASE
 `);

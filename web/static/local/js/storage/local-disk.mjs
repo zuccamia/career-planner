@@ -121,4 +121,16 @@ export class LocalDiskBackend {
     const file = await fh.getFile();
     return new Uint8Array(await file.arrayBuffer());
   }
+
+  // Idempotent: a missing file is not an error.
+  async deleteAttachment(folder, filename) {
+    if (!this.isReady()) throw new Error('not connected');
+    try {
+      const dir = await this._entityDir(folder);
+      await dir.removeEntry(filename);
+    } catch (err) {
+      if (err && err.name === 'NotFoundError') return;
+      throw err;
+    }
+  }
 }

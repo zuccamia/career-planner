@@ -13,9 +13,11 @@ import { escapeHtml, formatDate } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
 import { button, badge, emptyState, inlineError, setInlineError, inlineNote, setInlineNote, pageHeader, setPageCount } from '../ui/components.mjs';
+import { icon } from '../ui/icons.mjs';
 import { outputLanguageSelect, readOutputLanguage } from '../ui/output_language.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
+import { createProgress } from '../ui/progress.mjs';
 import { t } from '../i18n.mjs';
 
 const PANEL_IDS = ['editor-panel', 'dossier-panel'];
@@ -70,6 +72,7 @@ const editorHtml = (company) => {
         </div>
 
         ${inlineError({ id: 'editor-error' })}
+        <div id="lookup-progress" class="hidden"></div>
 
         <div class="grid gap-2">
           <label class="${CLS.label}" for="official_name">${t('companies.field.official_name.label')}</label>
@@ -125,6 +128,18 @@ const blogIconLink = (url) => url
 const internshipsPill = () =>
   badge({ color: 'emerald', size: 'xs', icon: 'shieldCheck', label: t('companies.list.internships_badge') });
 
+// Small emerald icon on the card header when a dossier has been built.
+// `dossier_updated_at` is the empty string on rows that have never been
+// researched.
+const dossierIcon = (updatedAt) => {
+  if (!updatedAt) return '';
+  const label = escapeHtml(t('companies.list.dossier_badge'));
+  return `<span aria-label="${label}"
+             class="inline-flex h-5 w-5 items-center justify-center rounded-full text-emerald-600">
+      ${icon('sparkles', 4)}
+    </span>`;
+};
+
 // Small count pills mirror the legacy Go company_index card: engineering-blog
 // notes (blue), people (emerald), applications (amber). Rendered even when
 // zero so the row layout stays consistent across companies. When href is set
@@ -157,6 +172,7 @@ const listHtml = (companies, peopleCounts, appCounts) => {
                   <div class="flex flex-wrap items-center gap-2">
                     ${nameHtml}
                     ${blogIconLink(c.blog_url)}
+                    ${dossierIcon(c.dossier_updated_at)}
                     ${countPill('emerald', 'people',        peopleCounts.get(c.id) || 0, `/local/people?company_id=${c.id}`,       t('companies.list.people_title', { name: escapeHtml(c.official_name) }))}
                     ${countPill('amber',   'applications',  appCounts.get(c.id)    || 0, `/local/applications?company_id=${c.id}`, t('companies.list.applications_title', { name: escapeHtml(c.official_name) }))}
                   </div>
@@ -260,6 +276,7 @@ const dossierHtml = (company) => {
 
       ${inlineError({ id: 'dossier-error' })}
       ${inlineNote({ id: 'dossier-note' })}
+      <div id="dossier-progress" class="hidden"></div>
 
       ${isEmpty ? '' : `
         <div class="grid gap-6">
@@ -396,6 +413,8 @@ const wireDossier = () => {
     buildBtn.innerHTML = '<span>Building…</span>';
     setInlineError('dossier-error', '');
     setInlineNote('dossier-note', '');
+    const progress = createProgress(document.getElementById('dossier-progress'));
+    progress.reset();
     try {
       const c = openDossierCompany;
       const generated = await buildDossier({
@@ -403,11 +422,12 @@ const wireDossier = () => {
         website: c.website,
         ats_url: c.ats_url,
         ats_provider: c.ats_provider,
-      }, readOutputLanguage('out-lang-dossier'));
+      }, readOutputLanguage('out-lang-dossier'), progress.asCallback());
       await updateCompanyDossier(c.id, generated);
       const reason = (generated?.reasoning || '').trim();
       await renderDossier();
       // renderDossier re-renders the panel; re-apply the note after paint.
+      // The progress panel is inside the re-rendered subtree and vanishes with it.
       setInlineNote('dossier-note', reason ? t('companies.toast.dossier_built', { reason }) : t('companies.toast.dossier_built_short'));
     } catch (err) {
       setInlineError('dossier-error', t('companies.error.build_failed', { err: err.message }));
@@ -494,12 +514,15 @@ const wireEditor = () => {
     lookupBtn.disabled = true;
     const originalHTML = lookupBtn.innerHTML;
     lookupBtn.innerHTML = `<span>${t('companies.action.lookup_running')}</span>`;
+    const progress = createProgress(document.getElementById('lookup-progress'));
+    progress.reset();
     try {
-      const res = await guessCompanyCandidate(name, readOutputLanguage('out-lang-company-candidate'));
+      const res = await guessCompanyCandidate(name, readOutputLanguage('out-lang-company-candidate'), progress.asCallback());
       if (res.warning) setInlineError('editor-error', t('companies.error.llm_warning', { warning: res.warning }));
       applyCandidate(res.candidate);
       const reason = (res.candidate?.reasoning || '').trim();
       toast(reason ? t('companies.toast.lookup_filled', { reason }) : t('companies.toast.lookup_filled_short'), 'ok');
+      progress.reset();
     } catch (err) {
       setInlineError('editor-error', t('companies.error.lookup_failed', { err: err.message }));
     } finally {

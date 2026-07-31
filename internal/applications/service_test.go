@@ -142,7 +142,9 @@ func TestExtractJobDescriptionTextErrorsWhenFetchReturnsEmpty(t *testing.T) {
 	_, _, err := svc.ExtractJobDescriptionText(context.Background(), ExtractJobDescriptionTextInput{
 		JobPostingURL: "https://acme.example/jobs/1",
 	})
-	if err == nil || !strings.Contains(err.Error(), "no job description text found") {
+	// Match on the i18n key stem — resilient to whether bundles are loaded in
+	// the test (localized string) or not (raw key returned from i18n.T).
+	if err == nil || !(strings.Contains(err.Error(), "jd_no_text") || strings.Contains(err.Error(), "no job description text found")) {
 		t.Fatalf("expected empty-extraction error, got %v", err)
 	}
 }

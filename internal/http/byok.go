@@ -21,6 +21,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/brags"
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
+	"github.com/zuccamia/career-planner/internal/dossiers"
 	"github.com/zuccamia/career-planner/internal/sources/ats"
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
@@ -80,9 +81,16 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			OfficialName   string `json:"official_name"`
 			Website        string `json:"website"`
+			BlogURL        string `json:"blog_url"`
 			ATSURL         string `json:"ats_url"`
 			ATSProvider    string `json:"ats_provider"`
 			OutputLanguage string `json:"output_language"`
+			// Optional pre-scraped markdown. The browser scrapes via its own
+			// BYOK scraper (key never leaves the browser) and passes each
+			// result here so the server can fold it into the prompt.
+			WebsiteContent string `json:"website_content"`
+			BlogContent    string `json:"blog_content"`
+			CareersContent string `json:"careers_content"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "invalid json body")
@@ -95,9 +103,14 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 		prompt := s.dossiers.BuildDossierPrompt(companies.Company{
 			OfficialName: strings.TrimSpace(body.OfficialName),
 			Website:      strings.TrimSpace(body.Website),
+			BlogURL:      strings.TrimSpace(body.BlogURL),
 			ATSURL:       strings.TrimSpace(body.ATSURL),
 			ATSProvider:  strings.TrimSpace(body.ATSProvider),
-		}, body.OutputLanguage)
+		}, body.OutputLanguage, dossiers.WebsiteEnrichment{
+			Website: strings.TrimSpace(body.WebsiteContent),
+			Blog:    strings.TrimSpace(body.BlogContent),
+			Careers: strings.TrimSpace(body.CareersContent),
+		})
 		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
 
 	case "generate-brag-tags":

@@ -14,6 +14,7 @@ import { mountProfile } from './pages/profile.mjs';
 import { refreshSidebarCounts } from './ui/sidebar_counts.mjs';
 import { refreshCurrentSnapshotBadge } from './ui/current_snapshot.mjs';
 import { refreshAiModeBadge } from './ui/ai_mode_badge.mjs';
+import { refreshScraperModeBadge } from './ui/scraper_mode_badge.mjs';
 import { restoreAll } from './storage/index.mjs';
 
 // Swap server-rendered [data-icon] placeholders (sidebar, quick-start buttons)
@@ -52,6 +53,7 @@ const boot = async () => {
     refreshSidebarCounts().catch(err => console.warn('[local] sidebar counts', err));
     refreshCurrentSnapshotBadge();
     refreshAiModeBadge();
+    refreshScraperModeBadge();
 
     const page = appEl.dataset.page;
     if (page === 'dashboard') {

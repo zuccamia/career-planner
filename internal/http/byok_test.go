@@ -34,7 +34,7 @@ func nilServer() *Server {
 	return &Server{
 		companies:      companies.NewService(nil),
 		dossiers:       dossiers.NewService(nil),
-		applications:   applications.NewService(nil),
+		applications:   applications.NewService(nil, nil, nil, nil),
 		brags:          brags.NewService(nil),
 		communications: communications.NewService(nil),
 	}

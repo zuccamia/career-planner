@@ -21,7 +21,7 @@ const createPerson = async (
   await openEditor(page);
   await page.getByLabel('Full name').fill(values.fullName);
   if (values.title !== undefined) await page.getByLabel('Title').fill(values.title);
-  if (values.linkedIn !== undefined) await page.getByLabel('LinkedIn URL').fill(values.linkedIn);
+  if (values.linkedIn !== undefined) await page.getByLabel('Social URL').fill(values.linkedIn);
   if (values.notes !== undefined) await page.getByLabel('Notes').fill(values.notes);
   await page.getByRole('button', { name: 'Create person' }).click();
   await expect(page.locator('#toast')).toContainText(/Created person #\d+/);

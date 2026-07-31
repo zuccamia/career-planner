@@ -27,6 +27,7 @@ import { listPdfsForResume, linkPdfToApplication } from '../entities/resume-pdfs
 import { listApplications } from '../entities/applications.mjs';
 import { listCompanies } from '../entities/companies.mjs';
 import { generateBragTags } from '../rpc.mjs';
+import { createProgress } from '../ui/progress.mjs';
 import { uploadAttachment, sanitizeFolder } from '../storage/attachments.mjs';
 import { compileTypstToPdf } from '../workers/typst-client.mjs';
 
@@ -571,7 +572,10 @@ const renderWizard = async (el) => {
           ${step > 1 ? button({ id: 'btn-wizard-back', variant: 'secondaryCompact', label: t('profile.wizard.action.back') }) : ''}
         </div>
         <div class="flex gap-2">
-          ${step <= 4 ? button({ id: 'btn-wizard-skip', variant: 'linkMuted', label: t('profile.wizard.action.skip_all') }) : ''}
+          ${step < WIZARD_STEPS
+            ? button({ id: 'btn-wizard-skip', variant: 'linkMuted',
+                label: t(step <= 4 ? 'profile.wizard.action.skip_all' : 'profile.wizard.action.skip_this') })
+            : ''}
           ${step < WIZARD_STEPS
             ? button({ id: 'btn-wizard-next', variant: 'primaryCompact', label: t('profile.wizard.action.next') })
             : button({ id: 'btn-wizard-done', variant: 'primaryCompact', icon: 'check', label: t('profile.wizard.action.finish') })}
@@ -711,8 +715,15 @@ const wireWizard = (el) => {
 
   document.getElementById('btn-wizard-skip')?.addEventListener('click', async () => {
     await persistWizardTextIfAny();
-    await markOnboarded();
-    renderOverviewTab(el);
+    // Text steps (1–4) treat Skip as "opt out of the whole wizard"; themed
+    // spark steps (5+) treat Skip as "advance to the next step."
+    if (step <= 4) {
+      await markOnboarded();
+      renderOverviewTab(el);
+      return;
+    }
+    state.wizardStep = step + 1;
+    renderWizard(el);
   });
 
   document.getElementById('btn-wizard-next')?.addEventListener('click', async () => {
@@ -1208,6 +1219,7 @@ const mountBragEditor = async (companies) => {
             ${button({ id: 'btn-generate-brag-tags', variant: 'secondaryCompact', icon: 'sparkles', label: t('profile.brags.tags.generate') })}
           </div>
           ${inlineError({ id: 'brag-tags-error' })}
+          <div id="brag-tags-progress" class="hidden"></div>
           <div id="brag-tags-list"></div>
           <div class="flex items-center gap-2">
             <input id="brag-tag-input" type="text" placeholder="${t('profile.brags.tags.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
@@ -1250,6 +1262,8 @@ const mountBragEditor = async (companies) => {
     addTag();
   });
   document.getElementById('btn-generate-brag-tags').addEventListener('click', async () => {
+    const progress = createProgress(document.getElementById('brag-tags-progress'));
+    progress.reset();
     try {
       setInlineError('brag-tags-error', '');
       const body = document.getElementById('brag-body').value;
@@ -1257,10 +1271,11 @@ const mountBragEditor = async (companies) => {
         setInlineError('brag-tags-error', t('profile.brags.error.description_required'));
         return;
       }
-      const out = await generateBragTags({ body }, '');
+      const out = await generateBragTags({ body }, '', progress.asCallback());
       state.bragDraftTags = Array.isArray(out?.tags) ? out.tags : [];
       state.bragPendingTagsGeneratedAt = new Date().toISOString();
       renderTagList();
+      progress.reset();
     } catch (err) {
       setInlineError('brag-tags-error', err.message || String(err));
     }

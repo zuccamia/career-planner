@@ -13,6 +13,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/sources/scrape"
 )
 
 // Server bundles the services needed by remaining HTTP handlers. All are
@@ -24,6 +25,13 @@ type Server struct {
 	communications *communications.Service
 	dossiers       *dossiers.Service
 
+	// Optional server-side scraper. Non-nil only when SCRAPER_* env vars are
+	// configured. Used by rpcBuildDossier to enrich the LLM prompt with
+	// scraped website markdown, and by the ATS registry as the generic
+	// fallback fetcher. Never used on the browser BYOK path — browsers call
+	// the scraper directly.
+	scrape scrape.Client
+
 	// Cached view of the LLM_* env vars this process was started with. Read
 	// via GET /api/llm/server-status so the browser can pick between the
 	// "Server · <model>" and "AI: setup needed" badges. Populated in
@@ -31,6 +39,12 @@ type Server struct {
 	serverLLMAvailable bool
 	serverLLMProvider  string
 	serverLLMModel     string
+
+	// Cached view of the SCRAPER_* env vars. Read via
+	// GET /api/scrape/server-status so the settings panel can tell the user
+	// whether the server already has a scraper wired up.
+	serverScrapeAvailable bool
+	serverScrapeBackend   string
 }
 
 // ServerLLM captures the LLM_* env vars the process was started with, so the
@@ -43,17 +57,29 @@ type ServerLLM struct {
 	Model     string
 }
 
+// ServerScrape captures the SCRAPER_* env vars the process was started with.
+// Zero-value means the process has no server-side scraper configured — dossier
+// enrichment falls back to today's non-scraped behavior, and browser BYOK is
+// still available regardless.
+type ServerScrape struct {
+	Available bool
+	Backend   string
+}
+
 // NewRouter wires handlers, static assets, and middleware into the application router.
-func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, applicationsService *applications.Service, bragsService *brags.Service, communicationsService *communications.Service, serverLLM ServerLLM) http.Handler {
+func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, applicationsService *applications.Service, bragsService *brags.Service, communicationsService *communications.Service, serverLLM ServerLLM, serverScrape ServerScrape, scrapeClient scrape.Client) http.Handler {
 	server := &Server{
-		companies:          companiesService,
-		applications:       applicationsService,
-		brags:              bragsService,
-		communications:     communicationsService,
-		dossiers:           dossiersService,
-		serverLLMAvailable: serverLLM.Available,
-		serverLLMProvider:  serverLLM.Provider,
-		serverLLMModel:     serverLLM.Model,
+		companies:             companiesService,
+		applications:          applicationsService,
+		brags:                 bragsService,
+		communications:        communicationsService,
+		dossiers:              dossiersService,
+		scrape:                scrapeClient,
+		serverLLMAvailable:    serverLLM.Available,
+		serverLLMProvider:     serverLLM.Provider,
+		serverLLMModel:        serverLLM.Model,
+		serverScrapeAvailable: serverScrape.Available,
+		serverScrapeBackend:   serverScrape.Backend,
 	}
 
 	// 5 req/min per IP, burst 3, evict entries idle > 10min. Applied to
@@ -68,6 +94,7 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.HandleFunc("GET /api/db/migrations.json", server.migrationsJSON)
 	mux.HandleFunc("GET /api/db/enums.json", server.schemaEnums)
 	mux.HandleFunc("GET /api/llm/server-status", server.rpcLLMServerStatus)
+	mux.HandleFunc("GET /api/scrape/server-status", server.rpcScrapeServerStatus)
 	mux.Handle("POST /api/companies/guess-candidate", llm(server.rpcGuessCompanyCandidate))
 	mux.Handle("POST /api/dossiers/build", llm(server.rpcBuildDossier))
 	mux.Handle("POST /api/applications/extract-job-description", llm(server.rpcExtractJobDescription))
