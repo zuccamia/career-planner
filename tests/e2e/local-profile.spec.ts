@@ -139,6 +139,30 @@ test.describe('local profile page — flat form + sparks', () => {
     await expect(page.locator('#ov-name')).toHaveValue('Nova Hoang');
     await expect(page.locator('#sparks-list span[data-spark-id]')).toHaveCount(2);
   });
+
+  // Regression: wireOverviewFlat used to reference an undeclared `overview`,
+  // throwing before wireSkillsEditor ran — so the flat form's skills editor
+  // never got its click/Enter handlers. Adding a skill via the flat form
+  // silently no-op'd. This exercises exactly that path.
+  test('flat form skills editor adds and persists a skill', async ({ page }) => {
+    await gotoProfile(page);
+    await skipWizardIfPresent(page);
+
+    const editor = page.locator('#ov-skills-editor');
+    await editor.locator('.js-skill-name').fill('Python');
+    await editor.locator('.js-skill-years').fill('4');
+    await editor.locator('.js-skill-level').selectOption('advanced');
+    await editor.locator('.js-add-skill').click();
+
+    // Pill renders in the advanced (blue) palette.
+    await expect(editor.locator('.js-skill-pills span[data-skill-index]', { hasText: 'Python' })).toBeVisible();
+    await expect(editor.locator('.js-skill-pills .bg-blue-100')).toHaveCount(1);
+
+    // Reload → persisted.
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#ov-skills-editor .js-skill-pills span[data-skill-index]', { hasText: 'Python' })).toBeVisible();
+  });
 });
 
 test.describe('local profile page — resumes tab', () => {

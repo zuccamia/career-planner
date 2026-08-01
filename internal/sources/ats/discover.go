@@ -2,7 +2,7 @@ package ats
 
 // ATS discovery from a company website: map the domain via scrape.Client and
 // filter returned URLs against known ATS host patterns. Depth of coverage
-// varies by backend — see deploy/scraper/README.md.
+// varies by backend — see docs/scraper.md.
 
 import (
 	"context"

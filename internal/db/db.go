@@ -123,7 +123,7 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 }
 
 func migrate(ctx context.Context, db *sql.DB) error {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	var current int

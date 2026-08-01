@@ -216,7 +216,7 @@ const renderOverviewFlat = async (el, overview) => {
       </div>
     </div>
   `;
-  wireOverviewFlat();
+  wireOverviewFlat(overview);
 };
 
 const sparksListHtml = (sparks) => {
@@ -274,7 +274,7 @@ const sparkInputHtml = () => `
   </div>
 `;
 
-const wireOverviewFlat = () => {
+const wireOverviewFlat = (overview) => {
   ['ov-name', 'ov-headline', 'ov-summary'].forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;

@@ -26,19 +26,6 @@ import (
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
-// rpcLLMServerStatus reports whether this process was started with LLM_* env
-// vars (→ non-nil client) so the browser can pick a sidebar-badge state.
-// The "Server · <model>" badge shows when this returns available:true; the
-// amber "AI: setup needed" badge shows when it returns false and BYOK is
-// also unset. Cheap, uncached, no rate limit — it does not touch any provider.
-func (s *Server) rpcLLMServerStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"available": s.serverLLMAvailable,
-		"provider":  s.serverLLMProvider,
-		"model":     s.serverLLMModel,
-	})
-}
-
 // promptEnvelope is the response shape for /api/llm/prompts/:name for prompts
 // that don't need extra pass-through context.
 type promptEnvelope struct {

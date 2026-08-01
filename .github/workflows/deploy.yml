@@ -25,6 +25,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -99,8 +101,7 @@ jobs:
         # this step is a no-op.
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND }}
-        if: ${{ secrets.SCRAPER_BACKEND == 'crawl4ai' }}
+        if: ${{ env.SCRAPER_BACKEND == 'crawl4ai' }}
         run: |
           set -euo pipefail
           # Copy upstream image into our Artifact Registry so Cloud Run can
@@ -144,6 +145,12 @@ jobs:
           if [ -z "${{ secrets.SCRAPER_BASE_URL }}" ]; then
             SCRAPER_URL=$(gcloud run services describe "$SCRAPER_SERVICE" \
               --project "$PROJECT_ID" --region "$GCP_REGION" --format='value(status.url)')
+            # The sync step above skips creating cp-scraper-base-url when the
+            # GH secret is empty — which is the intended path here. Create it
+            # if missing so `versions add` doesn't 404 on the first deploy.
+            if ! gcloud secrets describe cp-scraper-base-url --project="$PROJECT_ID" >/dev/null 2>&1; then
+              gcloud secrets create cp-scraper-base-url --project="$PROJECT_ID" --replication-policy=automatic
+            fi
             printf '%s' "$SCRAPER_URL" | gcloud secrets versions add cp-scraper-base-url \
               --project="$PROJECT_ID" --data-file=-
           fi
