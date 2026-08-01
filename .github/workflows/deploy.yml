@@ -112,9 +112,11 @@ jobs:
           docker tag  "$UPSTREAM" "$MIRROR"
           docker push "$MIRROR"
 
-          # Crawl4AI ≥ 0.9.0 enforces its own API token. Reuse the same
-          # cp-scraper-api-key we bind on the main service so both sides
-          # see the same token and Authorization: Bearer works end-to-end.
+          # Crawl4AI ≥ 0.9.0 enforces its own API token via Authorization: Bearer.
+          # We ALSO require Cloud Run IAM invocation: the main service's Go
+          # scrape client sends a Google ID token in X-Serverless-Authorization
+          # (Cloud Run's escape-hatch header for cases where Authorization is
+          # already in use). Both layers gate independently.
           gcloud run deploy "$SCRAPER_SERVICE" \
             --image "$MIRROR" \
             --project "$PROJECT_ID" \

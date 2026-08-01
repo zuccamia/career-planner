@@ -98,6 +98,54 @@ test.describe('local companies page', () => {
     await expect(page.getByText('No companies yet.')).toBeVisible();
   });
 
+  // Regression: buildDossier's caller in pages/companies.mjs used to omit
+  // blog_url from the payload, so the server never saw the blog URL and
+  // scrapeMissingIntoEnrichment skipped the blog fanout. This pins that the
+  // outgoing /api/dossiers/build body includes blog_url exactly as saved.
+  test('Build dossier forwards blog_url in the request payload', async ({ page }) => {
+    // Force server-LLM path so buildDossier hits /api/dossiers/build (BYOK
+    // would route through /api/llm/prompts/build-dossier — same bug lived
+    // in the shared caller, so covering either path catches it).
+    await page.route('**/api/llm/server-status', route =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: true, provider: 'openai-compatible', model: 'gpt-4o-mini' }) }),
+    );
+    let capturedBody: Record<string, unknown> = {};
+    await page.route('**/api/dossiers/build', async (route) => {
+      try { capturedBody = JSON.parse(route.request().postData() || '{}'); } catch { /* ignore */ }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          company_summary: 'stub summary',
+          product: '', customers: '', tech_stack: '', culture_notes: '',
+          careers_url: '', ats_provider: '', hiring_signals: [], reasoning: '',
+        }),
+      });
+    });
+
+    await gotoCompanies(page);
+    await openEditor(page);
+    await fillEditor(page, {
+      officialName: 'Blog Test Co.',
+      website: 'https://blogtest.example',
+      blogURL: 'https://blogtest.example/engineering',
+    });
+    await page.getByRole('button', { name: 'Create company' }).click();
+    await expect(page.locator('#toast')).toContainText(/Created company/);
+
+    const card = page.locator('#list-content li', { hasText: 'Blog Test Co.' });
+    await card.getByRole('button', { name: 'Research' }).click();
+    await page.locator('#btn-dossier-build').click();
+    // Wait for the build call to resolve — the success note appears only
+    // after the intercepted response is processed.
+    await expect(page.locator('#dossier-note')).toContainText(/Dossier built/);
+
+    // The regression: blog_url must be forwarded intact.
+    expect(capturedBody.blog_url).toBe('https://blogtest.example/engineering');
+    // Sanity check that the payload is otherwise well-formed.
+    expect(capturedBody.official_name).toBe('Blog Test Co.');
+  });
+
   test('editor cancel button closes the panel without saving', async ({ page }) => {
     await gotoCompanies(page);
     await openEditor(page);

@@ -105,6 +105,15 @@ func (b *httpBase) postJSON(ctx context.Context, path string, requestBody any, o
 	if b.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+b.apiKey)
 	}
+	// Cloud Run IAM auth uses X-Serverless-Authorization so it doesn't
+	// collide with the app-level Authorization above. Off-GCP or transient
+	// metadata failures fall through — the request continues without the
+	// header, which is what we want for public / self-hosted scrapers.
+	if b.idToken != nil {
+		if tok, err := b.idToken.get(ctx); err == nil {
+			req.Header.Set("X-Serverless-Authorization", "Bearer "+tok)
+		}
+	}
 	resp, err := b.http.Do(req)
 	if err != nil {
 		return &APIError{Message: fmt.Sprintf("request failed: %v", err)}

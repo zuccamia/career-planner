@@ -14,6 +14,7 @@ package http
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -87,17 +88,39 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, "official_name is required")
 			return
 		}
-		prompt := s.dossiers.BuildDossierPrompt(companies.Company{
-			OfficialName: strings.TrimSpace(body.OfficialName),
-			Website:      strings.TrimSpace(body.Website),
-			BlogURL:      strings.TrimSpace(body.BlogURL),
-			ATSURL:       strings.TrimSpace(body.ATSURL),
-			ATSProvider:  strings.TrimSpace(body.ATSProvider),
-		}, body.OutputLanguage, dossiers.WebsiteEnrichment{
+		website := strings.TrimSpace(body.Website)
+		blogURL := strings.TrimSpace(body.BlogURL)
+		atsURL := strings.TrimSpace(body.ATSURL)
+		atsProvider := strings.TrimSpace(body.ATSProvider)
+		enrichment := dossiers.WebsiteEnrichment{
 			Website: strings.TrimSpace(body.WebsiteContent),
 			Blog:    strings.TrimSpace(body.BlogContent),
 			Careers: strings.TrimSpace(body.CareersContent),
-		})
+		}
+		// Server-side enrichment for BYOK-LLM users who don't have a browser
+		// scraper. Mirrors rpcBuildDossier: scrape missing content, then
+		// discover the ATS URL if the caller didn't supply one. Best-effort —
+		// failures are logged and the prompt assembles from whatever succeeded.
+		if s.scrape != nil {
+			s.scrapeMissingIntoEnrichment(r.Context(), &enrichment, website, blogURL, atsURL)
+			if website != "" && atsURL == "" {
+				if got, prov, err := ats.DiscoverATSURL(r.Context(), s.scrape, website); err != nil {
+					log.Printf("byok dossier: ats discovery failed for %s: %v", website, err)
+				} else if got != "" {
+					atsURL = got
+					if atsProvider == "" {
+						atsProvider = prov
+					}
+				}
+			}
+		}
+		prompt := s.dossiers.BuildDossierPrompt(companies.Company{
+			OfficialName: strings.TrimSpace(body.OfficialName),
+			Website:      website,
+			BlogURL:      blogURL,
+			ATSURL:       atsURL,
+			ATSProvider:  atsProvider,
+		}, body.OutputLanguage, enrichment)
 		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
 
 	case "generate-brag-tags":

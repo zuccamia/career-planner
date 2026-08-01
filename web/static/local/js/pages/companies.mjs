@@ -420,6 +420,7 @@ const wireDossier = () => {
       const generated = await buildDossier({
         official_name: c.official_name,
         website: c.website,
+        blog_url: c.blog_url,
         ats_url: c.ats_url,
         ats_provider: c.ats_provider,
       }, readOutputLanguage('out-lang-dossier'), progress.asCallback());

@@ -41,15 +41,26 @@ export SCRAPER_BACKEND=firecrawl SCRAPER_API_KEY=fc-...
 ## Cloud Run
 
 `deploy.yml` deploys a companion `scraper-demo` service running
-`unclecode/crawl4ai:latest`, and binds `SCRAPER_BASE_URL` on the main service
-to its URL. One-time IAM setup so the main service can invoke it:
+`unclecode/crawl4ai:latest`, binds `SCRAPER_BASE_URL` on the main service to
+its URL, and sets `CRAWL4AI_API_TOKEN` on the scraper from the same
+`cp-scraper-api-key` secret.
 
-```sh
-gcloud run services add-iam-policy-binding scraper-demo \
-  --region us-central1 \
-  --member="serviceAccount:cp-runtime@YOUR_PROJECT.iam.gserviceaccount.com" \
-  --role="roles/run.invoker"
-```
+**Two auth layers, both required:**
+
+1. **Cloud Run IAM** — the service is deployed `--no-allow-unauthenticated`
+   and only `cp-runtime@…` has `roles/run.invoker`. The main service's Go
+   scrape client mints a Google ID token from the metadata server and sends
+   it in `X-Serverless-Authorization: Bearer <id_token>` (Cloud Run's
+   escape-hatch header for cases where `Authorization` is already used).
+2. **crawl4ai app token** — the client also sends
+   `Authorization: Bearer <CRAWL4AI_API_TOKEN>`, which crawl4ai verifies
+   against `CRAWL4AI_API_TOKEN` in its env.
+
+Self-hosting: the ID-token step is skipped automatically when
+`SCRAPER_BASE_URL` isn't a `.run.app` domain, so a local crawl4ai on port
+11235 works with the app token alone. If you map a custom domain to Cloud
+Run, set the service `--allow-unauthenticated` and rely on the app token —
+the client won't send an ID token because it can't guess the audience.
 
 To swap to hosted Firecrawl instead: set `SCRAPER_BACKEND=firecrawl` +
 `SCRAPER_API_KEY=fc-...` in GitHub Secrets and re-run the deploy.

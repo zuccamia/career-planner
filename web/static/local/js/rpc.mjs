@@ -63,6 +63,14 @@ const post = async (url, body) => {
 const llmCall = async (name, input, serverPath, outputLanguage, onStep = noopStep) => {
   const lang = outputLanguage || currentLocale();
   const withLang = { ...input, output_language: lang };
+  // build-dossier and extract-job-description are the two flows whose server
+  // handlers may fetch web content when the caller didn't pre-scrape. When
+  // the server has a scraper configured, tag the corresponding step with the
+  // "includes web scraping" hint so users see why it's slower than usual.
+  const mayServerScrape = name === 'build-dossier' || name === 'extract-job-description';
+  const serverScrapeHint = mayServerScrape && (await getServerScraperStatus()).available
+    ? 'progress.hint.server_scrape'
+    : undefined;
   if (!(await isByokActive())) {
     // Fail fast when no server-side LLM is configured — otherwise the request
     // would 502/503 with a raw "llm client is not configured" string that
@@ -71,17 +79,16 @@ const llmCall = async (name, input, serverPath, outputLanguage, onStep = noopSte
     if (!serverLLM.available) {
       throw new Error(t('settings.ai.error.no_llm_configured'));
     }
-    // Server-side single round trip. From the caller's POV this is one step:
-    // "generate" (the server does prompt-assembly + LLM + parse internally,
-    // and — when SCRAPER_* is set — may also fetch web content). When the
-    // server has a scraper, surface a hint so users understand the extra
-    // latency this step can include.
-    const serverScrape = await getServerScraperStatus();
-    const hintKey = serverScrape.available ? 'progress.hint.server_scrape' : undefined;
-    return stepped(onStep, 'generate', () => post(serverPath, withLang), hintKey);
+    // Server-side single round trip. Server does prompt-assembly + LLM +
+    // parse internally, and — when SCRAPER_* is set — may also fetch web
+    // content, all under the same "generate" step.
+    return stepped(onStep, 'generate', () => post(serverPath, withLang), serverScrapeHint);
   }
   const cfg = await getByokConfig();
-  const prompt = await stepped(onStep, 'prompt', () => post(`/api/llm/prompts/${name}`, withLang));
+  // In BYOK mode the /api/llm/prompts/:name call is where the server-side
+  // scrape happens (before prompt assembly). Hint the "prompt" step so the
+  // user sees "includes web scraping" while it runs.
+  const prompt = await stepped(onStep, 'prompt', () => post(`/api/llm/prompts/${name}`, withLang), serverScrapeHint);
   const raw = await stepped(onStep, 'generate', () => callOpenAICompatible(
     { system: prompt.system, user: prompt.user },
     cfg,

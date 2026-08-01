@@ -33,6 +33,13 @@ func NewClient(cfg Config) (Client, error) {
 		apiKey:  cfg.APIKey,
 		http:    &http.Client{Timeout: 60 * time.Second},
 	}
+	// When the target is a private Cloud Run service, we need a Google ID
+	// token in X-Serverless-Authorization so the platform's IAM check passes
+	// while Authorization stays free for crawl4ai's own app token. Off-GCP
+	// the fetcher's calls fail fast and postJSON proceeds without the header.
+	if isCloudRunURL(cfg.BaseURL) {
+		base.idToken = newIDTokenFetcher(cfg.BaseURL)
+	}
 	switch cfg.Backend {
 	case BackendFirecrawl:
 		return &firecrawlClient{httpBase: base}, nil
@@ -48,4 +55,7 @@ type httpBase struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+	// idToken is non-nil when baseURL is a Cloud Run URL. Adds the platform
+	// IAM auth header separately from the app-level Authorization header.
+	idToken *idTokenFetcher
 }
