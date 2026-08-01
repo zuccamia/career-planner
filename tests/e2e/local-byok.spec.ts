@@ -16,12 +16,12 @@ const gotoSettings = async (page: Page) => {
   await expect(page.getByText('AI provider')).toBeVisible({ timeout: 30_000 });
 };
 
-// mockProviderModels intercepts the OpenAI-compatible /models call that
-// testConnection makes. Return ok=false to simulate a failing test.
+// mockProviderModels intercepts the OpenAI-compatible /chat/completions ping
+// that testConnection makes. Return ok=false to simulate a failing test.
 const mockProviderModels = async (page: Page, ok = true) => {
-  await page.route('https://api.openai.com/v1/models', route =>
+  await page.route('https://api.openai.com/v1/chat/completions', route =>
     ok
-      ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ id: 'gpt-4o-mini' }] }) })
+      ? route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: 'ok' } }] }) })
       : route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'invalid_api_key' }) }),
   );
 };
@@ -69,6 +69,69 @@ test.describe('local settings — AI provider (BYOK-only server)', () => {
 
     await page.goto('/local/dashboard');
     await expect(page.locator('#ai-mode-badge')).toContainText(/BYOK/);
+  });
+
+  // Regression: testConnection used to hit GET /models. Providers like MiniMax
+  // don't implement that endpoint and return "model name not found in request
+  // body or URL". Confirm the test now POSTs /chat/completions with the model
+  // and a >1 token budget (some providers 400 with "output limit was reached"
+  // when max_tokens=1 doesn't leave room for any content).
+  test('test connection POSTs /chat/completions with model and >1 token budget', async ({ page }) => {
+    let seenMethod = '';
+    let seenBody: Record<string, unknown> = {};
+    await page.route('https://api.openai.com/v1/chat/completions', async (route) => {
+      const req = route.request();
+      seenMethod = req.method();
+      try { seenBody = JSON.parse(req.postData() || '{}'); } catch { /* ignore */ }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
+      });
+    });
+    await gotoSettings(page);
+    await fillAndTest(page);
+    expect(seenMethod).toBe('POST');
+    expect(seenBody.model).toBe('gpt-4o-mini');
+    // Token budget of exactly 1 caused "output limit was reached" on MiniMax.
+    const budget = (seenBody.max_tokens ?? seenBody.max_completion_tokens) as number;
+    expect(budget).toBeGreaterThan(1);
+  });
+
+  // Regression: newer OpenAI models (o1, gpt-5, some 4.x) reject `max_tokens`
+  // with { code: "unsupported_parameter", param: "max_tokens" } and require
+  // `max_completion_tokens`. Confirm testConnection retries with the new key
+  // on that structured signal (not by regexing the message).
+  test('test connection falls back to max_completion_tokens on unsupported_parameter', async ({ page }) => {
+    const sawKey: string[] = [];
+    await page.route('https://api.openai.com/v1/chat/completions', async (route) => {
+      const body = JSON.parse(route.request().postData() || '{}');
+      if ('max_tokens' in body) {
+        sawKey.push('max_tokens');
+        await route.fulfill({
+          status: 400,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: {
+              message: "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.",
+              type: 'invalid_request_error',
+              param: 'max_tokens',
+              code: 'unsupported_parameter',
+            },
+          }),
+        });
+        return;
+      }
+      sawKey.push('max_completion_tokens');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
+      });
+    });
+    await gotoSettings(page);
+    await fillAndTest(page);
+    expect(sawKey).toEqual(['max_tokens', 'max_completion_tokens']);
   });
 
   test('sidebar shows amber "setup needed" when BYOK is off and no server-side LLM', async ({ page }) => {

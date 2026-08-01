@@ -123,6 +123,7 @@ jobs:
             --no-allow-unauthenticated \
             --port 11235 \
             --cpu 2 \
+            --cpu-boost \
             --memory 2Gi \
             --concurrency 4 \
             --min-instances 0 \
@@ -207,6 +208,7 @@ jobs:
             --allow-unauthenticated \
             --port 8080 \
             --cpu 1 \
+            --cpu-boost \
             --memory 512Mi \
             --min-instances 0 \
             --max-instances 2 \

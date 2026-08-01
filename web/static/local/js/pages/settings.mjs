@@ -439,12 +439,12 @@ const wireByok = async () => {
     setInlineError('byok-error', '');
     result.textContent = t('settings.ai.test.running');
     const form = readByokForm();
-    if (!form.baseUrl || !form.apiKey) {
+    if (!form.baseUrl || !form.apiKey || !form.model) {
       result.textContent = '';
       setInlineError('byok-error', t('settings.ai.error.test_missing_fields'));
       return;
     }
-    const res = await testConnection({ baseUrl: form.baseUrl, apiKey: form.apiKey });
+    const res = await testConnection({ baseUrl: form.baseUrl, apiKey: form.apiKey, model: form.model });
     if (res.ok) {
       result.textContent = t('settings.ai.test.success', { latency: res.latencyMs, count: res.modelsCount });
       lastTestedFingerprint = currentFingerprint();

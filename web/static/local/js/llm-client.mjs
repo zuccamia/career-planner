@@ -109,37 +109,65 @@ export const callOpenAICompatible = async (prompt, cfg) => {
   return content;
 };
 
-// testConnection hits the provider's /models endpoint. Cheap, works across
-// mainstream OpenAI-compatible providers, and confirms both the base URL and
-// the API key in one round trip. Returns { ok, latencyMs, modelsCount, error }.
+// testConnection sends a minimal /chat/completions POST to confirm baseUrl +
+// apiKey + model work end-to-end. Costs ≤8 output tokens per test. This is
+// the only universally supported endpoint across OpenAI-compatible providers
+// (MiniMax and similar don't implement /models). Cap is 8 rather than 1
+// because some providers (MiniMax) 400 with "output limit was reached" when
+// the model can't emit any content within the given budget.
+// Returns { ok, latencyMs, error }.
+//
+// Token-limit parameter name varies across providers: older ones only accept
+// `max_tokens`; newer OpenAI models (o1, gpt-5, some 4.x) require
+// `max_completion_tokens` and reject `max_tokens` with
+// { error.code: "unsupported_parameter", error.param: "max_tokens" }.
+// We try `max_tokens` first and retry with `max_completion_tokens` on that
+// exact structured signal — no regex-matching provider messages.
 export const testConnection = async (cfg) => {
-  if (!cfg || !cfg.baseUrl || !cfg.apiKey) {
-    return { ok: false, error: 'Base URL and API key are required.' };
+  if (!cfg || !cfg.baseUrl || !cfg.apiKey || !cfg.model) {
+    return { ok: false, error: 'Base URL, API key, and model are required.' };
   }
-  const url = `${cfg.baseUrl.replace(/\/+$/, '')}/models`;
+  const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const started = performance.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 10_000);
+  const probe = (tokenKey) => fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${cfg.apiKey}` },
+    body: JSON.stringify({
+      model: cfg.model,
+      messages: [{ role: 'user', content: 'ping' }],
+      [tokenKey]: 8,
+    }),
+    signal: controller.signal,
+  });
   try {
-    const res = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${cfg.apiKey}` },
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
+    let res = await probe('max_tokens');
+    if (res.status === 400) {
+      const text = await res.text().catch(() => '');
+      let parsed;
+      try { parsed = JSON.parse(text); } catch { /* non-JSON body */ }
+      const err = parsed?.error;
+      if (err?.code === 'unsupported_parameter' && err?.param === 'max_tokens') {
+        res = await probe('max_completion_tokens');
+      } else {
+        const latencyMs = Math.round(performance.now() - started);
+        const { message } = classifyError(res.status, text, cfg.baseUrl);
+        return { ok: false, latencyMs, error: message };
+      }
+    }
     const latencyMs = Math.round(performance.now() - started);
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       const { message } = classifyError(res.status, text, cfg.baseUrl);
       return { ok: false, latencyMs, error: message };
     }
-    const payload = await res.json().catch(() => null);
-    // Providers vary: OpenAI returns { data: [...] }, some return a bare array.
-    const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
-    return { ok: true, latencyMs, modelsCount: list.length };
+    return { ok: true, latencyMs };
   } catch (err) {
-    clearTimeout(timer);
     const latencyMs = Math.round(performance.now() - started);
     if (err.name === 'AbortError') return { ok: false, latencyMs, error: 'Timed out after 10s.' };
     return { ok: false, latencyMs, error: classifyError(0, '', cfg.baseUrl).message };
+  } finally {
+    clearTimeout(timer);
   }
 };
