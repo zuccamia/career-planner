@@ -33,11 +33,12 @@ const BUTTON_VARIANTS = {
   dangerIcon:       CLS.btnDangerIcon,
   successIcon:      CLS.btnSuccessIcon,
   linkMuted:        CLS.linkMuted,
+  fileRow:          CLS.fileRowBtn,
 };
 export const button = ({
   variant = 'primary', kind = 'button', type, href, id, label = '',
   icon: iconName, iconOnly = false, ariaLabel, disabled = false,
-  extraClass = '', dataset = {},
+  extraClass = '', dataset = {}, body = '',
 } = {}) => {
   const base = BUTTON_VARIANTS[variant] || BUTTON_VARIANTS.primary;
   const cls = `${base}${extraClass ? ' ' + extraClass : ''}`;
@@ -46,7 +47,9 @@ export const button = ({
     ariaLabel ? `aria-label="${escapeHtml(ariaLabel)}"` : '',
     ...Object.entries(dataset).map(([k, v]) => `data-${k}="${escapeHtml(v)}"`),
   ].filter(Boolean).join(' ');
-  const inner = `${iconName ? icon(iconName) : ''}${iconOnly ? '' : `<span>${escapeHtml(label)}</span>`}`;
+  const inner = body
+    ? body
+    : `${iconName ? icon(iconName) : ''}${iconOnly ? '' : `<span>${escapeHtml(label)}</span>`}`;
   if (kind === 'link') {
     return `<a class="${cls}" href="${href}"${attrs ? ' ' + attrs : ''}>${inner}</a>`;
   }
@@ -55,21 +58,163 @@ export const button = ({
   return `<button class="${cls}" type="${t}"${dis}${attrs ? ' ' + attrs : ''}>${inner}</button>`;
 };
 
-// pageHeader renders the eyebrow title + tagline + optional count-line mount
-// (identified by countId so pages can populate it via textContent). Defaults
-// the tagline to the default storage note; pass tagline: null to omit.
-// When countId is set, the tagline gets id `${countId}-tagline` so pages can
-// hide it once data exists (see setPageCount).
-// Callers can pass an explicit tagline string, or pass `null` to omit. When
-// undefined, the default "data lives locally" note is used — resolved at call
-// time so the current locale wins.
-export const pageHeader = ({ title, tagline, countId = '' } = {}) => {
+// Page → nav group, for the eyebrow above the serif title.
+const NAV_GROUPS = {
+  dashboard:    'workspace',
+  profile:      'workspace',
+  companies:    'collections',
+  people:       'collections',
+  applications: 'collections',
+  settings:     'system',
+};
+
+// Quiet "no data yet" placeholder for structurally-present-but-empty section
+// slots. Louder alternative is emptyState() (rounded box).
+export const emptyDash = () => `<p class="text-sm ${CLS.placeholder}">—</p>`;
+
+// Ordered bulleted list of escaped strings for slide-over body content.
+// Uses tight vertical rhythm (space-y-1) so a list of 3–4 lines feels dense
+// against the section header above it.
+export const bulletList = (items) =>
+  `<ul class="list-disc space-y-1 pl-5 text-sm text-ink-soft">${
+    items.map(v => `<li>${escapeHtml(v)}</li>`).join('')
+  }</ul>`;
+
+// Clickable file-system row used in the collection index lists (Companies /
+// Applications / People). Renders `<li>` + a full-width <button>. The row body
+// is: optional avatar · [serif title + optional pill] · mono meta · chevron.
+//
+//   id:        record id — bound to data-panel-row on the <li> and dataset.id
+//   jsClass:   handler-hook class (e.g. 'js-open', 'js-details', 'js-threads')
+//   ariaLabel: raw string; escaped internally
+//   avatar:    pre-rendered avatar HTML (optional, e.g. initials circle)
+//   title:     serif title text (escaped internally)
+//   pill:      pre-rendered pill HTML (optional)
+//   meta:      mono meta string (escaped internally)
+export const fileRow = ({
+  id, jsClass, ariaLabel, avatar = '', title, pill = '', meta = '',
+} = {}) => {
+  const body = `
+    ${avatar}
+    <div class="min-w-0 flex-1 space-y-1">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="${CLS.fileRowTitle}">${escapeHtml(title)}</span>
+        ${pill}
+      </div>
+      ${meta ? `<div class="${CLS.fileRowMeta}">${escapeHtml(meta)}</div>` : ''}
+    </div>
+    <span class="text-ink-faint">${icon('chevronRight', 4)}</span>
+  `;
+  return `
+    <li data-panel-row="${escapeHtml(id)}" class="border-b border-line last:border-b-0">
+      ${button({ variant: 'fileRow', extraClass: jsClass, ariaLabel, dataset: { id }, body })}
+    </li>`;
+};
+
+// Small uppercase mono-ish label above a slide-over subsection (used heavily
+// in the Companies dossier body).
+export const dossierLabel = (text) =>
+  `<p class="text-xs font-medium uppercase tracking-wide text-ink-faint">${escapeHtml(text)}</p>`;
+
+// <dt> label inside a description-list KV row (used in the Applications JD
+// structured view).
+export const dtLabel = (text) =>
+  `<dt class="text-sm font-semibold text-ink-faint">${escapeHtml(text)}</dt>`;
+
+// Preformatted code-style block — horizontally scrollable, wraps long lines.
+// Text is escaped internally.
+export const codeBlock = (text) =>
+  `<pre class="overflow-x-auto rounded-2xl bg-surface p-4 whitespace-pre-wrap ${CLS.bodyText}">${escapeHtml(text)}</pre>`;
+
+// Scrollable log-output panel — starts hidden; caller populates via JS.
+export const logPanel = ({ id }) =>
+  `<div id="${escapeHtml(id)}" class="hidden max-h-40 overflow-auto rounded-xl border border-line bg-paper p-3 font-mono text-[11px] text-ink-soft"></div>`;
+
+// Narrative body paragraph — soft ink, preserves whitespace (LLM output).
+export const narrativeText = (text) =>
+  `<p class="text-sm text-ink-soft whitespace-pre-wrap">${escapeHtml(text)}</p>`;
+
+// Small caption/help paragraph. For inline `<span>` variants or complex mixed
+// content, keep using `<p class="${CLS.helpText}">…</p>` directly.
+export const helpText = (text, { extraClass = '', id = '' } = {}) => {
+  const cls = extraClass ? `${extraClass} ${CLS.helpText}` : CLS.helpText;
+  const idAttr = id ? ` id="${escapeHtml(id)}"` : '';
+  return `<p class="${cls}"${idAttr}>${escapeHtml(text)}</p>`;
+};
+
+// Inline `<span>` variant of helpText — for placeholders inside larger
+// paragraphs / <dd> cells / flex rows.
+export const helpSpan = (text) =>
+  `<span class="${CLS.helpText}">${escapeHtml(text)}</span>`;
+
+// Color-only faint span — inherits size from parent. Use where you want just
+// the faint color without forcing text-xs (e.g. dates in timeline items,
+// em-dash placeholders inside KV cells).
+export const faintSpan = (text) =>
+  `<span class="text-ink-faint">${escapeHtml(text)}</span>`;
+
+// Regular body paragraph (soft ink). Same shape as helpText, just larger text.
+export const bodyText = (text, { extraClass = '', id = '' } = {}) => {
+  const cls = extraClass ? `${extraClass} ${CLS.bodyText}` : CLS.bodyText;
+  const idAttr = id ? ` id="${escapeHtml(id)}"` : '';
+  return `<p class="${cls}"${idAttr}>${escapeHtml(text)}</p>`;
+};
+
+// Mono meta caption — small monospace faint text for structured data.
+export const metaText = (text, { extraClass = '', id = '' } = {}) => {
+  const cls = extraClass ? `${extraClass} ${CLS.metaText}` : CLS.metaText;
+  const idAttr = id ? ` id="${escapeHtml(id)}"` : '';
+  return `<p class="${cls}"${idAttr}>${escapeHtml(text)}</p>`;
+};
+
+// The "Filtered by company: X · Clear filter" banner used by Applications and
+// People pages when the URL carries ?company_id=…
+export const filterBanner = ({ label, name, clearHref, clearLabel }) => `
+  <div class="${CLS.filterBanner}">
+    <span>${escapeHtml(label)} <span class="font-semibold">${escapeHtml(name)}</span></span>
+    <a href="${escapeHtml(clearHref)}" class="${CLS.brandLink} font-semibold">${escapeHtml(clearLabel)}</a>
+  </div>
+`;
+
+// Serif h2 — subject line at the top of a slide-over/panel. Pass `text` for
+// the common escape-and-render case, or `body` for trusted HTML (e.g. the
+// title wraps a link).
+export const panelTitle = (text, body = '') =>
+  `<h2 class="font-display text-2xl font-medium leading-tight text-ink">${body || escapeHtml(text)}</h2>`;
+
+// Serif h3 — inline section header inside a slide-over/panel.
+export const sectionTitle = (text) =>
+  `<h3 class="font-display text-lg font-medium text-ink">${escapeHtml(text)}</h3>`;
+
+// Serif h2 — subsection heading (larger than sectionTitle).
+export const subheadTitle = (text) =>
+  `<h2 class="font-display text-lg font-semibold text-ink">${escapeHtml(text)}</h2>`;
+
+// Serif h3 — small header inside a nested subsection (denser body content).
+export const subsectionTitle = (text) =>
+  `<h3 class="font-display text-base font-semibold text-ink">${escapeHtml(text)}</h3>`;
+
+// FILE · CP-0042 style stamp. Prefixes are English-only.
+const FILE_STAMP_PREFIX = { company: 'CP', person: 'PPL', application: 'APP' };
+export const fileStamp = (kind, id) => {
+  const p = FILE_STAMP_PREFIX[kind] || '';
+  const ref = `${p}-${String(id).padStart(4, '0')}`;
+  return `<p class="font-mono text-[0.72rem] tracking-wider text-ink-faint">FILE · ${escapeHtml(ref)}</p>`;
+};
+
+// pageHeader: mono eyebrow (group) → serif h1 (title) → tagline → count mount.
+// Pass `page` to render the eyebrow; tagline undefined uses the default note,
+// pass null to omit.
+export const pageHeader = ({ page = '', title, tagline, countId = '' } = {}) => {
   const line = tagline === undefined ? t('common.page_tagline') : tagline;
+  const group = NAV_GROUPS[page];
+  const eyebrow = group ? `<p class="${CLS.eyebrow}">${escapeHtml(t(`nav.group.${group}`))}</p>` : '';
   return `
   <div class="space-y-2">
-    <p class="${CLS.eyebrow}">${escapeHtml(title)}</p>
-    ${line ? `<p class="text-sm text-slate-500"${countId ? ` id="${countId}-tagline"` : ''}>${escapeHtml(line)}</p>` : ''}
-    ${countId ? `<p class="text-sm text-slate-500" id="${countId}">${t('app.loading')}</p>` : ''}
+    ${eyebrow}
+    <h1 class="font-display text-3xl font-semibold text-ink">${escapeHtml(title)}</h1>
+    ${line ? `<p class="text-sm text-ink-faint"${countId ? ` id="${countId}-tagline"` : ''}>${escapeHtml(line)}</p>` : ''}
+    ${countId ? `<p class="font-mono text-sm tabular-nums text-ink-faint" id="${countId}">${t('app.loading')}</p>` : ''}
   </div>
 `;
 };
@@ -103,11 +248,11 @@ export const collapsible = ({ title = '', summary, openSummary = 'less', content
   if (title) {
     return `
       <details class="${wrap}">
-        <summary class="cursor-pointer list-none text-base font-semibold text-slate-900">
+        <summary class="cursor-pointer list-none text-base font-semibold text-ink">
           <span class="inline-flex items-center gap-2">
             <span>${escapeHtml(title)}</span>
-            <span class="text-sm font-normal text-slate-500 group-open:hidden">${escapeHtml(summary)}</span>
-            <span class="hidden text-sm font-normal text-slate-500 group-open:inline">${escapeHtml(openSummary)}</span>
+            <span class="text-sm font-normal text-ink-faint group-open:hidden">${escapeHtml(summary)}</span>
+            <span class="hidden text-sm font-normal text-ink-faint group-open:inline">${escapeHtml(openSummary)}</span>
           </span>
         </summary>
         ${content}
@@ -116,7 +261,7 @@ export const collapsible = ({ title = '', summary, openSummary = 'less', content
   }
   return `
     <details class="${wrap}">
-      <summary class="cursor-pointer list-none text-sm font-medium text-blue-700 hover:text-blue-800">
+      <summary class="cursor-pointer list-none text-sm font-medium text-brand hover:text-brand-deep">
         <span class="group-open:hidden">${escapeHtml(summary)}</span>
         <span class="hidden group-open:inline">${escapeHtml(openSummary)}</span>
       </summary>
@@ -135,7 +280,7 @@ export const collapsible = ({ title = '', summary, openSummary = 'less', content
 //   message:    initial text; if empty, banner renders hidden
 //   extraClass: appended to the base class
 export const inlineError = ({ id = '', message = '', extraClass = '' } = {}) => {
-  const base = 'rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700';
+  const base = 'rounded-xl border border-status-out/30 bg-status-out-bg px-3 py-2 text-sm text-status-out';
   const cls = `${base}${message ? '' : ' hidden'}${extraClass ? ' ' + extraClass : ''}`;
   const idAttr = id ? ` id="${id}"` : '';
   return `<p${idAttr} class="${cls}" role="alert">${escapeHtml(message)}</p>`;
@@ -159,7 +304,7 @@ export const setInlineError = (elOrId, message) => {
 // banner for messages that are too long for a toast (e.g. LLM reasoning after
 // a successful build/extract). Same show/hide API as setInlineError.
 export const inlineNote = ({ id = '', message = '', extraClass = '' } = {}) => {
-  const base = 'rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800';
+  const base = 'rounded-xl border border-status-win/40 bg-status-win-bg px-3 py-2 text-sm text-status-win';
   const cls = `${base}${message ? '' : ' hidden'}${extraClass ? ' ' + extraClass : ''}`;
   const idAttr = id ? ` id="${id}"` : '';
   return `<p${idAttr} class="${cls}" role="status">${escapeHtml(message)}</p>`;
@@ -179,7 +324,7 @@ export const setInlineNote = (elOrId, message) => {
 
 // inlineWarning mirrors the warning toast palette for persistent inline alerts.
 export const inlineWarning = ({ id = '', message = '', extraClass = '' } = {}) => {
-  const base = 'rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800';
+  const base = 'rounded-xl border border-brass/30 bg-brass-tint px-3 py-2 text-sm text-brass';
   const cls = `${base}${message ? '' : ' hidden'}${extraClass ? ' ' + extraClass : ''}`;
   const idAttr = id ? ` id="${id}"` : '';
   return `<p${idAttr} class="${cls}" role="status">${escapeHtml(message)}</p>`;
@@ -201,7 +346,7 @@ export const setInlineWarning = (elOrId, message) => {
 // details sub-sections, and the dashboard. Callers pass id when they need to
 // swap the message later without re-rendering the parent.
 export const emptyState = ({ message, id = '', extraClass = '' } = {}) => {
-  const cls = `rounded-2xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-500${extraClass ? ' ' + extraClass : ''}`;
+  const cls = `rounded-2xl bg-paper px-4 py-6 text-center text-sm text-ink-faint${extraClass ? ' ' + extraClass : ''}`;
   const idAttr = id ? ` id="${id}"` : '';
   return `<div class="${cls}"${idAttr}>${escapeHtml(message)}</div>`;
 };
@@ -246,7 +391,7 @@ export const formField = ({
   return `<div class="grid gap-2">
     <label class="${CLS.label}" for="${name}">${escapeHtml(label)}</label>
     ${control}
-    ${hint ? `<p class="text-xs text-slate-500">${hint}</p>` : ''}
+    ${hint ? `<p class="text-xs text-ink-faint">${hint}</p>` : ''}
   </div>`;
 };
 
@@ -261,7 +406,7 @@ export const pillDismiss = ({ dataset = {}, extraClass = '', ariaLabel = 'Remove
   const attrs = Object.entries(dataset)
     .map(([k, v]) => `data-${k}="${escapeHtml(v)}"`)
     .join(' ');
-  const base = 'inline-flex h-5 w-5 items-center justify-center rounded-full opacity-60 hover:bg-red-50 hover:text-red-600 hover:opacity-100';
+  const base = 'inline-flex h-5 w-5 items-center justify-center rounded-full opacity-60 hover:bg-status-out-bg hover:text-status-out hover:opacity-100';
   const cls = `${base}${extraClass ? ' ' + extraClass : ''}`;
   return `<button type="button" class="${cls}"${attrs ? ' ' + attrs : ''} aria-label="${escapeHtml(ariaLabel)}">×</button>`;
 };
@@ -300,9 +445,9 @@ export const removablePill = ({
 //   active:  boolean — apply the active styling
 export const tab = ({ label, name, active = false } = {}) => {
   const state = active
-    ? 'border-b-2 border-blue-600 text-blue-700'
-    : 'border-b-2 border-transparent text-slate-500 hover:text-slate-900';
-  return `<button type="button" class="js-tab inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition ${state}" data-tab="${escapeHtml(name)}" role="tab" aria-selected="${active}">${escapeHtml(label)}<span data-tab-count="${escapeHtml(name)}" class="hidden rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700"></span></button>`;
+    ? 'border-b-2 border-brand text-brand'
+    : 'border-b-2 border-transparent text-ink-faint hover:text-ink';
+  return `<button type="button" class="js-tab inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition ${state}" data-tab="${escapeHtml(name)}" role="tab" aria-selected="${active}">${escapeHtml(label)}<span data-tab-count="${escapeHtml(name)}" class="hidden rounded-full bg-line px-2 py-0.5 font-mono text-xs font-medium tabular-nums text-ink-soft"></span></button>`;
 };
 
 // chip renders a small outline pill button — used for suggestion chips
@@ -317,7 +462,7 @@ export const chip = ({ label, dataset = {}, noPrefix = false } = {}) => {
     .map(([k, v]) => `data-${k}="${escapeHtml(v)}"`)
     .join(' ');
   const prefix = noPrefix ? '' : '+ ';
-  return `<button type="button" class="js-chip inline-flex items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:border-blue-400 hover:bg-blue-50"${attrs ? ' ' + attrs : ''}>${escapeHtml(prefix + label)}</button>`;
+  return `<button type="button" class="js-chip inline-flex items-center rounded-full border border-line-strong bg-surface px-3 py-1 text-xs text-ink-soft hover:border-brand hover:bg-brand-tint"${attrs ? ' ' + attrs : ''}>${escapeHtml(prefix + label)}</button>`;
 };
 
 // badge renders a Tailwind pill. Color must be one of the keys below; sizes
@@ -325,17 +470,17 @@ export const chip = ({ label, dataset = {}, noPrefix = false } = {}) => {
 // Class strings are literal (not template-interpolated tokens) so Tailwind's
 // scanner picks them up.
 const BADGE_COLORS = {
-  slate:    'bg-slate-100 text-slate-700',
-  blue:     'bg-blue-100 text-blue-700',
-  cyan:     'bg-cyan-100 text-cyan-700',
-  amber:    'bg-amber-100 text-amber-800',
-  orange:   'bg-orange-100 text-orange-800',
-  fuchsia:  'bg-fuchsia-100 text-fuchsia-700',
-  emerald:  'bg-emerald-100 text-emerald-700',
-  rose:     'bg-rose-100 text-rose-700',
-  violet:   'bg-violet-100 text-violet-700',
-  indigo:   'bg-indigo-100 text-indigo-700',
-  red:      'bg-red-100 text-red-700',
+  slate:    'bg-status-hold-bg text-status-hold',
+  blue:     'bg-brand-tint text-brand',
+  cyan:     'bg-brand-tint text-brand',
+  indigo:   'bg-status-lead-bg text-status-lead',
+  violet:   'bg-pill-violet-bg text-pill-violet',
+  emerald:  'bg-status-win-bg text-status-win',
+  amber:    'bg-status-active-bg text-status-active',
+  orange:   'bg-pill-orange-bg text-pill-orange',
+  fuchsia:  'bg-pill-fuchsia-bg text-pill-fuchsia',
+  rose:     'bg-status-out-bg text-status-out',
+  red:      'bg-status-out-bg text-status-out',
 };
 const BADGE_WEIGHTS = { medium: 'font-medium', semibold: 'font-semibold' };
 // badge props:

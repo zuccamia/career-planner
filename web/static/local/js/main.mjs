@@ -4,6 +4,7 @@
 import { initDb } from './db/client.mjs';
 import { ensureSchema } from './db/schema.mjs';
 import { hydrateIcons } from './ui/icons.mjs';
+import { initDrawer } from './ui/drawer.mjs';
 import { initI18n, t } from './i18n.mjs';
 import { mountSettings } from './pages/settings.mjs';
 import { mountApplications } from './pages/applications.mjs';
@@ -21,6 +22,7 @@ import { restoreAll } from './storage/index.mjs';
 // with SVGs from ui/icons.mjs. Runs immediately so the sidebar renders before
 // the DB boot completes.
 hydrateIcons();
+initDrawer();
 
 const appEl = document.getElementById('app');
 
@@ -34,7 +36,7 @@ const boot = async () => {
     // page module. The server-rendered shell is already localized via cookie;
     // this initializes the client mirror so subsequent t() calls agree.
     await initI18n();
-    renderStatus(t('app.loading'), 'text-slate-500');
+    renderStatus(t('app.loading'), 'text-ink-faint');
     const info = await initDb();
     console.log('[local] sqlite ready', info);
     await ensureSchema();
@@ -69,21 +71,21 @@ const boot = async () => {
     } else if (page === 'settings') {
       await mountSettings(appEl);
     } else {
-      renderStatus(`Unknown page: ${page}`, 'text-rose-600');
+      renderStatus(`Unknown page: ${page}`, 'text-status-out');
     }
   } catch (err) {
     console.error('[local] boot failed', err);
     const msg = err.message || String(err);
     if (msg.includes('Access Handles cannot be created') || msg.includes('another open Access Handle')) {
       appEl.innerHTML = `
-        <section class="rounded-md border border-amber-300 bg-amber-50 p-6 text-amber-900">
+        <section class="rounded-md border border-brass/30 bg-brass-tint p-6 text-brass">
           <h1 class="text-lg font-semibold">App already open in another tab</h1>
           <p class="mt-2 text-sm">The local database can only be opened by one tab at a time (SQLite SAH Pool limitation).
              Close any other tabs of this app and reload.</p>
-          <p class="mt-3 text-xs text-amber-800/70">Details: ${msg}</p>
+          <p class="mt-3 text-xs opacity-80">Details: ${msg}</p>
         </section>`;
     } else {
-      renderStatus(`Failed to initialize: ${msg}`, 'text-rose-600');
+      renderStatus(`Failed to initialize: ${msg}`, 'text-status-out');
     }
   }
 };

@@ -68,32 +68,27 @@ test.describe('local companies page', () => {
     await expect(page.getByText('No companies yet.')).toHaveCount(0);
     const card = page.locator('#list-content li', { hasText: 'Stripe Local Co.' });
     await expect(card).toBeVisible();
-    // Name links to website when website is set.
-    await expect(card.getByRole('link', { name: 'Stripe Local Co.' })).toHaveAttribute(
-      'href',
-      /https:\/\/stripe\.com\/?$/,
-    );
-    // Blog icon-link renders when blog_url is set.
-    await expect(card.getByRole('link', { name: 'Company blog' })).toBeVisible();
+    // Row is a button whose accessible name opens the file (dossier slide-over).
+    await expect(card.getByRole('button', { name: /Open Stripe Local Co\./ })).toBeVisible();
     // Page count line reflects state.
     await expect(page.locator('#companies-count')).toHaveText(/1 company tracked\./);
 
-    // Edit: update name + provider.
-    await card.getByRole('button', { name: 'Edit company' }).click();
-    await expect(page.locator('#editor-panel').getByText('Edit', { exact: true })).toBeVisible();
+    // Edit lives in the slide-over — open the row, then click Edit; the form
+    // renders in-place inside the same panel.
+    await card.getByRole('button', { name: /Open Stripe Local Co\./ }).click();
+    const dossier = page.locator('#dossier-panel');
+    await dossier.getByRole('button', { name: 'Edit company' }).click();
+    await expect(dossier.getByText('Edit', { exact: true })).toBeVisible();
     await fillEditor(page, { officialName: 'Stripe Local Co. Updated', atsProvider: 'Ashby' });
-    await page.getByRole('button', { name: 'Save changes' }).click();
+    await dossier.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.locator('#toast')).toContainText('Company saved');
     await expect(
       page.locator('#list-content li', { hasText: 'Stripe Local Co. Updated' }),
     ).toBeVisible();
 
-    // Delete: confirms then removes from the list.
+    // After save the slide-over stays open in view mode — delete from there.
     page.once('dialog', (dialog) => dialog.accept());
-    await page
-      .locator('#list-content li', { hasText: 'Stripe Local Co. Updated' })
-      .getByRole('button', { name: /^Delete Stripe Local Co\. Updated$/ })
-      .click();
+    await dossier.getByRole('button', { name: /^Delete Stripe Local Co\. Updated$/ }).click();
     await expect(page.locator('#toast')).toContainText('Company deleted');
     await expect(page.getByText('No companies yet.')).toBeVisible();
   });
@@ -134,7 +129,7 @@ test.describe('local companies page', () => {
     await expect(page.locator('#toast')).toContainText(/Created company/);
 
     const card = page.locator('#list-content li', { hasText: 'Blog Test Co.' });
-    await card.getByRole('button', { name: 'Research' }).click();
+    await card.getByRole('button', { name: /Open Blog Test Co\./ }).click();
     await page.locator('#btn-dossier-build').click();
     // Wait for the build call to resolve — the success note appears only
     // after the intercepted response is processed.
@@ -190,16 +185,16 @@ test.describe('local companies page', () => {
     await expect(page.getByLabel('Official name')).toBeFocused();
   });
 
-  test('sidebar quick-action link opens the editor', async ({ page }) => {
+  test('top-bar quick-action link opens the editor', async ({ page }) => {
     await gotoCompanies(page);
-    // Sidebar "Add company" quick action links to /local/companies?new=1.
+    // Top-bar "Add company" quick action links to /local/companies?new=1.
     await page.locator('a[href="/local/companies?new=1"]').click();
     await expect(page.getByText('New company')).toBeVisible();
   });
 
-  test('count pills reflect related rows and link to filtered pages', async ({ page }) => {
-    // Seed two companies; only company A gets a person + application so we can
-    // assert per-company counts are independent (not global).
+  test('row meta reflects per-company application counts', async ({ page }) => {
+    // Seed two companies; only Alpha gets an application, so we can assert
+    // per-company role counts are independent (not global).
     await gotoCompanies(page);
     await openEditor(page);
     await fillEditor(page, { officialName: 'Alpha Co.' });
@@ -211,14 +206,6 @@ test.describe('local companies page', () => {
     await page.getByRole('button', { name: 'Create company' }).click();
     await expect(page.locator('#list-content li', { hasText: 'Beta Co.' })).toBeVisible();
 
-    // One person + one application, both attached to Alpha Co.
-    await page.goto('/local/people?new=1');
-    await expect(page.getByText('New person')).toBeVisible({ timeout: 30_000 });
-    await page.getByLabel('Full name').fill('Ada Lovelace');
-    await page.getByLabel('Company', { exact: true }).selectOption({ label: 'Alpha Co.' });
-    await page.getByRole('button', { name: 'Create person' }).click();
-    await expect(page.locator('#toast')).toContainText(/Created person/);
-
     await page.goto('/local/applications?new=1');
     await expect(page.getByText('New application')).toBeVisible({ timeout: 30_000 });
     await page.getByLabel('Company', { exact: true }).selectOption({ label: 'Alpha Co.' });
@@ -229,23 +216,8 @@ test.describe('local companies page', () => {
     await gotoCompanies(page);
     const alphaCard = page.locator('#list-content li', { hasText: 'Alpha Co.' });
     const betaCard = page.locator('#list-content li', { hasText: 'Beta Co.' });
-
-    // The linked pills expose their destination through the title attribute —
-    // the badge span itself carries the count text.
-    const alphaPeoplePill = alphaCard.getByTitle('People at Alpha Co.');
-    const alphaAppsPill = alphaCard.getByTitle('Applications at Alpha Co.');
-    await expect(alphaPeoplePill).toHaveAttribute('href', /\/local\/people\?company_id=\d+$/);
-    await expect(alphaAppsPill).toHaveAttribute('href', /\/local\/applications\?company_id=\d+$/);
-    await expect(alphaPeoplePill).toContainText('1');
-    await expect(alphaAppsPill).toContainText('1');
-
-    // Beta has no related rows — pills still render but show 0.
-    await expect(betaCard.getByTitle('People at Beta Co.')).toContainText('0');
-    await expect(betaCard.getByTitle('Applications at Beta Co.')).toContainText('0');
-
-    // The header row should expose exactly the two anchor pills titled above.
-    const headerAnchors = alphaCard.locator('a[title^="People at "], a[title^="Applications at "]');
-    await expect(headerAnchors).toHaveCount(2);
+    await expect(alphaCard).toContainText('1 role');
+    await expect(betaCard).toContainText('0 roles');
   });
 
   // A company name with special characters should render as literal text
@@ -270,6 +242,11 @@ test.describe('local companies page', () => {
     // Double-escape guard: literal "&amp;" must never appear as visible text.
     await expect(card).not.toContainText('&amp;');
 
+    // Delete lives in the dossier slide-over — open the row first.
+    await card.getByRole('button', { name: new RegExp(`Open ${trickyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
+    const panel = page.locator('#dossier-panel');
+    await expect(panel).toBeVisible();
+
     // confirm dialog: message contains the raw &, <, >, " — not &amp;, &lt;,
     // &gt;, &quot;. Capture the dialog text before dismissing.
     const dialogText = await new Promise<string>((resolve) => {
@@ -278,7 +255,7 @@ test.describe('local companies page', () => {
         dialog.dismiss();
         resolve(msg);
       });
-      card.getByRole('button', { name: `Delete ${trickyName}` }).click();
+      panel.getByRole('button', { name: `Delete ${trickyName}` }).click();
     });
     expect(dialogText).toContain(trickyName);
     expect(dialogText).not.toContain('&amp;');

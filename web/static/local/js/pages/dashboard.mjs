@@ -1,10 +1,8 @@
 // Local dashboard: application pipeline (funnel bars on mobile, sankey on
-// desktop) + 30-day activity chart (14-day visible window, scrolls). Mirrors
-// internal/http/home_handlers.go so the two surfaces read the same.
+// desktop) + 30-day activity chart (14-day visible window, scrolls).
 //
-// D3 and d3-sankey are lazy-loaded from a CDN once, only when this page mounts.
-// Local-first values keep vendor deps at the edge; the load is fire-and-forget
-// with a text fallback if the CDN is unreachable.
+// D3 and d3-sankey are bundled locally under /static/vendor/ and lazy-loaded
+// on first mount. Local-first values keep vendor deps offline-friendly.
 
 import {
   countApplicationsByStatus,
@@ -14,34 +12,41 @@ import {
 import { listDailyEntryCounts } from '../entities/communications.mjs';
 import { escapeHtml } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
-import { emptyState } from '../ui/components.mjs';
+import { emptyState, helpText, pageHeader } from '../ui/components.mjs';
 import { t } from '../i18n.mjs';
 
 const ACTIVITY_WINDOW_DAYS = 30;
 const ACTIVITY_VISIBLE_DAYS = 14;
 
-// Mirrors dashboardStageDefinitions() in internal/http/home_handlers.go so the
-// funnel matches legacy grouping.
+// STAGE_DEFINITIONS drives the mobile funnel and the totals grouping. Roll-up
+// per §9: Lead (status-lead), Applied (brand teal), Assessment + Interviews
+// (brass ramp), Offer (status-win), Rejected (status-out), Withdrawn + Ghosted
+// (both status-hold gray but distinct rows — you-exit vs they-went-silent).
 const STAGE_DEFINITIONS = [
-  { label: 'Wishlist',   statuses: ['wishlist'],                                                              statusLabel: 'wishlist',                accent: 'bg-slate-700',   muted: 'bg-slate-200',   fill: '#334155' },
-  { label: 'Applied',    statuses: ['applied'],                                                               statusLabel: 'applied',                 accent: 'bg-blue-600',    muted: 'bg-blue-100',    fill: '#2563eb' },
-  { label: 'Assessment', statuses: ['online_assessment'],                                                     statusLabel: 'online assessment',       accent: 'bg-cyan-500',    muted: 'bg-cyan-100',    fill: '#06b6d4' },
-  { label: 'Interviews', statuses: ['first_interview', 'second_interview', 'additional_interview'],           statusLabel: '1st, 2nd, additional',    accent: 'bg-amber-500',   muted: 'bg-amber-100',   fill: '#f59e0b' },
-  { label: 'Offer',      statuses: ['offer'],                                                                 statusLabel: 'offer',                   accent: 'bg-emerald-500', muted: 'bg-emerald-100', fill: '#10b981' },
-  { label: 'Closed',     statuses: ['rejected', 'withdrawn'],                                                 statusLabel: 'rejected, withdrawn',     accent: 'bg-rose-500',    muted: 'bg-rose-100',    fill: '#f43f5e' },
+  { key: 'leads',      statuses: ['lead'],                                                                  accent: 'bg-status-lead', muted: 'bg-status-lead-bg', fill: '#4E6E8E' },
+  { key: 'applied',    statuses: ['applied'],                                                               accent: 'bg-brand',       muted: 'bg-brand-tint',     fill: '#0F5C5B' },
+  { key: 'assessment', statuses: ['online_assessment'],                                                     accent: 'bg-brass',       muted: 'bg-brass-tint',     fill: '#D9AF74' },
+  { key: 'interviews', statuses: ['first_interview', 'second_interview', 'additional_interview'],           accent: 'bg-brass',       muted: 'bg-brass-tint',     fill: '#B4823A' },
+  { key: 'offer',      statuses: ['offer'],                                                                 accent: 'bg-status-win',  muted: 'bg-status-win-bg',  fill: '#2F7D5B' },
+  { key: 'rejected',   statuses: ['rejected'],                                                              accent: 'bg-status-out',  muted: 'bg-status-out-bg',  fill: '#A05648' },
+  { key: 'withdrawn',  statuses: ['withdrawn'],                                                             accent: 'bg-status-hold', muted: 'bg-status-hold-bg', fill: '#7D8A93' },
+  { key: 'ghosted',    statuses: ['ghosted'],                                                               accent: 'bg-status-hold', muted: 'bg-status-hold-bg', fill: '#7D8A93' },
 ];
 
-// Mirrors the sankey status catalogue in home_handlers.go — depth + vertical
-// order matter for the D3 layout.
+// SANKEY_STATUS_DEFS lists every distinct pipeline status. `color` is the node
+// fill; the four interview sub-stages share a brass ramp (light → dark by
+// depth) per §9 so the Sankey shows progression a flat brass would hide.
+// Withdrawn and Ghosted are distinct terminal sinks; both status-hold gray.
 const SANKEY_STATUS_DEFS = [
-  { status: 'applied',              label: 'Applied',              color: '#2563eb', depth: 0, verticalOrder: 2 },
-  { status: 'online_assessment',    label: 'Assessment',           color: '#06b6d4', depth: 1, verticalOrder: 3 },
-  { status: 'first_interview',      label: '1st interview',        color: '#14b8a6', depth: 2, verticalOrder: 4 },
-  { status: 'second_interview',     label: '2nd interview',        color: '#84cc16', depth: 3, verticalOrder: 4 },
-  { status: 'additional_interview', label: 'Additional interview', color: '#eab308', depth: 4, verticalOrder: 4 },
-  { status: 'offer',                label: 'Offer',                color: '#a855f7', depth: 5, verticalOrder: 4 },
-  { status: 'withdrawn',            label: 'Withdrawn',            color: '#a8a29e', depth: 3, verticalOrder: 1 },
-  { status: 'rejected',             label: 'Rejected',             color: '#f43f5e', depth: 6, verticalOrder: 0 },
+  { status: 'applied',              label: 'Applied',              color: '#0F5C5B', depth: 0, verticalOrder: 2, terminal: false },
+  { status: 'online_assessment',    label: 'Assessment',           color: '#D9AF74', depth: 1, verticalOrder: 3, terminal: false },
+  { status: 'first_interview',      label: '1st interview',        color: '#C6944F', depth: 2, verticalOrder: 4, terminal: false },
+  { status: 'second_interview',     label: '2nd interview',        color: '#B4823A', depth: 3, verticalOrder: 4, terminal: false },
+  { status: 'additional_interview', label: 'Additional interview', color: '#8F6626', depth: 4, verticalOrder: 4, terminal: false },
+  { status: 'offer',                label: 'Offer',                color: '#2F7D5B', depth: 5, verticalOrder: 4, terminal: true },
+  { status: 'withdrawn',            label: 'Withdrawn',            color: '#7D8A93', depth: 3, verticalOrder: 1, terminal: true },
+  { status: 'ghosted',              label: 'Ghosted',              color: '#7D8A93', depth: 4, verticalOrder: 1, terminal: true },
+  { status: 'rejected',             label: 'Rejected',             color: '#A05648', depth: 6, verticalOrder: 0, terminal: true },
 ];
 
 // ---------- helpers ----------
@@ -125,6 +130,7 @@ const buildSankeyData = async () => {
       value: valueByStatus.get(def.status) || 0,
       depth: def.depth,
       verticalOrder: def.verticalOrder,
+      terminal: def.terminal,
     });
   }
   const links = [];
@@ -233,7 +239,7 @@ const buildActivitySeries = async (endDay) => {
 const shellHtml = () => `
   <div class="space-y-6">
     <section class="space-y-2">
-      <p class="${CLS.eyebrow}">${t('dashboard.eyebrow')}</p>
+      ${pageHeader({ page: 'dashboard', title: t('page.dashboard.title'), tagline: null })}
     </section>
     <section id="pipeline-section"></section>
     <section id="activity-section"></section>
@@ -243,13 +249,13 @@ const shellHtml = () => `
 const funnelHtml = (stages) => `
   <div class="space-y-4 lg:hidden">
     ${stages.map(s => `
-      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+      <div class="${CLS.paperCard}">
         <div class="mb-3 flex items-start justify-between gap-3">
           <div>
-            <p class="text-sm font-semibold text-slate-900">${escapeHtml(s.label)}</p>
-            <p class="text-xs text-slate-500">${escapeHtml(s.statusLabel)}</p>
+            <p class="${CLS.statLabel} text-ink-faint">${escapeHtml(t(`dashboard.stage.${s.key}.label`))}</p>
+            ${s.key === 'interviews' ? `<p class="${CLS.helpText}">${escapeHtml(t(`dashboard.stage.${s.key}.status`))}</p>` : ''}
           </div>
-          <p class="text-2xl font-semibold leading-none text-slate-900">${s.count}</p>
+          <p class="${CLS.statTotal}">${s.count}</p>
         </div>
         <div class="h-3 rounded-full ${s.muted}">
           <div class="h-3 rounded-full ${s.accent}" style="width: ${s.width}%;"></div>
@@ -261,16 +267,16 @@ const funnelHtml = (stages) => `
 
 const pipelineHtml = (stages, sankey) => {
   const article = (body) => `
-    <article class="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <article class="${CLS.cardWide}">
       <div class="space-y-1">
-        <h2 class="text-xl font-semibold text-slate-900">${t('dashboard.pipeline.heading')}</h2>
+        <h2 class="${CLS.cardTitle}">${t('dashboard.pipeline.heading')}</h2>
       </div>
       ${body}
     </article>`;
   if (!stages.length) return article(emptyState({ message: t('dashboard.pipeline.empty') }));
   const sankeyBlock = `
     <div class="hidden overflow-x-auto lg:block">
-      <div class="min-w-[960px] rounded-3xl bg-slate-50 p-6">
+      <div class="${CLS.sankeyViewport}">
         <svg id="pipeline-sankey" class="block h-auto w-full overflow-visible"
              viewBox="0 0 1080 380" preserveAspectRatio="xMidYMid meet"
              role="img" aria-label="${t('dashboard.pipeline.aria')}"></svg>
@@ -282,15 +288,13 @@ const pipelineHtml = (stages, sankey) => {
 
 const activityHtml = (days, totals) => {
   const article = (body) => `
-    <article class="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <article class="${CLS.cardWide}">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div class="space-y-1">
-          <h2 class="text-xl font-semibold text-slate-900">${t('dashboard.activity.heading')}</h2>
-          <p class="text-sm text-slate-500">
-            ${t('dashboard.activity.help', { visible: ACTIVITY_VISIBLE_DAYS, window: ACTIVITY_WINDOW_DAYS })}
-          </p>
+          <h2 class="${CLS.cardTitle}">${t('dashboard.activity.heading')}</h2>
+          ${helpText(t('dashboard.activity.help', { visible: ACTIVITY_VISIBLE_DAYS, window: ACTIVITY_WINDOW_DAYS }))}
         </div>
-        <div class="grid grid-cols-3 gap-3 sm:grid-cols-3">
+        <div class="${CLS.statGrid}">
           ${totalCard(t('dashboard.activity.total.applied'), totals.applied, 'blue')}
           ${totalCard(t('dashboard.activity.total.threads'), totals.threadEntries, 'amber')}
           ${totalCard(t('dashboard.activity.total.total'), totals.total, 'slate')}
@@ -300,23 +304,23 @@ const activityHtml = (days, totals) => {
     </article>`;
   if (!days.length) return article(emptyState({ message: t('dashboard.activity.empty') }));
   return article(`
-    <div class="flex flex-wrap items-center justify-end gap-4 text-sm text-slate-600">
-      <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-blue-500"></span>${t('dashboard.activity.legend.applied')}</span>
-      <span class="inline-flex items-center gap-2"><span class="h-3 w-3 rounded-full bg-amber-500"></span>${t('dashboard.activity.legend.threads')}</span>
+    <div class="${CLS.chartLegend}">
+      <span class="inline-flex items-center gap-2"><span class="${CLS.dotMd} bg-brand"></span>${t('dashboard.activity.legend.applied')}</span>
+      <span class="inline-flex items-center gap-2"><span class="${CLS.dotMd} bg-brass"></span>${t('dashboard.activity.legend.threads')}</span>
     </div>
     <div id="activity-scroll" class="overflow-x-auto">
       <div class="min-w-[1440px]">
-        <div class="flex h-64 items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+        <div class="${CLS.chartCanvas}">
           ${days.map(d => `
-            <div class="flex min-w-0 flex-1 flex-col items-center justify-end gap-3">
-              <div class="flex h-40 items-end gap-1"
+            <div class="${CLS.chartDayCol}">
+              <div class="${CLS.funnelBars}"
                    aria-label="${escapeHtml(t('dashboard.activity.bar_aria', { label: d.label, applied: d.appliedCount, threads: d.threadEntryCount }))}">
-                <div class="w-3 rounded-t bg-blue-500"    style="height: ${d.appliedHeight}%;"     title="${escapeHtml(t('dashboard.activity.bar_applied', { n: d.appliedCount }))}"></div>
-                <div class="w-3 rounded-t bg-amber-500"   style="height: ${d.threadEntryHeight}%;" title="${escapeHtml(t('dashboard.activity.bar_threads', { n: d.threadEntryCount }))}"></div>
+                <div class="${CLS.chartBar} bg-brand"    style="height: ${d.appliedHeight}%;"     title="${escapeHtml(t('dashboard.activity.bar_applied', { n: d.appliedCount }))}"></div>
+                <div class="${CLS.chartBar} bg-brass"       style="height: ${d.threadEntryHeight}%;" title="${escapeHtml(t('dashboard.activity.bar_threads', { n: d.threadEntryCount }))}"></div>
               </div>
               <div class="space-y-1 text-center">
-                <p class="whitespace-nowrap text-xs font-semibold text-slate-700">${escapeHtml(d.label)}</p>
-                <p class="whitespace-nowrap text-[11px] text-slate-500">${t('dashboard.activity.day_total', { n: d.totalCount })}</p>
+                <p class="${CLS.chartAxisLabelStrong}">${escapeHtml(d.label)}</p>
+                <p class="${CLS.chartAxisLabel}">${t('dashboard.activity.day_total', { n: d.totalCount })}</p>
               </div>
             </div>
           `).join('')}
@@ -326,25 +330,25 @@ const activityHtml = (days, totals) => {
 };
 
 const TOTAL_CARD_PALETTE = {
-  blue:    { bg: 'bg-blue-50',    text: 'text-blue-700' },
-  amber:   { bg: 'bg-amber-50',   text: 'text-amber-700' },
-  emerald: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
-  slate:   { bg: 'bg-slate-100',  text: 'text-slate-600' },
+  blue:    { bg: 'bg-brand-tint',    text: 'text-brand' },
+  amber:   { bg: 'bg-brass-tint',   text: 'text-brass' },
+  emerald: { bg: 'bg-status-win-bg', text: 'text-status-win' },
+  slate:   { bg: 'bg-paper',  text: 'text-ink-soft' },
 };
 
 const totalCard = (label, count, palette) => {
   const p = TOTAL_CARD_PALETTE[palette] || TOTAL_CARD_PALETTE.slate;
   return `
     <div class="flex min-h-20 flex-col justify-between rounded-2xl ${p.bg} px-4 py-3" data-total="${palette}">
-      <p class="text-xs font-semibold uppercase tracking-[0.12em] ${p.text}">${escapeHtml(label)}</p>
-      <p class="text-right text-2xl font-semibold leading-none text-slate-900">${count}</p>
+      <p class="${CLS.statLabel} ${p.text}">${escapeHtml(label)}</p>
+      <p class="text-right ${CLS.statTotal}">${count}</p>
     </div>`;
 };
 
 // ---------- sankey rendering ----------
 
-const D3_SRC = 'https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js';
-const D3_SANKEY_SRC = 'https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js';
+const D3_SRC = '/static/vendor/d3.min.js';
+const D3_SANKEY_SRC = '/static/vendor/d3-sankey.min.js';
 
 const loadScript = (src) => new Promise((resolve, reject) => {
   if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
@@ -385,14 +389,24 @@ const renderSankey = async (data) => {
     return;
   }
 
-  // Ported from web/templates/index.html — same layout and hover behavior.
+  // Layout + palette follow the cool-ledger spec §6: node fill = stage color,
+  // link color = source's color unless the target is a terminal outcome (offer,
+  // rejected, ghosted, withdrawn) — those take the outcome's color so the
+  // final result is legible at a glance.
+  // Opacity 0.40 at rest, 0.68 on hover. Nodes get a 1px surface stroke so
+  // touching nodes separate cleanly.
   const CFG = {
     width: 1080, height: 380, nodeWidth: 12, nodePadding: 22,
     labelOffset: 10, rightPad: 16, gutterFallback: 170, cornerRadius: 5,
     depthEasing: 1.5,
-    link: { base: 0.34, hot: 0.8, muted: 0.12 },
+    link: { base: 0.40, hot: 0.68, muted: 0.12 },
     nodeMuted: 0.35,
+    nodeStroke: '#FBFCFB',       // --color-surface
+    nameFill: '#16202B',         // --color-ink
+    countFill: '#7D8A93',        // --color-ink-faint
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
   };
+  const linkColor = (d) => (d.target.terminal ? d.target.color : d.source.color);
   const margin = { top: 18, right: CFG.gutterFallback, bottom: 18, left: 20 };
   const svg = d3.select(mount);
   svg.selectAll('*').remove();
@@ -425,16 +439,22 @@ const renderSankey = async (data) => {
     .selectAll('path')
     .data(graph.links)
     .join('path')
-    .attr('stroke', d => d.target.color)
+    .attr('stroke', linkColor)
     .attr('stroke-opacity', CFG.link.base)
     .attr('stroke-width', d => Math.max(1, d.width));
 
   const nodes = svg.append('g').selectAll('g').data(graph.nodes).join('g');
-  const rects = nodes.append('rect').attr('rx', CFG.cornerRadius).attr('fill', d => d.color);
+  const rects = nodes.append('rect')
+    .attr('rx', CFG.cornerRadius)
+    .attr('fill', d => d.color)
+    .attr('stroke', CFG.nodeStroke)
+    .attr('stroke-width', 1);
 
-  const label = nodes.append('text').attr('fill', '#0f172a').attr('text-anchor', 'start');
-  label.append('tspan').attr('dy', '-0.15em').attr('font-size', 13).attr('font-weight', 500).text(d => d.name);
-  label.append('tspan').attr('dy', '1.2em').attr('font-size', 18).attr('font-weight', 700).text(d => d.value || 0);
+  const label = nodes.append('text')
+    .attr('text-anchor', 'start')
+    .attr('font-family', CFG.fontFamily);
+  label.append('tspan').attr('dy', '-0.15em').attr('font-size', 11).attr('font-weight', 500).attr('fill', CFG.nameFill).text(d => d.name);
+  label.append('tspan').attr('dy', '1.3em').attr('font-size', 11).attr('font-weight', 500).attr('fill', CFG.countFill).text(d => d.value || 0);
 
   let widestLabel = 0;
   label.selectAll('tspan').each(function () {

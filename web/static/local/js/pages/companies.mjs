@@ -6,16 +6,18 @@ import {
   listCompanies, getCompany, createCompany, updateCompany, deleteCompany,
   findCompanyByName, updateCompanyDossier,
 } from '../entities/companies.mjs';
-import { countApplicationsByCompany } from '../entities/applications.mjs';
-import { countPeopleByCompany } from '../entities/people.mjs';
+import { countApplicationsByCompany, listApplicationsByCompany, topStatusByCompany, headlineStatus } from '../entities/applications.mjs';
+import { countPeopleByCompany, listPeopleByCompanyID } from '../entities/people.mjs';
 import { guessCompanyCandidate, buildDossier } from '../rpc.mjs';
 import { escapeHtml, formatDate } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { button, badge, emptyState, inlineError, setInlineError, inlineNote, setInlineNote, pageHeader, setPageCount } from '../ui/components.mjs';
-import { icon } from '../ui/icons.mjs';
+import { button, badge, bulletList, dossierLabel, emptyDash, emptyState, faintSpan, fileRow, fileStamp, helpText, inlineError, setInlineError, inlineNote, setInlineNote, narrativeText, pageHeader, panelTitle, sectionTitle, setPageCount } from '../ui/components.mjs';
 import { outputLanguageSelect, readOutputLanguage } from '../ui/output_language.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
+import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../ui/slide_over.mjs';
+import { relativeAge, initials } from '../ui/format.mjs';
+import { collectionListPanel, collectionRowsHtml } from '../ui/collection_list.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
 import { createProgress } from '../ui/progress.mjs';
 import { t } from '../i18n.mjs';
@@ -42,18 +44,18 @@ const shellHtml = () => `
   <div class="space-y-6">
     <div id="toast" class="hidden"></div>
 
-    <section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      ${pageHeader({ title: t('page.companies.title'), countId: 'companies-count' })}
+    <section class="${CLS.pageHeadRow}">
+      ${pageHeader({ page: 'companies', title: t('page.companies.title'), countId: 'companies-count' })}
       ${button({ id: 'btn-new', variant: 'primaryCompact', icon: 'plus', label: t('companies.action.new'), ariaLabel: t('companies.aria.add') })}
     </section>
 
     <section id="editor-panel" class="hidden"></section>
     <section id="dossier-panel" class="hidden"></section>
 
-    <section id="list-panel" class="${CLS.card}">
-      ${inlineError({ id: 'list-error' })}
-      <div id="list-content"></div>
-    </section>
+    ${collectionListPanel({
+      searchId: 'companies-search',
+      searchPlaceholder: t('companies.search.placeholder'),
+    })}
   </div>
 `;
 
@@ -63,7 +65,7 @@ const editorHtml = (company) => {
   return `
     <div class="${CLS.card}">
       <form id="editor-form" class="space-y-5">
-        <div class="flex items-baseline justify-between">
+        <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('companies.form.new_eyebrow') : t('companies.form.edit_eyebrow')}</p>
           <div class="flex items-center gap-2">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('companies.form.aria.create') : t('common.action.save_changes') })}
@@ -83,10 +85,10 @@ const editorHtml = (company) => {
             ${outputLanguageSelect('out-lang-company-candidate')}
             ${button({ id: 'btn-lookup', variant: 'secondaryCompact', icon: 'search', label: t('companies.action.lookup'), extraClass: 'whitespace-nowrap' })}
           </div>
-          <p class="text-xs text-slate-500">${t('companies.field.official_name.help')}</p>
+          ${helpText(t('companies.field.official_name.help'))}
         </div>
 
-        <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:items-start">
+        <div class="${CLS.grid2x2}">
           <div class="grid gap-2">
             <label class="${CLS.label}" for="website">${t('companies.field.website.label')}</label>
             <input id="website" name="website" type="url" value="${escapeHtml(c.website)}"
@@ -114,113 +116,101 @@ const editorHtml = (company) => {
   `;
 };
 
-// Small icons used on the card header line — website (via linked name) and
-// blog (rss feed glyph).
-const blogIconLink = (url) => url
-  ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${t('companies.aria.blog')}" aria-label="${t('companies.aria.blog')}"
-        class="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-blue-700 transition">
-      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5a15 15 0 0 1 15 15M4.5 10.5a9 9 0 0 1 9 9M6 18.75a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z" />
-      </svg>
-    </a>`
-  : '';
-
-const internshipsPill = () =>
-  badge({ color: 'emerald', size: 'xs', icon: 'shieldCheck', label: t('companies.list.internships_badge') });
-
-// Small emerald icon on the card header when a dossier has been built.
-// `dossier_updated_at` is the empty string on rows that have never been
-// researched.
-const dossierIcon = (updatedAt) => {
-  if (!updatedAt) return '';
-  const label = escapeHtml(t('companies.list.dossier_badge'));
-  return `<span aria-label="${label}"
-             class="inline-flex h-5 w-5 items-center justify-center rounded-full text-emerald-600">
-      ${icon('sparkles', 4)}
-    </span>`;
+// Six headline statuses → BADGE_COLORS key. Companies with no applications
+// render no pill.
+const HEADLINE_BADGE = {
+  lead:      'indigo',
+  applied:   'blue',
+  interview: 'amber',
+  offer:     'emerald',
+  rejected:  'rose',
+  ghosted:   'slate',
+  withdrawn: 'slate',
 };
 
-// Small count pills mirror the legacy Go company_index card: engineering-blog
-// notes (blue), people (emerald), applications (amber). Rendered even when
-// zero so the row layout stays consistent across companies. When href is set
-// the pill is wrapped in an anchor so users can jump straight to the filtered
-// list; the anchor stops propagation so the surrounding card click (if any)
-// doesn't fire.
-const countPill = (color, iconName, n, href, title) => {
-  const pill = badge({ color, size: 'xs', icon: iconName, label: String(n) });
-  if (!href) return pill;
-  return `<a href="${href}" title="${escapeHtml(title)}"
-             class="inline-flex transition hover:brightness-95 hover:ring-2 hover:ring-offset-1 hover:ring-slate-300 rounded-full">${pill}</a>`;
+const statusPill = (headline) => {
+  if (!headline) return '';
+  const color = HEADLINE_BADGE[headline] || 'slate';
+  return badge({ color, size: 'xs', label: t(`applications.status.headline.${headline}`) });
 };
 
-const listHtml = (companies, peopleCounts, appCounts) => {
-  if (!companies.length) {
-    return emptyState({ message: t('companies.list.empty') });
-  }
-  return `
-    <ul class="space-y-3">
-      ${companies.map(c => {
-        const nameHtml = c.website
-          ? `<a href="${escapeHtml(c.website)}" target="_blank" rel="noopener noreferrer"
-                class="font-semibold text-slate-900 hover:text-blue-700 hover:underline">${escapeHtml(c.official_name)}</a>`
-          : `<span class="font-semibold text-slate-900">${escapeHtml(c.official_name)}</span>`;
-        return `
-          <li data-panel-row="${c.id}">
-            <div class="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-blue-200 hover:bg-blue-50/40">
-              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div class="space-y-2 min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    ${nameHtml}
-                    ${blogIconLink(c.blog_url)}
-                    ${dossierIcon(c.dossier_updated_at)}
-                    ${countPill('emerald', 'people',        peopleCounts.get(c.id) || 0, `/local/people?company_id=${c.id}`,       t('companies.list.people_title', { name: escapeHtml(c.official_name) }))}
-                    ${countPill('amber',   'applications',  appCounts.get(c.id)    || 0, `/local/applications?company_id=${c.id}`, t('companies.list.applications_title', { name: escapeHtml(c.official_name) }))}
-                  </div>
-                  ${c.has_internships ? `<div>${internshipsPill()}</div>` : ''}
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span class="text-sm text-slate-500">${t('common.updated_at', { date: formatDate(c.updated_at) })}</span>
-                  ${button({ variant: 'secondaryCompact', label: t('companies.action.research'), extraClass: 'js-research', dataset: { id: c.id } })}
-                  ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('companies.aria.edit'), extraClass: 'js-edit', dataset: { id: c.id } })}
-                  ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('companies.aria.delete', { name: c.official_name }), extraClass: 'js-delete', dataset: { id: c.id, name: c.official_name } })}
-                </div>
-              </div>
-            </div>
-          </li>`;
-      }).join('')}
-    </ul>`;
+const updatedLabel = (updatedAt) => {
+  if (!updatedAt) return t('companies.list.never_updated');
+  return t('companies.list.updated', { date: formatDate(updatedAt) });
 };
+
+const rowMeta = (c, roleCount, peopleCount) => {
+  const roles = t(roleCount === 1 ? 'companies.list.role_one' : 'companies.list.role_many', { n: roleCount });
+  const people = t(peopleCount === 1 ? 'companies.list.person_one' : 'companies.list.person_many', { n: peopleCount });
+  return `${roles}  ·  ${people}  ·  ${updatedLabel(c.updated_at)}`;
+};
+
+const companyFileRow = (c, roleCount, peopleCount, headline) => fileRow({
+  id: c.id,
+  jsClass: 'js-open',
+  ariaLabel: t('companies.aria.open', { name: c.official_name }),
+  title: c.official_name,
+  pill: statusPill(headline),
+  meta: rowMeta(c, roleCount, peopleCount),
+});
 
 // ---------- state + handlers ----------
 let editorMode = null;
+let filterState = { query: '' };
+let cachedCompanies = [];
+let cachedAppCounts = new Map();
+let cachedPeopleCounts = new Map();
+let cachedTopStatuses = new Map();
+
+const applyFilters = () => {
+  const q = filterState.query.trim().toLowerCase();
+  if (!q) return cachedCompanies;
+  return cachedCompanies.filter(c => c.official_name.toLowerCase().includes(q));
+};
+
+const rowsForCompanies = (companies) => companies.map(c => {
+  const roleCount = cachedAppCounts.get(c.id) || 0;
+  const peopleCount = cachedPeopleCounts.get(c.id) || 0;
+  const headline = headlineStatus(cachedTopStatuses.get(c.id)) || (roleCount === 0 ? 'lead' : null);
+  return companyFileRow(c, roleCount, peopleCount, headline);
+});
+
+const renderList = () => {
+  const filtered = applyFilters();
+  restoreAllPanels(PANEL_IDS);
+  document.getElementById('list-content').innerHTML = collectionRowsHtml({
+    rows: rowsForCompanies(filtered),
+    emptyMessage: t('companies.list.empty'),
+  });
+  if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
+  setPageCount('companies-count', filtered.length, n =>
+    t(n === 1 ? 'companies.list.count_one' : 'companies.list.count_many', { n }));
+  wireListHandlers();
+};
+
+const wireListHandlers = () => {
+  document.querySelectorAll('.js-open').forEach(btn =>
+    btn.addEventListener('click', () => openDossier(Number(btn.dataset.id), btn)));
+};
 
 const refreshList = async () => {
-  const [companies, peopleCounts, appCounts] = await Promise.all([
+  const [companies, peopleCounts, appCounts, topStatuses] = await Promise.all([
     listCompanies(),
     countPeopleByCompany(),
     countApplicationsByCompany(),
+    topStatusByCompany(),
   ]);
-  // Move panels back to their anchors before wiping list-content so their
-  // DOM (and any in-progress form input) survives the re-render.
-  restoreAllPanels(PANEL_IDS);
-  document.getElementById('list-content').innerHTML = listHtml(companies, peopleCounts, appCounts);
-  // Reattach any open panel to its (possibly re-rendered) row.
-  if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
-  if (openDossierCompany) mountInlinePanel('dossier-panel', openDossierCompany.id);
-  setPageCount('companies-count', companies.length, n =>
-    t(n === 1 ? 'companies.list.count_one' : 'companies.list.count_many', { n }));
+  cachedCompanies = companies;
+  cachedAppCounts = appCounts;
+  cachedPeopleCounts = peopleCounts;
+  cachedTopStatuses = topStatuses;
+  renderList();
   refreshSidebarCounts().catch(() => {});
-  document.querySelectorAll('.js-edit').forEach(btn =>
-    btn.addEventListener('click', () => openEditor({ id: Number(btn.dataset.id) })));
-  document.querySelectorAll('.js-research').forEach(btn =>
-    btn.addEventListener('click', () => openDossier(Number(btn.dataset.id))));
-  document.querySelectorAll('.js-delete').forEach(btn =>
-    btn.addEventListener('click', () => deleteCompanyFromList(Number(btn.dataset.id), btn.dataset.name)));
 };
 
-const deleteCompanyFromList = async (companyID, companyName) => {
+const deleteCompanyFromList = async (companyID, companyName, errorID = 'list-error') => {
   if (!confirm(t('companies.confirm.delete', { name: companyName }))) return;
-  setInlineError('list-error', '');
+  setInlineError(errorID, '');
   try {
     await deleteCompany(companyID);
     // Close any open panels for this company.
@@ -229,127 +219,202 @@ const deleteCompanyFromList = async (companyID, companyName) => {
     toast(t('companies.toast.deleted'), 'ok');
     await refreshList();
   } catch (err) {
-    setInlineError('list-error', t('companies.error.delete_linked', { err: err.message }));
+    setInlineError(errorID, t('companies.error.delete_linked', { err: err.message }));
   }
 };
 
 // ---------- dossier panel ----------
-const chip = (v) => badge({ label: v, color: 'slate', size: 'xs', weight: 'medium' });
+const chip = (v) => badge({ label: v, color: 'slate', size: 'xs', weight: 'medium', classes: 'whitespace-nowrap' });
 
-const bulletList = (items) => items?.length
-  ? `<ul class="list-disc pl-5 space-y-1 text-sm text-slate-700">${items.map(v => `<li>${escapeHtml(v)}</li>`).join('')}</ul>`
-  : '<p class="text-sm text-slate-400 italic">—</p>';
 
 const chipRow = (items) => items?.length
-  ? `<div class="flex flex-wrap gap-2">${items.map(chip).join('')}</div>`
-  : '<p class="text-sm text-slate-400 italic">—</p>';
+  ? `<div class="${CLS.chipRowStable}">${items.map(chip).join('')}</div>`
+  : emptyDash();
 
 const stackGroup = (label, items) => items?.length
   ? `<div class="grid gap-2">
-       <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${escapeHtml(label)}</p>
+       ${dossierLabel(escapeHtml(label))}
        ${chipRow(items)}
      </div>` : '';
 
-// The dossier is now part of the company row (see migration 003).
-// dossier_updated_at is the empty string until the LLM has built one.
-const dossierHtml = (company) => {
+const kvRow = (label, value) => value
+  ? `<dt class="${CLS.kvLabel}">${escapeHtml(label)}</dt>
+     <dd class="text-sm text-ink">${value}</dd>`
+  : '';
+
+const linkOrDash = (url) => url
+  ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 break-all text-brand hover:underline">${escapeHtml(url)}</a>`
+  : faintSpan('—');
+
+const applicationsSectionHtml = (apps, companyID) => {
+  if (!apps.length) return '';
+  const rows = apps.map(a => {
+    const headline = headlineStatus(a.status);
+    const statusText = statusPill(headline)
+      ? t(`applications.status.headline.${headline}`)
+      : (a.status || '');
+    const ageKey = a.status === 'lead'
+      ? 'companies.dossier.applications.added'
+      : 'companies.dossier.applications.applied';
+    const meta = `${statusText} · ${t(ageKey, { age: relativeAge(a.created_at) })}`;
+    return `
+      <div class="${CLS.staticRow}">
+        <div class="${CLS.flexTextCol}">
+          <p class="${CLS.rowTitle}">${escapeHtml(a.role_title)}</p>
+          <p class="${CLS.fileRowMeta}">${escapeHtml(meta)}</p>
+        </div>
+      </div>`;
+  }).join('');
+  const viewLink = `<a href="/local/applications?company_id=${companyID}" class="${CLS.linkAction}">${t('common.action.view')}</a>`;
+  return `
+    <section class="space-y-2">
+      <div class="${CLS.sectionHead}">
+        ${sectionTitle(t('companies.dossier.applications.heading'))}
+        ${viewLink}
+      </div>
+      <div class="${CLS.divider}">${rows}</div>
+    </section>`;
+};
+
+const peopleSectionHtml = (people, companyID) => {
+  if (!people.length) return '';
+  const rows = people.map(p => `
+    <div class="${CLS.staticRow}">
+      <div class="${CLS.avatarBadge}">${escapeHtml(initials(p.full_name))}</div>
+      <div class="min-w-0 flex-1 space-y-0.5">
+        <p class="${CLS.rowTitle}">${escapeHtml(p.full_name)}</p>
+        ${p.title ? `<p class="${CLS.fileRowMeta}">${escapeHtml(p.title)}</p>` : ''}
+      </div>
+    </div>`).join('');
+  const viewLink = `<a href="/local/people?company_id=${companyID}" class="${CLS.linkAction}">${t('common.action.view')}</a>`;
+  return `
+    <section class="space-y-2">
+      <div class="${CLS.sectionHead}">
+        ${sectionTitle(t('companies.dossier.people.heading'))}
+        ${viewLink}
+      </div>
+      <div class="${CLS.divider}">${rows}</div>
+    </section>`;
+};
+
+const kvCell = (label, value) => `
+  <div class="grid gap-1">
+    <p class="${CLS.kvLabel}">${escapeHtml(label)}</p>
+    <div class="text-sm text-ink">${value}</div>
+  </div>`;
+
+const dossierKvHtml = (company) => {
+  const atsHtml = company.ats_provider
+    ? badge({ label: company.ats_provider, color: 'blue', size: 'xs', classes: 'w-fit' })
+    : faintSpan('—');
+  return `
+    <div class="${CLS.grid2x2}">
+      ${kvCell(t('companies.field.website.label'), linkOrDash(company.website))}
+      ${kvCell(t('companies.field.blog.label'), linkOrDash(company.blog_url))}
+      ${kvCell(t('companies.field.ats_url.label'), linkOrDash(company.ats_url))}
+      ${kvCell(t('companies.field.ats_provider.label'), atsHtml)}
+    </div>`;
+};
+
+const dossierHtml = (company, { editing = false, apps = [], people = [] } = {}) => {
   const isEmpty = !company.dossier_updated_at;
   const stacks = company.major_tech_stacks || {};
   const hasAnyStack = ['languages', 'frontend', 'backend', 'infrastructure', 'data', 'tooling']
     .some(k => (stacks[k] || []).length);
   return `
-    <div class="${CLS.card}">
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div class="space-y-1">
-          <p class="${CLS.eyebrow}">${t('companies.dossier.eyebrow', { name: escapeHtml(company.official_name) })}</p>
-          <p class="text-xs text-slate-500">
-            ${isEmpty ? t('companies.dossier.empty') :
-              t('companies.dossier.last_built', { date: formatDate(company.dossier_updated_at) })}
-          </p>
+    <div class="${CLS.slideOverBody}">
+      <header class="${CLS.panelHeadRow}">
+        <div class="${CLS.textCol}">
+          ${fileStamp('company', company.id)}
+          ${panelTitle(company.official_name, company.website
+            ? `<a href="${escapeHtml(company.website)}" target="_blank" rel="noopener noreferrer" class="hover:text-brand hover:underline">${escapeHtml(company.official_name)}</a>`
+            : '')}
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          ${outputLanguageSelect('out-lang-dossier')}
-          ${button({ id: 'btn-dossier-build', icon: 'sparkles', label: isEmpty ? t('companies.action.build_dossier') : t('companies.action.rebuild_dossier') })}
+        <div class="${CLS.headActions}">
+          ${button({ id: 'btn-dossier-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('companies.aria.edit') })}
+          ${button({ id: 'btn-dossier-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('companies.aria.delete', { name: company.official_name }) })}
           ${button({ id: 'btn-dossier-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
         </div>
-      </div>
+      </header>
 
-      ${inlineError({ id: 'dossier-error' })}
-      ${inlineNote({ id: 'dossier-note' })}
-      <div id="dossier-progress" class="hidden"></div>
+      ${editing ? editorHtml(company) : dossierKvHtml(company)}
+
+      ${editing ? '' : `${applicationsSectionHtml(apps, company.id)}${peopleSectionHtml(people, company.id)}`}
+
+      <section class="${CLS.subCard}">
+        <div class="${CLS.cardHeadRow}">
+          <div class="space-y-1">
+            <p class="${CLS.eyebrow}">${t('companies.dossier.eyebrow', { name: escapeHtml(company.official_name) })}</p>
+            <p class="${CLS.helpText}">
+              ${isEmpty ? t('companies.dossier.empty') :
+                t('companies.dossier.last_built', { date: formatDate(company.dossier_updated_at) })}
+            </p>
+          </div>
+          <div class="${CLS.chipRowInline}">
+            ${outputLanguageSelect('out-lang-dossier')}
+            ${button({ id: 'btn-dossier-build', icon: 'sparkles', label: isEmpty ? t('companies.action.build_dossier') : t('companies.action.rebuild_dossier') })}
+          </div>
+        </div>
+
+        ${inlineError({ id: 'dossier-error' })}
+        ${inlineNote({ id: 'dossier-note' })}
+        <div id="dossier-progress" class="hidden"></div>
 
       ${isEmpty ? '' : `
         <div class="grid gap-6">
-          ${(company.careers_url || company.ats_provider) ? `
-            <div class="grid gap-4 sm:grid-cols-2 items-start">
-              <div class="grid gap-1">
-                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.careers')}</p>
-                ${company.careers_url
-                  ? `<a href="${escapeHtml(company.careers_url)}" target="_blank" rel="noopener noreferrer"
-                        class="text-sm text-blue-700 underline hover:text-blue-800 break-all">${escapeHtml(company.careers_url)}</a>`
-                  : '<span class="text-sm text-slate-400 italic">—</span>'}
-              </div>
-              <div class="grid gap-1">
-                <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.ats_provider')}</p>
-                ${company.ats_provider
-                  ? badge({ label: company.ats_provider, color: 'blue', size: 'xs', classes: 'w-fit' })
-                  : '<span class="text-sm text-slate-400 italic">—</span>'}
-              </div>
-            </div>` : ''}
-
           ${company.company_summary ? `
             <div class="grid gap-1">
-              <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.summary')}</p>
-              <p class="text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(company.company_summary)}</p>
+              ${dossierLabel(t('companies.dossier.summary'))}
+              ${narrativeText(company.company_summary)}
             </div>` : ''}
 
           ${company.what_the_company_does ? `
             <div class="grid gap-1">
-              <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.what')}</p>
-              <p class="text-sm text-slate-700 whitespace-pre-wrap">${escapeHtml(company.what_the_company_does)}</p>
+              ${dossierLabel(t('companies.dossier.what'))}
+              ${narrativeText(company.what_the_company_does)}
             </div>` : ''}
 
           <div class="grid gap-6 sm:grid-cols-2 items-start">
             <div class="grid gap-1">
-              <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.customers')}</p>
+              ${dossierLabel(t('companies.dossier.customers'))}
               ${chipRow(company.target_customers)}
             </div>
             <div class="grid gap-1">
-              <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.product_areas')}</p>
+              ${dossierLabel(t('companies.dossier.product_areas'))}
               ${chipRow(company.product_areas)}
             </div>
           </div>
 
           <div class="grid gap-1">
-            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.business_model')}</p>
-            ${bulletList(company.business_model_clues)}
+            ${dossierLabel(t('companies.dossier.business_model'))}
+            ${company.business_model_clues?.length ? bulletList(company.business_model_clues) : emptyDash()}
           </div>
 
           <div class="grid gap-6 sm:grid-cols-2 items-start">
             <div class="grid gap-1">
-              <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.launches')}</p>
-              ${bulletList(company.recent_product_launches)}
+              ${dossierLabel(t('companies.dossier.launches'))}
+              ${company.recent_product_launches?.length ? bulletList(company.recent_product_launches) : emptyDash()}
             </div>
             <div class="grid gap-1">
-              <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.culture')}</p>
-              ${bulletList(company.company_culture_notes)}
+              ${dossierLabel(t('companies.dossier.culture'))}
+              ${company.company_culture_notes?.length ? bulletList(company.company_culture_notes) : emptyDash()}
             </div>
           </div>
 
           <div class="grid gap-1">
-            <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.internships')}</p>
+            ${dossierLabel(t('companies.dossier.internships'))}
             ${company.has_internships
-              ? `<p class="text-sm text-slate-700">
+              ? `<p class="${CLS.bodyText}">
                    <span class="font-medium">${t('companies.dossier.internships_yes')}</span>
                    ${company.internship_seasons?.length ? ` ${t('companies.dossier.internships_seasons', { seasons: company.internship_seasons.map(s => escapeHtml(localizeSeason(s))).join(', ') })}` : ''}
                  </p>
-                 ${company.internship_summary ? `<p class="text-sm text-slate-600 whitespace-pre-wrap">${escapeHtml(company.internship_summary)}</p>` : ''}`
-              : `<p class="text-sm text-slate-500">${t('companies.dossier.internships_no')}</p>`}
+                 ${company.internship_summary ? `${narrativeText(company.internship_summary)}` : ''}`
+              : `${helpText(t('companies.dossier.internships_no'))}`}
           </div>
 
           ${hasAnyStack ? `
             <div class="grid gap-4">
-              <p class="text-xs font-medium uppercase tracking-wide text-slate-500">${t('companies.dossier.tech_stacks')}</p>
+              ${dossierLabel(t('companies.dossier.tech_stacks'))}
               <div class="grid gap-4 sm:grid-cols-2">
                 ${stackGroup(t('companies.dossier.stack.languages'), stacks.languages)}
                 ${stackGroup(t('companies.dossier.stack.frontend'), stacks.frontend)}
@@ -362,32 +427,58 @@ const dossierHtml = (company) => {
 
         </div>
       `}
+      </section>
     </div>
   `;
 };
 
 let openDossierCompany = null;
+let openDossierTrigger = null;
+let companyEditing = false;
 
 const closeDossier = () => {
+  if (isSlideOverOpen('dossier-panel')) {
+    closeSlideOver('dossier-panel');
+    return;
+  }
   openDossierCompany = null;
-  mountInlinePanel('dossier-panel', null);
+  openDossierTrigger = null;
   const panel = document.getElementById('dossier-panel');
-  panel.classList.add('hidden');
-  panel.innerHTML = '';
+  if (panel) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+  }
 };
 
-const renderDossier = async () => {
+const renderCompanyPanel = async () => {
   if (!openDossierCompany) return;
   const panel = document.getElementById('dossier-panel');
-  // Re-fetch so a just-built dossier's fields land on the panel.
-  const fresh = await getCompany(openDossierCompany.id);
+  const [fresh, apps, people] = await Promise.all([
+    getCompany(openDossierCompany.id),
+    listApplicationsByCompany(openDossierCompany.id),
+    listPeopleByCompanyID(openDossierCompany.id),
+  ]);
   if (fresh) openDossierCompany = fresh;
-  panel.innerHTML = dossierHtml(openDossierCompany);
+  panel.innerHTML = dossierHtml(openDossierCompany, { editing: companyEditing, apps, people });
   wireDossier();
+  if (companyEditing) {
+    wireEditor({
+      onCancel: () => {
+        companyEditing = false;
+        editorMode = null;
+        renderCompanyPanel();
+      },
+      onSaved: async () => {
+        companyEditing = false;
+        editorMode = null;
+        await refreshList();
+        await renderCompanyPanel();
+      },
+    });
+  }
 };
 
-const openDossier = async (companyID) => {
-  // Editor panel and dossier panel are mutually exclusive to keep focus clear.
+const openDossier = async (companyID, triggerEl = null) => {
   closeEditor();
   const company = await getCompany(companyID);
   if (!company) {
@@ -395,15 +486,33 @@ const openDossier = async (companyID) => {
     return;
   }
   openDossierCompany = company;
-  const panel = document.getElementById('dossier-panel');
-  panel.classList.remove('hidden');
-  await renderDossier();
-  mountInlinePanel('dossier-panel', companyID);
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  openDossierTrigger = triggerEl;
+  await renderCompanyPanel();
+  openSlideOver({
+    panelId: 'dossier-panel',
+    trigger: triggerEl,
+    onClose: () => {
+      openDossierCompany = null;
+      openDossierTrigger = null;
+      companyEditing = false;
+      editorMode = null;
+    },
+  });
 };
 
 const wireDossier = () => {
   document.getElementById('btn-dossier-close').addEventListener('click', closeDossier);
+  document.getElementById('btn-dossier-edit')?.addEventListener('click', () => {
+    if (!openDossierCompany) return;
+    companyEditing = true;
+    editorMode = { id: openDossierCompany.id };
+    renderCompanyPanel();
+  });
+  document.getElementById('btn-dossier-delete')?.addEventListener('click', () => {
+    if (!openDossierCompany) return;
+    const { id, official_name } = openDossierCompany;
+    deleteCompanyFromList(id, official_name, 'dossier-error');
+  });
 
   const buildBtn = document.getElementById('btn-dossier-build');
   buildBtn.addEventListener('click', async () => {
@@ -426,8 +535,8 @@ const wireDossier = () => {
       }, readOutputLanguage('out-lang-dossier'), progress.asCallback());
       await updateCompanyDossier(c.id, generated);
       const reason = (generated?.reasoning || '').trim();
-      await renderDossier();
-      // renderDossier re-renders the panel; re-apply the note after paint.
+      await renderCompanyPanel();
+      // renderCompanyPanel re-renders the panel; re-apply the note after paint.
       // The progress panel is inside the re-rendered subtree and vanishes with it.
       setInlineNote('dossier-note', reason ? t('companies.toast.dossier_built', { reason }) : t('companies.toast.dossier_built_short'));
     } catch (err) {
@@ -498,9 +607,11 @@ const applyCandidate = (cand) => {
   set('ats_provider', cand.ats_provider);
 };
 
-const wireEditor = () => {
+const wireEditor = ({ onCancel, onSaved } = {}) => {
+  const cancelFn = onCancel || closeEditor;
+  const savedFn = onSaved || (async () => { closeEditor(); await refreshList(); });
   const form = document.getElementById('editor-form');
-  document.getElementById('btn-cancel').addEventListener('click', closeEditor);
+  document.getElementById('btn-cancel').addEventListener('click', cancelFn);
 
   const officialInput = document.getElementById('official_name');
   const lookupBtn = document.getElementById('btn-lookup');
@@ -554,8 +665,7 @@ const wireEditor = () => {
         await updateCompany(editorMode.id, data);
         toast(t('companies.toast.saved'), 'ok');
       }
-      closeEditor();
-      await refreshList();
+      await savedFn();
     } catch (err) {
       setInlineError('editor-error', t('common.error.save_failed', { err: err.message }));
     }
@@ -567,6 +677,10 @@ export const mountCompanies = async (root) => {
   root.innerHTML = shellHtml();
   PANEL_IDS.forEach(rememberPanelAnchor);
   document.getElementById('btn-new').addEventListener('click', () => openEditor('new'));
+  document.getElementById('companies-search').addEventListener('input', (e) => {
+    filterState.query = e.target.value;
+    renderList();
+  });
   await refreshList();
 
   // Auto-open the new-company editor if arriving via a quick-action link.

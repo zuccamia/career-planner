@@ -1,8 +1,9 @@
 // Renders the "Web scraper" pill in the sidebar. Three states:
-//   - BYOK scraper active            → emerald "BYOK Scraper · <backend>"
-//   - BYOK off, server scraper set   → emerald "Server Scraper · <backend>"
+//   - BYOK scraper active            → slate "BYOK Scraper · <backend>"
+//   - BYOK off, server scraper set   → slate "Server Scraper · <backend>"
 //   - No scraper anywhere            → hidden (scraper is optional; unlike LLM
 //                                     the app is fully functional without it)
+// Active states are neutral config facts; reserve green for success.
 // BYOK takes precedence — a user who configured their own scraper sees the
 // BYOK badge even when the deploy also has a server-side scraper. Clicking
 // navigates to Settings → Web scraper.
@@ -38,10 +39,10 @@ export const refreshScraperModeBadge = async () => {
     const byokActive = !!(cfg && cfg.enabled && cfg.baseUrl && cfg.backend
       && (cfg.backend !== 'firecrawl' || cfg.apiKey));
     if (byokActive) {
-      wrap.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: t('settings.scraper.badge.byok', { backend: cfg.backend }) });
+      wrap.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'link', label: t('settings.scraper.badge.byok', { backend: cfg.backend }) });
       wrap.classList.remove('hidden');
     } else if (server.available) {
-      wrap.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: t('settings.scraper.badge.server', { backend: server.backend }) });
+      wrap.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'link', label: t('settings.scraper.badge.server', { backend: server.backend }) });
       wrap.classList.remove('hidden');
     } else {
       wrap.classList.add('hidden');

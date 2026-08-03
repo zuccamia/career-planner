@@ -63,6 +63,8 @@ test.describe('local settings page', () => {
   test('sidebar navigation reaches settings from companies', async ({ page }) => {
     await page.goto('/local/companies');
     await expect(page.getByText('Companies', { exact: true })).toBeVisible({ timeout: 30_000 });
+    // Sidebar is an off-canvas drawer — open it before clicking the nav link.
+    await page.getByRole('button', { name: 'Open navigation' }).click();
     await page.getByRole('link', { name: 'Settings' }).click();
     await expect(page).toHaveURL('/local/settings');
     await expect(page.getByText('Snapshot now')).toBeVisible({ timeout: 30_000 });

@@ -152,7 +152,7 @@ func run(args []string) error {
 	fmt.Printf("Seeded %d applications with %d status-change events\n", insertedApplications, insertedEvents)
 	fmt.Printf("Seeded %d people, %d communication threads with %d entries\n", totalPeople, insertedThreads, insertedEntries)
 	fmt.Printf("Seeded profile: %s\n", profileSummary)
-	for _, status := range []string{"wishlist", "applied", "online_assessment", "first_interview", "second_interview", "additional_interview", "offer", "rejected", "withdrawn"} {
+	for _, status := range []string{"lead", "applied", "online_assessment", "first_interview", "second_interview", "additional_interview", "offer", "rejected", "ghosted", "withdrawn"} {
 		if statusCounts[status] == 0 {
 			continue
 		}
@@ -185,7 +185,7 @@ func resetApplicationData(ctx context.Context, database *sql.DB) error {
 // back to empty rather than deleting the row.
 func resetProfileData(ctx context.Context, database *sql.DB) error {
 	statements := []string{
-		`UPDATE profile_overview SET name='', headline='', summary='', skills_json='[]', onboarded_at=NULL, updated_at=datetime('now') WHERE id=1`,
+		`UPDATE profile_overview SET name='', headline='', summary='', skills_json='[]', environment='', tools_json='[]', wizard_progress=NULL, onboarded_at=NULL, updated_at=datetime('now') WHERE id=1`,
 		`DELETE FROM career_sparks`,
 		`DELETE FROM resumes`,
 		`DELETE FROM brag_entries`,
@@ -221,11 +221,14 @@ func seedProfile(ctx context.Context, database *sql.DB, now time.Time) (string, 
 		`{"name":"Terraform","years":2,"level":"intermediate"}` +
 		`]`
 
+	const overviewToolsJSON = `["Go","Python","gRPC","Kafka","Terraform","data pipelines","observability"]`
+
 	if _, err := database.ExecContext(ctx, `
 		UPDATE profile_overview
-		SET name = ?, headline = ?, summary = ?, skills_json = ?, onboarded_at = ?, updated_at = ?
+		SET name = ?, headline = ?, summary = ?, skills_json = ?, environment = ?, tools_json = ?, onboarded_at = ?, updated_at = ?
 		WHERE id = 1`,
-		"Nova Hoang", "Backend engineer, data pipelines", overviewSummary, overviewSkillsJSON, tsFmt, tsFmt,
+		"Nova Hoang", "Backend engineer, data pipelines", overviewSummary, overviewSkillsJSON,
+		"remote", overviewToolsJSON, tsFmt, tsFmt,
 	); err != nil {
 		return "", fmt.Errorf("update profile_overview: %w", err)
 	}
@@ -235,12 +238,11 @@ func seedProfile(ctx context.Context, database *sql.DB, now time.Time) (string, 
 		priority int
 	}{
 		{"high-agency team", 1},
-		{"remote-friendly", 1},
-		{"ships to real users weekly", 1},
-		{"async-first", 2},
+		{"meaningful work", 1},
+		{"fast-paced team", 1},
 		{"strong technical peers", 2},
-		{"Go / Python stack", 3},
-		{"no rotating on-call", 3},
+		{"learning & growth", 2},
+		{"own your schedule", 3},
 	}
 	for _, s := range sparks {
 		if _, err := database.ExecContext(ctx, `
@@ -604,17 +606,20 @@ func roleTitles() []string {
 
 func applicationPlans() []applicationPlan {
 	return []applicationPlan{
-		{Path: []string{"wishlist"}},
-		{Path: []string{"wishlist", "applied"}},
-		{Path: []string{"wishlist", "applied", "online_assessment"}},
-		{Path: []string{"wishlist", "applied", "online_assessment", "first_interview"}},
-		{Path: []string{"wishlist", "applied", "online_assessment", "first_interview", "second_interview"}},
-		{Path: []string{"wishlist", "applied", "online_assessment", "first_interview", "second_interview", "additional_interview"}},
-		{Path: []string{"wishlist", "applied", "online_assessment", "first_interview", "second_interview", "offer"}},
-		{Path: []string{"wishlist", "applied", "rejected"}},
-		{Path: []string{"wishlist", "applied", "online_assessment", "rejected"}},
-		{Path: []string{"wishlist", "applied", "online_assessment", "first_interview", "rejected"}},
-		{Path: []string{"wishlist", "applied", "withdrawn"}},
-		{Path: []string{"wishlist", "applied", "online_assessment", "first_interview", "withdrawn"}},
+		{Path: []string{"lead"}},
+		{Path: []string{"lead", "applied"}},
+		{Path: []string{"lead", "applied", "online_assessment"}},
+		{Path: []string{"lead", "applied", "online_assessment", "first_interview"}},
+		{Path: []string{"lead", "applied", "online_assessment", "first_interview", "second_interview"}},
+		{Path: []string{"lead", "applied", "online_assessment", "first_interview", "second_interview", "additional_interview"}},
+		{Path: []string{"lead", "applied", "online_assessment", "first_interview", "second_interview", "offer"}},
+		{Path: []string{"lead", "applied", "rejected"}},
+		{Path: []string{"lead", "applied", "online_assessment", "rejected"}},
+		{Path: []string{"lead", "applied", "online_assessment", "first_interview", "rejected"}},
+		{Path: []string{"lead", "applied", "withdrawn"}},
+		{Path: []string{"lead", "applied", "online_assessment", "first_interview", "withdrawn"}},
+		{Path: []string{"lead", "applied", "ghosted"}},
+		{Path: []string{"lead", "applied", "online_assessment", "ghosted"}},
+		{Path: []string{"lead", "applied", "online_assessment", "first_interview", "ghosted"}},
 	}
 }

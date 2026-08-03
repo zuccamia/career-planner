@@ -38,6 +38,22 @@ export const listApplications = () => exec(`
   ORDER BY datetime(a.updated_at) DESC, a.id DESC
 `);
 
+export const listApplicationsByCompany = (companyID) => exec(`
+  SELECT id, company_id, role_title, status, created_at, updated_at
+  FROM applications
+  WHERE company_id = ?
+  ORDER BY datetime(updated_at) DESC, id DESC
+`, [companyID]);
+
+export const listApplicationsByPerson = (personID) => exec(`
+  SELECT a.id, a.company_id, c.official_name AS company_name,
+         a.role_title, a.status, a.created_at, a.updated_at
+  FROM applications a
+  LEFT JOIN companies c ON c.id = a.company_id
+  WHERE a.person_id = ?
+  ORDER BY datetime(a.updated_at) DESC, a.id DESC
+`, [personID]);
+
 export const getApplication = async (id) => {
   const rows = await exec(`
     SELECT a.*, c.official_name AS company_name,
@@ -57,7 +73,7 @@ const normalize = (data) => ({
   job_posting_url: sanitizeURL(data.job_posting_url),
   job_description_raw: data.job_description_raw ?? '',
   job_description_extracted_json: data.job_description_extracted_json ?? '{}',
-  status: data.status ?? 'wishlist',
+  status: data.status ?? 'lead',
   notes: (data.notes ?? '').trim(),
 });
 
@@ -173,6 +189,28 @@ export const clearAllApplications = async () => {
 export const countApplications = async () => {
   const rows = await exec('SELECT COUNT(*) AS n FROM applications');
   return rows[0].n;
+};
+
+// Most recently updated application's status per company. Companies with no
+// applications are absent from the map.
+export const topStatusByCompany = async () => {
+  const rows = await exec(`
+    SELECT company_id, status
+    FROM applications
+    ORDER BY datetime(updated_at) DESC, id DESC
+  `);
+  const best = new Map();
+  for (const r of rows) {
+    if (!best.has(r.company_id)) best.set(r.company_id, r.status);
+  }
+  return best;
+};
+
+// Roll a raw status into one of the six headline pill values plus withdrawn.
+export const headlineStatus = (s) => {
+  if (!s) return 'lead';
+  if (['online_assessment', 'first_interview', 'second_interview', 'additional_interview'].includes(s)) return 'interview';
+  return s;
 };
 
 export const countApplicationsByCompany = async () => {

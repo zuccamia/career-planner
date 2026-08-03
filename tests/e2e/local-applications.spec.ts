@@ -10,8 +10,12 @@ const gotoApps = async (page: Page, query = '') => {
 
 const createCompany = async (page: Page, name: string) => {
   await page.goto('/local/companies');
-  await expect(page.getByText('Companies', { exact: true })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'Add company' }).click();
+  // The sidebar link "Companies" is server-rendered and visible before the
+  // SPA mounts — wait for the mounted "Add company" button instead so we
+  // don't race the OPFS + DB init.
+  const addBtn = page.getByRole('button', { name: 'Add company' });
+  await expect(addBtn).toBeVisible({ timeout: 30_000 });
+  await addBtn.click();
   await page.getByLabel('Official name').fill(name);
   await page.getByRole('button', { name: 'Create company' }).click();
   await expect(page.locator('#list-content li', { hasText: name })).toBeVisible();
@@ -34,11 +38,12 @@ test.describe('local applications page — company filter', () => {
     await createApplication(page, 'Alpha Co.', 'Backend Engineer');
     await createApplication(page, 'Beta Co.', 'Frontend Engineer');
 
-    // Enter via the companies page pill so the navigation matches real usage.
+    // Read Alpha's id from its row and navigate to the filtered URL directly.
     await page.goto('/local/companies');
     await expect(page.getByText('Companies', { exact: true })).toBeVisible({ timeout: 30_000 });
-    await page.locator('#list-content li', { hasText: 'Alpha Co.' })
-      .getByTitle('Applications at Alpha Co.').click();
+    const alphaId = await page.locator('#list-content li', { hasText: 'Alpha Co.' })
+      .getAttribute('data-panel-row');
+    await page.goto(`/local/applications?company_id=${alphaId}`);
 
     await expect(page).toHaveURL(/\/local\/applications\?company_id=\d+$/);
     await expect(page.getByText('Filtered by company:')).toBeVisible();
@@ -70,7 +75,8 @@ test.describe('local applications page — inline details panel', () => {
     await createApplication(page, 'Alpha Co.', 'Backend Engineer');
 
     await gotoApps(page);
-    await page.locator('#list-content li', { hasText: 'Backend Engineer' }).getByRole('button', { name: 'View' }).click();
+    await page.locator('#list-content li', { hasText: 'Backend Engineer' })
+      .getByRole('button', { name: /Open Backend Engineer/ }).click();
 
     const panel = page.locator('#details-panel');
     await expect(panel).toBeVisible();
@@ -86,15 +92,16 @@ test.describe('local applications page — inline details panel', () => {
     await createApplication(page, 'Alpha Co.', 'Backend Engineer');
 
     await gotoApps(page);
-    await page.locator('#list-content li', { hasText: 'Backend Engineer' }).getByRole('button', { name: 'View' }).click();
+    await page.locator('#list-content li', { hasText: 'Backend Engineer' })
+      .getByRole('button', { name: /Open Backend Engineer/ }).click();
     const panel = page.locator('#details-panel');
     await expect(panel).toBeVisible();
 
-    // Quick-status widget: change wishlist → applied, then verify timeline.
+    // Quick-status widget: change lead → applied, then verify timeline.
     await panel.getByLabel('Status', { exact: true }).selectOption('applied');
     await panel.getByRole('button', { name: 'Update status' }).click();
     await expect(page.locator('#toast')).toContainText(/Status → Applied/);
-    await expect(panel.getByText(/Status changed: Wishlist → Applied/)).toBeVisible();
+    await expect(panel.getByText(/Status changed: Lead → Applied/)).toBeVisible();
   });
 
   test('editing non-status fields does not append a timeline event', async ({ page }) => {
@@ -102,17 +109,17 @@ test.describe('local applications page — inline details panel', () => {
     await createApplication(page, 'Alpha Co.', 'Backend Engineer');
 
     await gotoApps(page);
+    // Edit lives in the slide-over — open the row, click Edit, then the
+    // inline editor form takes over the list surface.
     await page.locator('#list-content li', { hasText: 'Backend Engineer' })
-      .getByRole('button', { name: 'Edit application' }).click();
+      .getByRole('button', { name: /Open Backend Engineer/ }).click();
+    await page.locator('#details-panel').getByRole('button', { name: 'Edit application' }).click();
     await page.getByLabel('Role').fill('Senior Backend Engineer');
     await page.getByLabel('Notes', { exact: true }).fill('followed up on 2026-07-24');
     await page.getByRole('button', { name: 'Save changes' }).click();
 
     await expect(page.locator('#toast')).toContainText(/Application saved/);
-    // Reopen the details panel — timeline should only hold the "Application
-    // created" event; no "Updated …" note event for non-status edits.
-    await page.locator('#list-content li', { hasText: 'Senior Backend Engineer' })
-      .getByRole('button', { name: 'View' }).click();
+    // Slide-over stays open in view mode with the fresh details after save.
     const panel = page.locator('#details-panel');
     await expect(panel.getByText(/Application created/)).toBeVisible();
     await expect(panel.getByText(/Updated /)).toHaveCount(0);
@@ -144,20 +151,17 @@ test.describe('local applications page — inline details panel', () => {
 
     // Confirm the seeded structured JD renders before editing.
     await page.locator('#list-content li', { hasText: 'Backend Engineer' })
-      .getByRole('button', { name: 'View' }).click();
+      .getByRole('button', { name: /Open Backend Engineer/ }).click();
     const panel = page.locator('#details-panel');
     await expect(panel.getByText('seeded for regression test')).toBeVisible();
 
-    // Edit an unrelated field via the list-card editor.
-    await page.locator('#list-content li', { hasText: 'Backend Engineer' })
-      .getByRole('button', { name: 'Edit application' }).click();
+    // Edit via the slide-over's Edit button.
+    await panel.getByRole('button', { name: 'Edit application' }).click();
     await page.getByLabel('Notes', { exact: true }).fill('touched');
     await page.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.locator('#toast')).toContainText(/Application saved/);
 
-    // Reopen details — the structured summary must still be there.
-    await page.locator('#list-content li', { hasText: 'Backend Engineer' })
-      .getByRole('button', { name: 'View' }).click();
+    // Slide-over stays open in view mode with the structured summary intact.
     await expect(panel.getByText('seeded for regression test')).toBeVisible();
   });
 
@@ -181,12 +185,12 @@ test.describe('local applications page — inline details panel', () => {
     await page.getByRole('button', { name: 'Create application' }).click();
     await expect(page.locator('#toast')).toContainText(/Created application/);
 
-    // Card subline should read "Alpha Co. · Jane Doe".
+    // Row meta shows the company; the contact appears in the slide-over.
     const card = page.locator('#list-content li', { hasText: 'Backend Engineer' });
-    await expect(card.getByText(/Alpha Co\. · Jane Doe/)).toBeVisible();
+    await expect(card).toContainText('Alpha Co.');
 
     // Details panel surfaces the contact too.
-    await card.getByRole('button', { name: 'View' }).click();
+    await card.getByRole('button', { name: /Open Backend Engineer/ }).click();
     // Contact appears twice: header subline + "Point of contact" info line.
     await expect(page.locator('#details-panel').getByText('Jane Doe').first()).toBeVisible();
   });
@@ -196,7 +200,8 @@ test.describe('local applications page — inline details panel', () => {
     await createApplication(page, 'Alpha Co.', 'Backend Engineer');
 
     await gotoApps(page);
-    await page.locator('#list-content li', { hasText: 'Backend Engineer' }).getByRole('button', { name: 'View' }).click();
+    await page.locator('#list-content li', { hasText: 'Backend Engineer' })
+      .getByRole('button', { name: /Open Backend Engineer/ }).click();
     const panel = page.locator('#details-panel');
     await expect(panel).toBeVisible();
 
@@ -244,7 +249,7 @@ const readStoredKeys = (page: Page): Promise<string[]> =>
 
 const openDetails = async (page: Page, roleTitle: string) => {
   await page.locator('#list-content li', { hasText: roleTitle })
-    .getByRole('button', { name: 'View' }).click();
+    .getByRole('button', { name: new RegExp(`Open ${roleTitle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
   const panel = page.locator('#details-panel');
   await expect(panel).toBeVisible();
   return panel;
@@ -451,13 +456,17 @@ test.describe('local applications page — clear all', () => {
     await expect(card.locator('img')).toHaveCount(0);
     await expect(card).not.toContainText('&amp;');
 
+    // Delete lives in the slide-over — open the row, then Delete inside the panel.
+    await card.getByRole('button', { name: new RegExp(`Open ${trickyRole.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
+    const panel = page.locator('#details-panel');
+    await expect(panel).toBeVisible();
     const dialogText = await new Promise<string>((resolve) => {
       page.once('dialog', (dialog) => {
         const msg = dialog.message();
         dialog.dismiss();
         resolve(msg);
       });
-      card.getByRole('button', { name: `Delete ${trickyRole}` }).click();
+      panel.getByRole('button', { name: `Delete ${trickyRole}` }).click();
     });
     expect(dialogText).toContain(trickyRole);
     expect(dialogText).not.toContain('&amp;');

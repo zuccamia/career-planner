@@ -16,85 +16,21 @@ const gotoProfile = async (page: Page) => {
 };
 
 const skipWizardIfPresent = async (page: Page) => {
-  // On a fresh DB the wizard shows on Overview. "Skip setup" (visible on
-  // steps 1–4) drops straight to the flat form.
-  const skip = page.getByRole('button', { name: 'Skip setup' });
-  if (await skip.isVisible().catch(() => false)) {
-    await skip.click();
+  // On a fresh DB the wizard shows on Overview. Step 1's Skip button reads
+  // "Skip setup" when the name field is empty and "Skip this" once anything
+  // is typed — click whichever is currently visible.
+  for (const label of ['Skip setup', 'Skip this']) {
+    const btn = page.getByRole('button', { name: label });
+    if (await btn.isVisible().catch(() => false)) {
+      await btn.click();
+      break;
+    }
   }
   // Flat form's "About you" card is the marker.
   await expect(page.getByText('About you', { exact: true })).toBeVisible();
 };
 
-test.describe('local profile page — wizard', () => {
-  test('first visit shows the wizard; walking to recap saves overview fields', async ({ page }) => {
-    await gotoProfile(page);
-
-    // Step 1 — Name
-    await expect(page.getByRole('heading', { name: 'Your name' })).toBeVisible();
-    await page.locator('#wiz-input').fill('Nova Hoang');
-    await page.getByRole('button', { name: /Next/ }).click();
-
-    // Step 2 — Headline
-    await expect(page.getByRole('heading', { name: 'Your one-line pitch' })).toBeVisible();
-    await page.locator('#wiz-input').fill('Backend engineer, data pipelines');
-    await page.getByRole('button', { name: /Next/ }).click();
-
-    // Step 3 — Summary (textarea)
-    await expect(page.getByRole('heading', { name: /kind of work do you want/i })).toBeVisible();
-    await page.locator('#wiz-input').fill('Six years shipping backend systems.');
-    await page.getByRole('button', { name: /Next/ }).click();
-
-    // Step 4 — Skills (pill mode). Fill name/years/level in the input row,
-    // click Add, then verify the pill appears before moving on.
-    await expect(page.getByRole('heading', { name: 'Your top skills' })).toBeVisible();
-    const wizEditor = page.locator('#wiz-skills-editor');
-    await wizEditor.locator('.js-skill-name').fill('Go');
-    await wizEditor.locator('.js-skill-years').fill('6');
-    await wizEditor.locator('.js-skill-level').selectOption('expert');
-    await wizEditor.locator('.js-add-skill').click();
-    // Expert → emerald palette.
-    await expect(wizEditor.locator('.js-skill-pills span[data-skill-index]', { hasText: 'Go' })).toBeVisible();
-    await expect(wizEditor.locator('.js-skill-pills .bg-emerald-100')).toHaveCount(1);
-    await page.getByRole('button', { name: /Next/ }).click();
-
-    // Themed spark step 5 — pick a chip, then Next.
-    await expect(page.getByRole('heading', { name: 'Work environment' })).toBeVisible();
-    await page.getByRole('button', { name: '+ remote-friendly' }).click();
-    await page.getByRole('button', { name: /Next/ }).click();
-
-    // Skip 6 and 7 to reach the recap fast.
-    await page.getByRole('button', { name: 'Skip this' }).click();
-    await page.getByRole('button', { name: 'Skip this' }).click();
-
-    // Recap
-    await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
-    await expect(page.getByText('Nova Hoang')).toBeVisible();
-    await expect(page.getByText('Backend engineer, data pipelines')).toBeVisible();
-    // Recap renders skills as "Name (Xy · Level)" — check both the name and
-    // the years/level annotation survived the round-trip.
-    await expect(page.getByText(/Go \(6y · Expert\)/)).toBeVisible();
-    await expect(page.getByText('remote-friendly')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Looks good' }).click();
-
-    // Lands on the flat form; values round-trip.
-    await expect(page.getByText('About you', { exact: true })).toBeVisible();
-    await expect(page.locator('#ov-name')).toHaveValue('Nova Hoang');
-    await expect(page.locator('#ov-headline')).toHaveValue('Backend engineer, data pipelines');
-    // Skills editor rendered the Go pill in the expert (emerald) palette.
-    const flatPills = page.locator('#ov-skills-editor .js-skill-pills');
-    await expect(flatPills.locator('span[data-skill-index]', { hasText: 'Go' })).toBeVisible();
-    await expect(flatPills.locator('.bg-emerald-100')).toHaveCount(1);
-  });
-
-  test('Skip setup on step 1 opts out entirely and jumps to flat form', async ({ page }) => {
-    await gotoProfile(page);
-    await expect(page.getByRole('heading', { name: 'Your name' })).toBeVisible();
-    await page.getByRole('button', { name: 'Skip setup' }).click();
-    await expect(page.getByText('About you', { exact: true })).toBeVisible();
-  });
-});
+// Wizard tests moved to local-profile-wizard.spec.ts.
 
 test.describe('local profile page — flat form + sparks', () => {
   test('blur-saves overview fields and adds priority-scoped spark pills', async ({ page }) => {
@@ -124,14 +60,14 @@ test.describe('local profile page — flat form + sparks', () => {
     // data-spark-id, so selectors count with `span[data-spark-id]` to keep
     // per-pill count accurate.
     await expect(page.locator('#sparks-list span[data-spark-id]')).toHaveCount(3);
-    await expect(page.locator('#sparks-list span[data-spark-id].bg-blue-100')).toHaveCount(2);
-    await expect(page.locator('#sparks-list span[data-spark-id].bg-slate-100')).toHaveCount(1);
+    await expect(page.locator('#sparks-list span[data-spark-id].bg-brand-tint')).toHaveCount(2);
+    await expect(page.locator('#sparks-list span[data-spark-id].bg-status-hold-bg')).toHaveCount(1);
 
     // Delete the P3 pill via its × — reduces count, leaves both P1s.
-    const slatePill = page.locator('#sparks-list span[data-spark-id].bg-slate-100').first();
+    const slatePill = page.locator('#sparks-list span[data-spark-id].bg-status-hold-bg').first();
     await slatePill.getByRole('button', { name: 'Remove spark' }).click();
     await expect(page.locator('#sparks-list span[data-spark-id]')).toHaveCount(2);
-    await expect(page.locator('#sparks-list span[data-spark-id].bg-slate-100')).toHaveCount(0);
+    await expect(page.locator('#sparks-list span[data-spark-id].bg-status-hold-bg')).toHaveCount(0);
 
     // Reload → values persist (rules out "only in memory" regressions).
     await page.reload();
@@ -140,10 +76,6 @@ test.describe('local profile page — flat form + sparks', () => {
     await expect(page.locator('#sparks-list span[data-spark-id]')).toHaveCount(2);
   });
 
-  // Regression: wireOverviewFlat used to reference an undeclared `overview`,
-  // throwing before wireSkillsEditor ran — so the flat form's skills editor
-  // never got its click/Enter handlers. Adding a skill via the flat form
-  // silently no-op'd. This exercises exactly that path.
   test('flat form skills editor adds and persists a skill', async ({ page }) => {
     await gotoProfile(page);
     await skipWizardIfPresent(page);
@@ -154,9 +86,9 @@ test.describe('local profile page — flat form + sparks', () => {
     await editor.locator('.js-skill-level').selectOption('advanced');
     await editor.locator('.js-add-skill').click();
 
-    // Pill renders in the advanced (blue) palette.
+    // Pill renders in the advanced (brand) palette.
     await expect(editor.locator('.js-skill-pills span[data-skill-index]', { hasText: 'Python' })).toBeVisible();
-    await expect(editor.locator('.js-skill-pills .bg-blue-100')).toHaveCount(1);
+    await expect(editor.locator('.js-skill-pills .bg-brand-tint')).toHaveCount(1);
 
     // Reload → persisted.
     await page.reload();

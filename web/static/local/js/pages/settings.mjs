@@ -1,7 +1,7 @@
 // Settings page: manage the two storage backends (local disk, Google Drive)
 // and take manual snapshots. Auto-snapshot config lands in a later phase.
-// Styling mirrors the legacy Go app (rounded-2xl cards, blue-600 buttons,
-// blue-700 eyebrows).
+// Styling uses the shared "cool-ledger" tokens (brand teal, ink text, brass
+// accents) via CLS + tailwind.css theme variables.
 
 import { exportDb, importDb, wipeDb, disposeWorker } from '../db/client.mjs';
 import {
@@ -24,7 +24,7 @@ import { testConnection as testScraperConnection } from '../scrape-client.mjs';
 import { escapeHtml } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { button, badge, inlineError, setInlineError } from '../ui/components.mjs';
+import { button, badge, emptyState, helpText, inlineError, setInlineError, pageHeader } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { SUPPORTED, currentLocale, setLocale, localeDisplayName, t } from '../i18n.mjs';
 
@@ -39,20 +39,17 @@ const render = (root) => {
       <div id="toast" class="hidden"></div>
 
       <section class="space-y-2">
-        <p class="${CLS.eyebrow}">${t('page.settings.title')}</p>
-        <p class="text-sm text-slate-500">
-          ${t('settings.section.storage_intro')}
-        </p>
+        ${pageHeader({ page: 'settings', title: t('page.settings.title'), tagline: t('settings.section.storage_intro') })}
       </section>
 
       <section class="${CLS.card}">
-        <header class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div class="min-w-0 flex-1 space-y-1">
-            <div class="flex flex-wrap items-center gap-2">
+        <header class="${CLS.cardHeadRow}">
+          <div class="${CLS.flexTextCol}">
+            <div class="${CLS.chipRowInline}">
               <p class="${CLS.eyebrow}">${t('settings.local_disk.eyebrow')}</p>
               <span id="disk-status"></span>
             </div>
-            <p class="text-sm text-slate-500" id="local-disk-support"></p>
+            ${helpText('', { id: 'local-disk-support' })}
           </div>
           <div class="flex shrink-0 flex-wrap gap-2">
             ${button({ id: 'btn-connect-disk', variant: 'successIcon', icon: 'link', iconOnly: true, ariaLabel: t('settings.local_disk.action.connect'), disabled: true })}
@@ -65,15 +62,13 @@ const render = (root) => {
       </section>
 
       <section class="${CLS.card}">
-        <header class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div class="min-w-0 flex-1 space-y-1">
-            <div class="flex flex-wrap items-center gap-2">
+        <header class="${CLS.cardHeadRow}">
+          <div class="${CLS.flexTextCol}">
+            <div class="${CLS.chipRowInline}">
               <p class="${CLS.eyebrow}">${t('settings.drive.eyebrow')}</p>
               <span id="drive-status"></span>
             </div>
-            <p class="text-sm text-slate-500">
-              ${t('settings.drive.help')}
-            </p>
+            ${helpText(t('settings.drive.help'))}
           </div>
           <div class="flex shrink-0 flex-wrap gap-2">
             ${button({ id: 'btn-connect-drive', variant: 'successIcon', icon: 'link', iconOnly: true, ariaLabel: t('settings.drive.action.connect') })}
@@ -88,22 +83,17 @@ const render = (root) => {
       <section class="${CLS.card}">
         <div class="space-y-1">
           <p class="${CLS.eyebrow}">${t('settings.snapshot.eyebrow')}</p>
-          <p class="text-sm text-slate-500">
-            ${t('settings.snapshot.help_line1')}
-            ${t('settings.snapshot.help_line2')}
-          </p>
-          <p class="text-sm text-slate-500">
-            ${t('settings.snapshot.help_line3')}
-          </p>
+          ${helpText(`${t('settings.snapshot.help_line1')} ${t('settings.snapshot.help_line2')}`)}
+          ${helpText(t('settings.snapshot.help_line3'))}
         </div>
         ${inlineError({ id: 'snapshot-error' })}
-        <div class="flex flex-wrap items-center gap-3">
-          <label class="flex items-center gap-2 text-sm text-slate-700">
+        <div class="${CLS.formRow}">
+          <label class="flex items-center gap-2 text-sm text-ink-soft">
             ${t('settings.snapshot.keep_last_prefix')}
             <input id="keep-count" type="number" min="1" value="5" class="${CLS.inputCompact}">
             ${t('settings.snapshot.keep_last_suffix')}
           </label>
-          <label class="flex items-center gap-2 text-sm text-slate-700">
+          <label class="flex items-center gap-2 text-sm text-ink-soft">
             ${t('settings.snapshot.label_field')}
             <input id="snapshot-label" type="text" placeholder="${t('settings.snapshot.label_placeholder')}" maxlength="40" class="${CLS.inputCompact}" style="width: 14rem">
           </label>
@@ -115,9 +105,9 @@ const render = (root) => {
       <section id="language" class="${CLS.card}">
         <header class="space-y-1">
           <p class="${CLS.eyebrow}">${t('settings.language.label')}</p>
-          <p class="text-sm text-slate-500">${t('settings.language.help')}</p>
+          ${helpText(t('settings.language.help'))}
         </header>
-        <label class="block text-sm text-slate-700">
+        <label class="block ${CLS.bodyText}">
           <select id="locale-select" class="${CLS.input} mt-1">
             ${SUPPORTED.map(code => `<option value="${code}"${code === currentLocale() ? ' selected' : ''}>${localeDisplayName(code)}</option>`).join('')}
           </select>
@@ -130,37 +120,35 @@ const render = (root) => {
             <p class="${CLS.eyebrow}">${t('settings.ai.eyebrow')}</p>
             <span id="byok-status"></span>
           </div>
-          <p class="text-sm text-slate-500">
-            ${t('settings.ai.help')}
-          </p>
+          ${helpText(t('settings.ai.help'))}
         </header>
         ${inlineError({ id: 'byok-error' })}
         <div id="byok-fields" class="space-y-3">
-          <label class="block text-sm text-slate-700">
+          <label class="block ${CLS.bodyText}">
             ${t('settings.ai.field.base_url.label')}
             <input id="byok-base-url" type="url" placeholder="https://api.openai.com/v1" class="${CLS.input} mt-1">
           </label>
-          <label class="block text-sm text-slate-700">
+          <label class="block ${CLS.bodyText}">
             ${t('settings.ai.field.model.label')}
             <input id="byok-model" type="text" placeholder="gpt-4o-mini" class="${CLS.input} mt-1">
           </label>
-          <label class="block text-sm text-slate-700">
+          <label class="block ${CLS.bodyText}">
             ${t('settings.ai.field.api_key.label')}
-            <span class="ml-1 text-xs text-slate-500">${t('settings.ai.field.api_key.note')}</span>
+            <span class="ml-1 ${CLS.helpText}">${t('settings.ai.field.api_key.note')}</span>
             <div class="mt-1 flex items-center gap-2">
               <input id="byok-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" class="${CLS.input} flex-1">
               ${button({ id: 'btn-byok-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: t('settings.ai.field.api_key.show') })}
             </div>
           </label>
-          <label class="flex items-center gap-2 text-sm text-slate-700">
+          <label class="flex items-center gap-2 text-sm text-ink-soft">
             <input id="byok-clear-on-signout" type="checkbox" class="h-4 w-4">
             <span>${t('settings.ai.field.clear_with_drive.label')}</span>
           </label>
-          <div class="flex flex-wrap items-center gap-3">
+          <div class="${CLS.formRow}">
             ${button({ id: 'btn-byok-save', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('settings.ai.action.save'), disabled: true })}
             ${button({ id: 'btn-byok-test', variant: 'secondaryCompact', icon: 'link', label: t('settings.ai.action.test') })}
             ${button({ id: 'btn-byok-clear', variant: 'dangerCompact', icon: 'trash', label: t('settings.ai.action.clear') })}
-            <span id="byok-test-result" class="text-sm text-slate-600"></span>
+            <span id="byok-test-result" class="${CLS.bodyText}"></span>
           </div>
         </div>
       </section>
@@ -171,54 +159,47 @@ const render = (root) => {
             <p class="${CLS.eyebrow}">${t('settings.scraper.eyebrow')}</p>
             <span id="scraper-status"></span>
           </div>
-          <p class="text-sm text-slate-500">
-            ${t('settings.scraper.help')}
-          </p>
+          ${helpText(t('settings.scraper.help'))}
         </header>
         ${inlineError({ id: 'scraper-error' })}
         <div id="scraper-fields" class="space-y-3">
-          <label class="block text-sm text-slate-700">
+          <label class="block ${CLS.bodyText}">
             ${t('settings.scraper.field.backend.label')}
             <select id="scraper-backend" class="${CLS.input} mt-1">
               <option value="firecrawl">${t('settings.scraper.field.backend.firecrawl')}</option>
               <option value="crawl4ai">${t('settings.scraper.field.backend.crawl4ai')}</option>
             </select>
           </label>
-          <label class="block text-sm text-slate-700">
+          <label class="block ${CLS.bodyText}">
             ${t('settings.scraper.field.base_url.label')}
             <input id="scraper-base-url" type="url" placeholder="https://api.firecrawl.dev" class="${CLS.input} mt-1">
           </label>
-          <label class="block text-sm text-slate-700">
+          <label class="block ${CLS.bodyText}">
             ${t('settings.scraper.field.api_key.label')}
-            <span class="ml-1 text-xs text-slate-500">${t('settings.scraper.field.api_key.note')}</span>
+            <span class="ml-1 ${CLS.helpText}">${t('settings.scraper.field.api_key.note')}</span>
             <div class="mt-1 flex items-center gap-2">
               <input id="scraper-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="fc-…" class="${CLS.input} flex-1">
               ${button({ id: 'btn-scraper-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: t('settings.scraper.field.api_key.show') })}
             </div>
           </label>
-          <div class="flex flex-wrap items-center gap-3">
+          <div class="${CLS.formRow}">
             ${button({ id: 'btn-scraper-save', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('settings.scraper.action.save'), disabled: true })}
             ${button({ id: 'btn-scraper-test', variant: 'secondaryCompact', icon: 'link', label: t('settings.scraper.action.test') })}
             ${button({ id: 'btn-scraper-clear', variant: 'dangerCompact', icon: 'trash', label: t('settings.scraper.action.clear') })}
-            <span id="scraper-test-result" class="text-sm text-slate-600"></span>
+            <span id="scraper-test-result" class="${CLS.bodyText}"></span>
           </div>
-          <p class="text-xs text-slate-500">${t('settings.scraper.capabilities')}</p>
+          ${helpText(t('settings.scraper.capabilities'))}
         </div>
       </section>
 
-      <section class="${CLS.card} border-red-200">
+      <section class="${CLS.card} border-status-out/30">
         <div class="space-y-1">
-          <p class="${CLS.eyebrow} text-red-700">${t('settings.danger.eyebrow')}</p>
-          <p class="text-sm text-slate-500">
-            ${t('settings.danger.help_line1')}
-            ${t('settings.danger.help_line2')}
-          </p>
-          <p class="text-sm text-slate-500">
-            ${t('settings.danger.help_line3')}
-          </p>
+          <p class="${CLS.eyebrow} text-status-out">${t('settings.danger.eyebrow')}</p>
+          ${helpText(`${t('settings.danger.help_line1')} ${t('settings.danger.help_line2')}`)}
+          ${helpText(t('settings.danger.help_line3'))}
         </div>
         ${inlineError({ id: 'danger-error' })}
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="${CLS.formRow}">
           ${button({ id: 'btn-wipe-all', variant: 'dangerCompact', icon: 'trash', label: t('settings.danger.action.wipe') })}
           ${button({ id: 'btn-load-sample', variant: 'primaryCompact', icon: 'arrowUpTray', label: t('settings.danger.action.load_sample') })}
         </div>
@@ -229,18 +210,18 @@ const render = (root) => {
 
 const renderSnapshotList = (el, list, onRestore, onDelete) => {
   if (!list.length) {
-    el.innerHTML = `<div class="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">${t('settings.snapshots.empty')}</div>`;
+    el.innerHTML = emptyState({ message: t('settings.snapshots.empty') });
     return;
   }
   el.innerHTML = `
     <ul class="space-y-2">
       ${list.map(s => `
-        <li class="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-          <div class="min-w-0 space-y-1">
-            <p class="truncate font-mono text-xs text-slate-800">${escapeHtml(s.name || s.id)}</p>
-            <p class="text-xs text-slate-500">${s.createdAt.toLocaleString()} · ${kb(s.sizeBytes)}</p>
+        <li class="flex items-center justify-between gap-3 rounded-2xl border border-line bg-paper px-4 py-3">
+          <div class="${CLS.textCol}">
+            <p class="truncate font-mono text-xs text-ink">${escapeHtml(s.name || s.id)}</p>
+            <p class="${CLS.helpText}">${s.createdAt.toLocaleString()} · ${kb(s.sizeBytes)}</p>
           </div>
-          <div class="flex shrink-0 items-center gap-2">
+          <div class="${CLS.headActions}">
             ${button({ variant: 'icon', icon: 'arrowUpTray', iconOnly: true, ariaLabel: t('settings.snapshots.aria.restore', { name: s.name || s.id }), extraClass: 'js-restore', dataset: { id: s.id, name: s.name || s.id } })}
             ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('settings.snapshots.aria.delete', { name: s.name || s.id }), extraClass: 'js-delete', dataset: { id: s.id, name: s.name || s.id } })}
           </div>
@@ -600,7 +581,7 @@ const wireLocalDisk = () => {
   const listEl = document.getElementById('local-snapshots');
 
   if (!LocalDiskBackend.isSupported()) {
-    supportEl.innerHTML = `<span class="text-red-600">${t('settings.local_disk.unsupported')}</span>`;
+    supportEl.innerHTML = `<span class="text-status-out">${t('settings.local_disk.unsupported')}</span>`;
     connect.disabled = true;
   } else {
     supportEl.textContent = t('settings.local_disk.help');

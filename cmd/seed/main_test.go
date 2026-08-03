@@ -88,8 +88,8 @@ func TestSeedProfileWritesOverviewSparksResumesAndBrags(t *testing.T) {
 
 	// Fixture counts — bumping these means the sample changed intentionally,
 	// so the test doubles as a canary for accidental fixture regressions.
-	if got := queryInt(t, db, `SELECT COUNT(*) FROM career_sparks`); got != 7 {
-		t.Errorf("career_sparks count = %d, want 7", got)
+	if got := queryInt(t, db, `SELECT COUNT(*) FROM career_sparks`); got != 6 {
+		t.Errorf("career_sparks count = %d, want 6", got)
 	}
 	if got := queryInt(t, db, `SELECT COUNT(*) FROM resumes`); got != 2 {
 		t.Errorf("resumes count = %d, want 2", got)
@@ -141,8 +141,8 @@ func TestSeedResetsProfileBetweenRuns(t *testing.T) {
 	}
 	defer db.Close()
 
-	if got := queryInt(t, db, `SELECT COUNT(*) FROM career_sparks`); got != 7 {
-		t.Errorf("career_sparks after two runs = %d, want 7 (reset should be default)", got)
+	if got := queryInt(t, db, `SELECT COUNT(*) FROM career_sparks`); got != 6 {
+		t.Errorf("career_sparks after two runs = %d, want 6 (reset should be default)", got)
 	}
 	if got := queryInt(t, db, `SELECT COUNT(*) FROM resumes`); got != 2 {
 		t.Errorf("resumes after two runs = %d, want 2", got)

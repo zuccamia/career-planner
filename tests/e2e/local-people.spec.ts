@@ -29,8 +29,8 @@ const createPerson = async (
 
 const openThreadsFor = async (page: Page, name: string) => {
   const card = page.locator('#list-content li', { hasText: name });
-  await card.getByRole('button', { name: 'Threads' }).click();
-  await expect(page.getByText(new RegExp(`Threads — ${name}`))).toBeVisible();
+  await card.getByRole('button', { name: new RegExp(`Open ${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
+  await expect(page.locator('#threads-panel').getByRole('heading', { name })).toBeVisible();
 };
 
 const createThread = async (page: Page, subject: string) => {
@@ -66,27 +66,24 @@ test.describe('local people page', () => {
     const card = page.locator('#list-content li', { hasText: 'Ada Lovelace' });
     await expect(card).toBeVisible();
     await expect(card).toContainText('Analytical Engineer');
-    await expect(card.getByRole('link', { name: 'LinkedIn' })).toHaveAttribute(
-      'href',
-      'https://linkedin.com/in/ada',
-    );
 
-    // Edit
-    await card.getByRole('button', { name: 'Edit person' }).click();
-    await expect(page.locator('#editor-panel').getByText('Edit', { exact: true })).toBeVisible();
+    // Edit renders inside the threads slide-over (in place of the thread
+    // list). The form itself lives in #threads-panel now.
+    await card.getByRole('button', { name: /Open Ada Lovelace/ }).click();
+    const panel = page.locator('#threads-panel');
+    await expect(panel).toBeVisible();
+    await panel.getByRole('button', { name: 'Edit person' }).click();
+    await expect(panel.getByText('Edit', { exact: true })).toBeVisible();
     await page.getByLabel('Title').fill('Software Engineer');
-    await page.getByRole('button', { name: 'Save changes' }).click();
+    await panel.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.locator('#toast')).toContainText('Person saved');
     await expect(
       page.locator('#list-content li', { hasText: 'Ada Lovelace' }),
     ).toContainText('Software Engineer');
 
-    // Delete
+    // After save the slide-over stays open in view mode — delete from there.
     page.once('dialog', (dialog) => dialog.accept());
-    await page
-      .locator('#list-content li', { hasText: 'Ada Lovelace' })
-      .getByRole('button', { name: /^Delete Ada Lovelace$/ })
-      .click();
+    await panel.getByRole('button', { name: /^Delete Ada Lovelace$/ }).click();
     await expect(page.locator('#toast')).toContainText('Person deleted');
     await expect(page.getByText('No people yet.')).toBeVisible();
   });
@@ -108,8 +105,8 @@ test.describe('local people page', () => {
     await createPerson(page, { fullName: 'Alan Turing', notes: 'Halting problem person.' });
 
     const card = page.locator('#list-content li', { hasText: 'Alan Turing' });
-    await card.getByRole('button', { name: 'Threads' }).click();
-    await expect(page.getByText(/Threads — Alan Turing/)).toBeVisible();
+    await card.getByRole('button', { name: /Open Alan Turing/ }).click();
+    await expect(page.locator('#threads-panel').getByRole('heading', { name: 'Alan Turing' })).toBeVisible();
     await expect(page.getByText('No threads yet.')).toBeVisible();
 
     // Create thread
@@ -181,24 +178,34 @@ test.describe('local people page', () => {
     await createPerson(page, { fullName: 'Ada Alpha' });
     // Attach Ada to Alpha Co. via the edit form (createPerson doesn't set it).
     await page.locator('#list-content li', { hasText: 'Ada Alpha' })
-      .getByRole('button', { name: 'Edit person' }).click();
+      .getByRole('button', { name: /Open Ada Alpha/ }).click();
+    const adaPanel = page.locator('#threads-panel');
+    await adaPanel.getByRole('button', { name: 'Edit person' }).click();
     await page.getByLabel('Company', { exact: true }).selectOption({ label: 'Alpha Co.' });
-    await page.getByRole('button', { name: 'Save changes' }).click();
+    await adaPanel.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.locator('#toast')).toContainText('Person saved');
+    // Slide-over stays open after save — close it so the next Add person click
+    // isn't blocked by the backdrop.
+    await page.locator('#btn-threads-close').click();
+    await expect(adaPanel).toBeHidden();
 
     await createPerson(page, { fullName: 'Bob Beta' });
     await page.locator('#list-content li', { hasText: 'Bob Beta' })
-      .getByRole('button', { name: 'Edit person' }).click();
+      .getByRole('button', { name: /Open Bob Beta/ }).click();
+    const bobPanel = page.locator('#threads-panel');
+    await bobPanel.getByRole('button', { name: 'Edit person' }).click();
     await page.getByLabel('Company', { exact: true }).selectOption({ label: 'Beta Co.' });
-    await page.getByRole('button', { name: 'Save changes' }).click();
+    await bobPanel.getByRole('button', { name: 'Save changes' }).click();
     await expect(page.locator('#toast')).toContainText('Person saved');
+    await page.locator('#btn-threads-close').click();
+    await expect(bobPanel).toBeHidden();
 
-    // Jump in via the companies page — click Alpha's people pill so we exercise
-    // the same navigation the user would.
+    // Read Alpha's id from its row and navigate to the filtered URL directly.
     await page.goto('/local/companies');
     await expect(page.getByText('Companies', { exact: true })).toBeVisible({ timeout: 30_000 });
-    await page.locator('#list-content li', { hasText: 'Alpha Co.' })
-      .getByTitle('People at Alpha Co.').click();
+    const alphaId = await page.locator('#list-content li', { hasText: 'Alpha Co.' })
+      .getAttribute('data-panel-row');
+    await page.goto(`/local/people?company_id=${alphaId}`);
 
     // Banner shows the filter, count copy is company-scoped, and only Ada
     // remains in the list.
@@ -265,13 +272,17 @@ test.describe('local people page', () => {
     await expect(card.locator('b')).toHaveCount(0);
     await expect(card).not.toContainText('&amp;');
 
+    // Delete lives in the threads slide-over — open the row first.
+    await card.getByRole('button', { name: new RegExp(`Open ${trickyName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click();
+    const panel = page.locator('#threads-panel');
+    await expect(panel).toBeVisible();
     const dialogText = await new Promise<string>((resolve) => {
       page.once('dialog', (dialog) => {
         const msg = dialog.message();
         dialog.dismiss();
         resolve(msg);
       });
-      card.getByRole('button', { name: `Delete ${trickyName}` }).click();
+      panel.getByRole('button', { name: `Delete ${trickyName}` }).click();
     });
     expect(dialogText).toContain(trickyName);
     expect(dialogText).not.toContain('&amp;');

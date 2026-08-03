@@ -20,10 +20,14 @@ import { createProgress } from '../ui/progress.mjs';
 import { escapeHtml, formatDate } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { badge, button, emptyState, inlineError, setInlineError, pageHeader, setPageCount } from '../ui/components.mjs';
+import { badge, button, emptyState, fileRow, fileStamp, filterBanner, helpText, inlineError, setInlineError, metaText, pageHeader, panelTitle, sectionTitle, setPageCount } from '../ui/components.mjs';
+import { headlineStatus, listApplicationsByPerson } from '../entities/applications.mjs';
 import { outputLanguageSelect, readOutputLanguage } from '../ui/output_language.mjs';
 import { icon } from '../ui/icons.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
+import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../ui/slide_over.mjs';
+import { collectionListPanel, collectionRowsHtml } from '../ui/collection_list.mjs';
+import { relativeAge, initials } from '../ui/format.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
 import { t } from '../i18n.mjs';
 
@@ -61,9 +65,9 @@ const channelBadge = (channel) => {
 // entry-show template (arrow-in / arrow-out / note paper) so both surfaces
 // signal direction the same way.
 const DIRECTION_STYLES = {
-  inbound:  { icon: 'arrowIn',  circle: 'bg-emerald-100 text-emerald-700', label: 'Inbound' },
-  outbound: { icon: 'arrowOut', circle: 'bg-blue-100 text-blue-700',       label: 'Outbound' },
-  note:     { icon: 'note',     circle: 'bg-slate-100 text-slate-600',     label: 'Note' },
+  inbound:  { icon: 'arrowIn',  circle: 'bg-status-win-bg text-status-win', label: 'Inbound' },
+  outbound: { icon: 'arrowOut', circle: 'bg-brand-tint text-brand',         label: 'Outbound' },
+  note:     { icon: 'note',     circle: 'bg-paper text-ink-soft',     label: 'Note' },
 };
 
 const directionIcon = (direction) => {
@@ -89,7 +93,7 @@ const socialIconLink = (url) => {
   if (!url) return '';
   const { icon: name, label } = socialNetworkFromURL(url);
   return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" title="${label}" aria-label="${label}"
-        class="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-blue-700 transition">
+        class="inline-flex h-5 w-5 items-center justify-center rounded-full text-ink-faint hover:bg-paper hover:text-brand transition">
       ${icon(name, 3.5)}
     </a>`;
 };
@@ -99,18 +103,18 @@ const shellHtml = () => `
   <div class="space-y-6">
     <div id="toast" class="hidden"></div>
 
-    <section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      ${pageHeader({ title: t('page.people.title'), countId: 'people-count' })}
+    <section class="${CLS.pageHeadRow}">
+      ${pageHeader({ page: 'people', title: t('page.people.title'), countId: 'people-count' })}
       ${button({ id: 'btn-new', variant: 'primaryCompact', icon: 'plus', label: t('people.action.new'), ariaLabel: t('people.aria.add') })}
     </section>
 
     <section id="editor-panel" class="hidden"></section>
     <section id="threads-panel" class="hidden"></section>
 
-    <section id="list-panel" class="${CLS.card}">
-      ${inlineError({ id: 'list-error' })}
-      <div id="list-content"></div>
-    </section>
+    ${collectionListPanel({
+      searchId: 'people-search',
+      searchPlaceholder: t('people.search.placeholder'),
+    })}
   </div>
 `;
 
@@ -128,7 +132,7 @@ const editorHtml = (person, companies) => {
   return `
     <div class="${CLS.card}">
       <form id="editor-form" class="space-y-5">
-        <div class="flex items-baseline justify-between">
+        <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('people.form.new_eyebrow') : t('people.form.edit_eyebrow')}</p>
           <div class="flex items-center gap-2">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('people.form.aria.create') : t('common.action.save_changes') })}
@@ -156,8 +160,8 @@ const editorHtml = (person, companies) => {
             <select id="company_id" name="company_id" class="${CLS.select}">
               ${companyOptions}
             </select>
-            <p class="text-xs text-slate-500">
-              ${t('people.field.company.help_prefix')} <a href="/local/companies?new=1" class="text-blue-700 underline hover:text-blue-800">${t('people.field.company.help_link')}</a> ${t('people.field.company.help_suffix')}
+            <p class="${CLS.helpText}">
+              ${t('people.field.company.help_prefix')} <a href="/local/companies?new=1" class="${CLS.brandLink}">${t('people.field.company.help_link')}</a> ${t('people.field.company.help_suffix')}
             </p>
           </div>
           <div class="grid gap-2">
@@ -172,73 +176,64 @@ const editorHtml = (person, companies) => {
           <label class="${CLS.label}" for="notes">${t('people.field.notes.label')}</label>
           <textarea id="notes" name="notes" rows="4" class="${CLS.textarea}"
                     placeholder="${t('people.field.notes.placeholder')}">${escapeHtml(p.notes)}</textarea>
-          <p class="text-xs text-slate-500">
-            ${t('people.field.notes.help')}
-          </p>
+          ${helpText(t('people.field.notes.help'))}
         </div>
       </form>
     </div>
   `;
 };
 
-const listHtml = (people, threadCounts) => {
-  if (!people.length) {
-    return emptyState({ message: t('people.list.empty') });
-  }
-  return `
-    <ul class="space-y-3">
-      ${people.map(p => {
-        const count = threadCounts.get(p.id) ?? 0;
-        return `
-          <li data-panel-row="${p.id}">
-            <div class="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-blue-200 hover:bg-blue-50/40">
-              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div class="space-y-2 min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="font-semibold text-slate-900">${escapeHtml(p.full_name)}</span>
-                    ${socialIconLink(p.social_url)}
-                    ${count > 0 ? badge({ color: 'blue', size: 'xs', label: count === 1 ? t('people.list.threads_one', { n: count }) : t('people.list.threads_many', { n: count }) }) : ''}
-                  </div>
-                  ${p.title || p.company_name ? `
-                    <p class="text-sm text-slate-600">
-                      ${escapeHtml(p.title)}${p.title && p.company_name ? ' · ' : ''}${escapeHtml(p.company_name)}
-                    </p>` : ''}
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span class="text-sm text-slate-500">${t('common.updated_at', { date: formatDate(p.updated_at) })}</span>
-                  ${button({ variant: 'secondaryCompact', label: t('people.action.threads'), extraClass: 'js-threads', dataset: { id: p.id } })}
-                  ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('people.aria.edit'), extraClass: 'js-edit', dataset: { id: p.id } })}
-                  ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('people.aria.delete', { name: p.full_name }), extraClass: 'js-delete', dataset: { id: p.id, name: p.full_name } })}
-                </div>
-              </div>
-            </div>
-          </li>`;
-      }).join('')}
-    </ul>`;
+const rowMeta = (p) => {
+  const parts = [];
+  if (p.title) parts.push(p.title);
+  if (p.company_name) parts.push(p.company_name);
+  parts.push(t('common.updated_at', { date: formatDate(p.updated_at) }));
+  return parts.join('  ·  ');
 };
+
+const personFileRow = (p, threadCount) => fileRow({
+  id: p.id,
+  jsClass: 'js-threads',
+  ariaLabel: t('people.aria.open', { name: p.full_name }),
+  avatar: `<div class="${CLS.avatarBadge}">${escapeHtml(initials(p.full_name))}</div>`,
+  title: p.full_name,
+  pill: threadCount > 0
+    ? badge({ color: 'blue', size: 'xs', label: threadCount === 1 ? t('people.list.threads_one', { n: threadCount }) : t('people.list.threads_many', { n: threadCount }) })
+    : '',
+  meta: rowMeta(p),
+});
 
 // ---------- threads panel ----------
 
-const threadsHeaderHtml = (person) => `
-  <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-    <div class="space-y-1">
-      <p class="${CLS.eyebrow}">${t('people.threads.eyebrow', { name: escapeHtml(person.full_name) })}</p>
-      <p class="text-xs text-slate-500">
-        ${person.notes ? t('people.threads.help_with_notes') : t('people.threads.help_no_notes')}
-      </p>
+const threadsHeaderHtml = (person) => {
+  const social = (person.social_url || '').trim();
+  const nameHtml = social
+    ? `<a href="${escapeHtml(social)}" target="_blank" rel="noopener noreferrer" class="hover:text-brand hover:underline">${escapeHtml(person.full_name)}</a>`
+    : '';
+  return `
+  <header class="${CLS.panelHeadRow}">
+    <div class="${CLS.textCol}">
+      ${fileStamp('person', person.id)}
+      ${panelTitle(person.full_name, nameHtml)}
+      ${person.title || person.company_name ? metaText(
+        `${person.title || ''}${person.title && person.company_name ? '  ·  ' : ''}${person.company_name || ''}`,
+      ) : ''}
     </div>
-    <div class="flex flex-nowrap items-center gap-2 shrink-0">
+    <div class="${CLS.headActions}">
       ${button({ id: 'btn-new-thread', icon: 'plus', variant: 'primaryCompact', label: t('people.action.new_thread'), ariaLabel: t('people.aria.add_thread') })}
+      ${button({ id: 'btn-threads-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('people.aria.edit') })}
+      ${button({ id: 'btn-threads-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('people.aria.delete', { name: person.full_name }) })}
       ${button({ id: 'btn-threads-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
     </div>
-  </div>
+  </header>
   ${inlineError({ id: 'threads-error' })}
   <div id="threads-progress" class="hidden"></div>
 `;
+};
 
 const newThreadFormHtml = () => `
-  <form id="new-thread-form" class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-    <div class="flex items-baseline justify-between">
+  <form id="new-thread-form" class="${CLS.paperCard} space-y-3">
+    <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('people.thread_form.new_eyebrow')}</p>
       <div class="flex items-center gap-2">
         ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.create_thread') })}
@@ -264,9 +259,7 @@ const newThreadFormHtml = () => `
 
 const threadListHtml = (threads, openThreadID) => {
   if (!threads.length) {
-    return `<p class="rounded-2xl bg-slate-50 px-4 py-4 text-sm text-slate-500">
-      ${t('people.threads.empty')}
-    </p>`;
+    return emptyState({ message: t('people.threads.empty') });
   }
   return `
     <ul class="space-y-3">
@@ -274,21 +267,21 @@ const threadListHtml = (threads, openThreadID) => {
         const expanded = th.id === openThreadID;
         return `
           <li>
-            <div class="rounded-2xl border border-slate-200 bg-white p-4 ${expanded ? 'ring-1 ring-blue-200' : ''}">
-              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div class="${CLS.surfaceCard} ${expanded ? 'ring-1 ring-brand/30' : ''}">
+              <div class="${CLS.cardHeadRow}">
                 <div class="space-y-1 min-w-0">
-                  <div class="flex flex-wrap items-center gap-2">
+                  <div class="${CLS.chipRowInline}">
                     ${channelBadge(th.channel)}
                     ${badge({ color: th.status === 'open' ? 'emerald' : 'slate', size: 'xs', label: th.status === 'open' ? t('people.threads.status_open') : t('people.threads.status_closed') })}
-                    <span class="font-semibold text-slate-900">${escapeHtml(th.subject) || `<span class="italic text-slate-400">${t('people.threads.untitled')}</span>`}</span>
+                    <span class="font-semibold text-ink">${escapeHtml(th.subject) || `<span class="${CLS.placeholder}">${t('people.threads.untitled')}</span>`}</span>
                   </div>
-                  <p class="text-sm text-slate-500">
+                  <p class="${CLS.helpText}">
                     ${th.summary
                       ? t('people.threads.last_activity', { date: formatDate(th.last_activity_at), summary: escapeHtml(th.summary) })
                       : t('people.threads.last_activity_no_summary', { date: formatDate(th.last_activity_at) })}
                   </p>
                 </div>
-                <div class="flex items-center gap-2 shrink-0">
+                <div class="${CLS.headActions}">
                   ${button({ variant: 'secondaryCompact', label: expanded ? t('people.action.hide') : t('people.action.open_thread'), extraClass: 'js-toggle-thread', dataset: { id: th.id } })}
                   ${button({
                     variant: 'icon',
@@ -301,7 +294,7 @@ const threadListHtml = (threads, openThreadID) => {
                   ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('people.aria.delete_thread', { subject: th.subject }), extraClass: 'js-delete-thread', dataset: { id: th.id, subject: th.subject } })}
                 </div>
               </div>
-              ${expanded ? `<div id="thread-detail-${th.id}" class="mt-4 border-t border-slate-100 pt-4"></div>` : ''}
+              ${expanded ? `<div id="thread-detail-${th.id}" class="mt-4 ${CLS.dividerTop}"></div>` : ''}
             </div>
           </li>`;
       }).join('')}
@@ -316,15 +309,15 @@ const isMultiLineContent = (s) => s.includes('\n') || s.length > 80;
 const entryHtml = (e) => {
   const collapsible = isMultiLineContent(e.content);
   return `
-    <li class="flex items-start gap-3 rounded-xl bg-slate-50 px-3 py-2">
+    <li class="${CLS.entryRow}">
       <div class="shrink-0">
         ${directionIcon(e.direction)}
       </div>
       <div class="min-w-0 flex-1">
-        <p class="text-xs text-slate-500">${formatDate(e.occurred_at)}</p>
-        <p class="js-entry-content ${collapsible ? 'line-clamp-1' : 'whitespace-pre-wrap'} text-sm text-slate-800"
+        <p class="${CLS.helpText}">${formatDate(e.occurred_at)}</p>
+        <p class="js-entry-content ${collapsible ? 'line-clamp-1' : 'whitespace-pre-wrap'} text-sm text-ink"
            data-collapsed="${collapsible ? '1' : '0'}">${escapeHtml(e.content)}</p>
-        ${collapsible ? `<button type="button" class="js-toggle-entry mt-1 text-xs font-medium text-blue-700 hover:text-blue-800" data-id="${e.id}">${t('people.action.more')}</button>` : ''}
+        ${collapsible ? `<button type="button" class="js-toggle-entry mt-1 ${CLS.tinyLink}" data-id="${e.id}">${t('people.action.more')}</button>` : ''}
       </div>
       ${button({
         variant: 'dangerIcon', icon: 'trash', iconOnly: true,
@@ -338,7 +331,7 @@ const entryHtml = (e) => {
 const threadDetailHtml = (thread, entries) => `
   <div class="space-y-4">
     <div class="space-y-1">
-      <div class="flex flex-wrap gap-2">
+      <div class="${CLS.chipRow}">
         ${button({ id: 'btn-new-entry', variant: 'primaryCompact', icon: 'plus', label: t('people.action.new_entry'), ariaLabel: t('people.aria.add_entry') })}
         ${button({ id: 'btn-generate-outreach', variant: 'secondaryCompact', icon: 'sparkles', label: t('people.action.draft_outreach') })}
         ${button({ id: 'btn-generate-reply', variant: 'secondaryCompact', icon: 'sparkles', label: t('people.action.draft_reply') })}
@@ -347,7 +340,7 @@ const threadDetailHtml = (thread, entries) => `
           ${button({ id: 'btn-summarize', variant: 'secondaryCompact', icon: 'sparkles', label: thread.summary ? t('people.action.resummarize') : t('people.action.summarize') })}
         </div>
       </div>
-      <p class="text-xs text-slate-500">${t('people.threads.language_note')}</p>
+      ${helpText(t('people.threads.language_note'))}
     </div>
 
     <div id="draft-panel" class="hidden"></div>
@@ -357,9 +350,7 @@ const threadDetailHtml = (thread, entries) => `
     ${entries.length ? `
       <ul class="space-y-2">${entries.map(entryHtml).join('')}</ul>
     ` : `
-      <p class="rounded-xl bg-slate-50 px-3 py-3 text-sm text-slate-500">
-        ${t('people.entry.empty')}
-      </p>
+      ${emptyState({ message: t('people.entry.empty') })}
     `}
   </div>
 `;
@@ -375,8 +366,8 @@ const todayLocalDate = () => {
 };
 
 const newEntryFormHtml = () => `
-  <form id="new-entry-form" class="space-y-3 rounded-xl border border-slate-200 bg-white p-3">
-    <div class="flex items-baseline justify-between">
+  <form id="new-entry-form" class="space-y-3 rounded-xl border border-line bg-surface p-3">
+    <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('people.entry_form.new_eyebrow')}</p>
       <div class="flex items-center gap-2">
         ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.create_entry') })}
@@ -406,8 +397,8 @@ const newEntryFormHtml = () => `
 `;
 
 const draftPanelHtml = (goal, message) => `
-  <div class="space-y-3 rounded-xl border border-blue-200 bg-blue-50/40 p-3">
-    <div class="flex items-baseline justify-between">
+  <div class="space-y-3 rounded-xl border border-brand/20 bg-brand-tint/40 p-3">
+    <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('people.draft.eyebrow', { goal })}</p>
       <div class="flex items-center gap-2">
         ${button({ id: 'btn-save-draft', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.save_draft_entry') })}
@@ -423,45 +414,72 @@ const draftPanelHtml = (goal, message) => `
 let editorMode = null;              // null | 'new' | { id }
 let openThreadsPerson = null;       // person row when threads panel is open
 let openThreadID = null;            // currently expanded thread within that panel
+let personEditing = false;
 // Optional company_id filter (from ?company_id=… — set by company-card pill).
 let companyFilter = null;           // { id, name } | null
 
 const filterBannerHtml = () => companyFilter
-  ? `<div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-900">
-       <span>${t('people.list.filter_by_company')} <span class="font-semibold">${escapeHtml(companyFilter.name)}</span></span>
-       <a href="/local/people" class="font-semibold text-blue-700 underline hover:text-blue-800">${t('people.list.clear_filter')}</a>
-     </div>`
+  ? filterBanner({
+      label: t('common.filter.by_company'),
+      name: companyFilter.name,
+      clearHref: '/local/people',
+      clearLabel: t('common.filter.clear'),
+    })
   : '';
 
 // ---------- list handlers ----------
-const refreshList = async () => {
-  const all = await listPeople();
-  const people = companyFilter
-    ? all.filter(p => p.company_id === companyFilter.id)
-    : all;
-  const counts = new Map();
-  await Promise.all(people.map(async (p) => {
-    counts.set(p.id, await countThreadsByPersonID(p.id));
-  }));
-  restoreAllPanels(PANEL_IDS);
-  document.getElementById('list-content').innerHTML = filterBannerHtml() + listHtml(people, counts);
-  if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
-  if (openThreadsPerson) mountInlinePanel('threads-panel', openThreadsPerson.id);
-  setPageCount('people-count', people.length, n => companyFilter
-    ? (n === 1 ? t('people.list.count_one_at_company', { n, company: companyFilter.name }) : t('people.list.count_many_at_company', { n, company: companyFilter.name }))
-    : (n === 1 ? t('people.list.count_one_all', { n }) : t('people.list.count_many_all', { n })));
-  refreshSidebarCounts().catch(() => {});
-  document.querySelectorAll('.js-edit').forEach(btn =>
-    btn.addEventListener('click', () => openEditor({ id: Number(btn.dataset.id) })));
-  document.querySelectorAll('.js-threads').forEach(btn =>
-    btn.addEventListener('click', () => openThreads(Number(btn.dataset.id))));
-  document.querySelectorAll('.js-delete').forEach(btn =>
-    btn.addEventListener('click', () => deletePersonFromList(Number(btn.dataset.id), btn.dataset.name)));
+let filterState = { query: '' };
+let cachedPeople = [];
+let cachedThreadCounts = new Map();
+
+const applyFilters = () => {
+  const q = filterState.query.trim().toLowerCase();
+  return cachedPeople.filter(p => {
+    if (companyFilter && p.company_id !== companyFilter.id) return false;
+    if (q) {
+      const hay = `${p.full_name || ''} ${p.title || ''} ${p.company_name || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
 };
 
-const deletePersonFromList = async (personID, name) => {
+const renderList = () => {
+  const filtered = applyFilters();
+  restoreAllPanels(PANEL_IDS);
+  document.getElementById('list-content').innerHTML =
+    filterBannerHtml()
+    + collectionRowsHtml({
+        rows: filtered.map(p => personFileRow(p, cachedThreadCounts.get(p.id) ?? 0)),
+        emptyMessage: t('people.list.empty'),
+      });
+  if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
+  setPageCount('people-count', filtered.length, n => companyFilter
+    ? (n === 1 ? t('people.list.count_one_at_company', { n, company: companyFilter.name }) : t('people.list.count_many_at_company', { n, company: companyFilter.name }))
+    : (n === 1 ? t('people.list.count_one_all', { n }) : t('people.list.count_many_all', { n })));
+  wireListHandlers();
+};
+
+const wireListHandlers = () => {
+  document.querySelectorAll('.js-threads').forEach(btn =>
+    btn.addEventListener('click', () => openThreads(Number(btn.dataset.id), btn)));
+};
+
+const refreshList = async () => {
+  const all = await listPeople();
+  cachedPeople = all;
+  const counts = new Map();
+  await Promise.all(all.map(async (p) => {
+    counts.set(p.id, await countThreadsByPersonID(p.id));
+  }));
+  cachedThreadCounts = counts;
+  renderList();
+  refreshSidebarCounts().catch(() => {});
+};
+
+const deletePersonFromList = async (personID, name, errorID = 'list-error') => {
   if (!confirm(t('people.confirm.delete', { name }))) return;
-  setInlineError('list-error', '');
+  setInlineError(errorID, '');
   try {
     await deletePerson(personID);
     if (editorMode && editorMode !== 'new' && editorMode.id === personID) closeEditor();
@@ -469,7 +487,7 @@ const deletePersonFromList = async (personID, name) => {
     toast(t('people.toast.deleted'), 'ok');
     await refreshList();
   } catch (err) {
-    setInlineError('list-error', t('people.error.delete_linked', { err: err.message }));
+    setInlineError(errorID, t('people.error.delete_linked', { err: err.message }));
   }
 };
 
@@ -516,9 +534,11 @@ const readEditorForm = (form) => {
   };
 };
 
-const wireEditor = () => {
+const wireEditor = ({ onCancel, onSaved } = {}) => {
+  const cancelFn = onCancel || closeEditor;
+  const savedFn = onSaved || (async () => { closeEditor(); await refreshList(); });
   const form = document.getElementById('editor-form');
-  document.getElementById('btn-cancel').addEventListener('click', closeEditor);
+  document.getElementById('btn-cancel').addEventListener('click', cancelFn);
 
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -541,8 +561,7 @@ const wireEditor = () => {
         await updatePerson(editorMode.id, data);
         toast(t('people.toast.saved'), 'ok');
       }
-      closeEditor();
-      await refreshList();
+      await savedFn();
     } catch (err) {
       setInlineError('editor-error', t('common.error.save_failed', { err: err.message }));
     }
@@ -550,7 +569,7 @@ const wireEditor = () => {
 };
 
 // ---------- threads panel ----------
-const openThreads = async (personID) => {
+const openThreads = async (personID, triggerEl = null) => {
   closeEditor();
   const person = await getPerson(personID);
   if (!person) {
@@ -559,41 +578,112 @@ const openThreads = async (personID) => {
   }
   openThreadsPerson = person;
   openThreadID = null;
-  const panel = document.getElementById('threads-panel');
-  panel.classList.remove('hidden');
   await renderThreads();
-  mountInlinePanel('threads-panel', personID);
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  openSlideOver({
+    panelId: 'threads-panel',
+    trigger: triggerEl,
+    onClose: () => {
+      openThreadsPerson = null;
+      openThreadID = null;
+      personEditing = false;
+      editorMode = null;
+    },
+  });
 };
 
 const closeThreads = () => {
+  if (isSlideOverOpen('threads-panel')) {
+    closeSlideOver('threads-panel');
+    return;
+  }
   openThreadsPerson = null;
   openThreadID = null;
-  mountInlinePanel('threads-panel', null);
   const panel = document.getElementById('threads-panel');
-  panel.classList.add('hidden');
-  panel.innerHTML = '';
+  if (panel) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+  }
+};
+
+const applicationsSectionHtml = (apps, personID) => {
+  if (!apps.length) return '';
+  const rows = apps.map(a => {
+    const statusText = t(`applications.status.headline.${headlineStatus(a.status)}`);
+    const meta = [a.company_name, statusText, relativeAge(a.updated_at)]
+      .filter(Boolean).join(' · ');
+    return `
+      <div class="${CLS.staticRow}">
+        <div class="${CLS.flexTextCol}">
+          <p class="${CLS.rowTitle}">${escapeHtml(a.role_title)}</p>
+          <p class="${CLS.fileRowMeta}">${escapeHtml(meta)}</p>
+        </div>
+      </div>`;
+  }).join('');
+  const viewLink = `<a href="/local/applications?person_id=${personID}" class="${CLS.linkAction}">${t('common.action.view')}</a>`;
+  return `
+    <section class="space-y-2">
+      <div class="${CLS.sectionHead}">
+        ${sectionTitle(t('companies.dossier.applications.heading'))}
+        ${viewLink}
+      </div>
+      <div class="${CLS.divider}">${rows}</div>
+    </section>`;
 };
 
 const renderThreads = async () => {
   if (!openThreadsPerson) return;
   const panel = document.getElementById('threads-panel');
-  const threads = await listThreadsByPersonID(openThreadsPerson.id);
+  const threads = personEditing ? [] : await listThreadsByPersonID(openThreadsPerson.id);
+  const apps = personEditing ? [] : await listApplicationsByPerson(openThreadsPerson.id);
+  const companies = personEditing ? await listCompanies() : [];
+  const body = personEditing
+    ? editorHtml(openThreadsPerson, companies)
+    : `${applicationsSectionHtml(apps, openThreadsPerson.id)}
+       <div id="new-thread-container"></div>
+       <div id="thread-list">${threadListHtml(threads, openThreadID)}</div>`;
   panel.innerHTML = `
-    <div class="${CLS.card}">
+    <div class="${CLS.slideOverBody}">
       ${threadsHeaderHtml(openThreadsPerson)}
-      <div id="new-thread-container"></div>
-      <div id="thread-list">${threadListHtml(threads, openThreadID)}</div>
+      ${body}
     </div>
   `;
   wireThreadsPanel();
-  // Expand the currently open thread's detail (if any).
-  if (openThreadID) await renderThreadDetail(openThreadID);
+  if (personEditing) {
+    editorMode = { id: openThreadsPerson.id };
+    wireEditor({
+      onCancel: () => {
+        personEditing = false;
+        editorMode = null;
+        renderThreads();
+      },
+      onSaved: async () => {
+        personEditing = false;
+        editorMode = null;
+        // The saved person may have a new name/company — pick up fresh values.
+        const fresh = await getPerson(openThreadsPerson.id);
+        if (fresh) openThreadsPerson = fresh;
+        await refreshList();
+        await renderThreads();
+      },
+    });
+  } else if (openThreadID) {
+    // Expand the currently open thread's detail (if any).
+    await renderThreadDetail(openThreadID);
+  }
 };
 
 const wireThreadsPanel = () => {
   document.getElementById('btn-threads-close').addEventListener('click', closeThreads);
   document.getElementById('btn-new-thread').addEventListener('click', openNewThreadForm);
+  document.getElementById('btn-threads-edit')?.addEventListener('click', () => {
+    if (!openThreadsPerson) return;
+    personEditing = true;
+    renderThreads();
+  });
+  document.getElementById('btn-threads-delete')?.addEventListener('click', () => {
+    if (!openThreadsPerson) return;
+    deletePersonFromList(openThreadsPerson.id, openThreadsPerson.full_name, 'threads-error');
+  });
 
   document.querySelectorAll('.js-toggle-thread').forEach(btn =>
     btn.addEventListener('click', () => toggleThread(Number(btn.dataset.id))));
@@ -867,6 +957,10 @@ export const mountPeople = async (root) => {
   root.innerHTML = shellHtml();
   PANEL_IDS.forEach(rememberPanelAnchor);
   document.getElementById('btn-new').addEventListener('click', () => openEditor('new'));
+  document.getElementById('people-search').addEventListener('input', (e) => {
+    filterState.query = e.target.value;
+    renderList();
+  });
 
   // Resolve ?company_id=… before the first list render so the banner and
   // count reflect the filter from the very first paint.

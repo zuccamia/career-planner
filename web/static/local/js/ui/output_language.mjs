@@ -16,7 +16,7 @@ export const outputLanguageSelect = (id) => {
     `<option value="${code}"${code === active ? ' selected' : ''}>${localeDisplayName(code)}</option>`,
   ).join('');
   return `
-    <label class="flex items-center gap-2 text-xs text-slate-500">
+    <label class="flex items-center gap-2 text-xs text-ink-faint">
       <span>${t('common.output_language')}</span>
       <select id="${id}" class="${CLS.inputBase} py-1.5 pl-2 pr-7 text-xs">${options}</select>
     </label>

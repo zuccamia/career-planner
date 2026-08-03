@@ -1,18 +1,15 @@
-// Career profile page — Overview (name/headline/summary + sparks),
-// Resumes (markdown or Typst source; Typst compiles to PDF via typst.ts
-// and can be attached to an application), Brag Sheet.
-//
-// First run: if profile_overview.onboarded_at is NULL and everything is
-// empty, the Overview tab renders a themed reflection wizard instead of the
-// flat form. Steps 4–6 build up the sparks list.
+// Career profile page — Overview, Resumes, Brag Sheet. On first run
+// (onboarded_at NULL + all fields empty) the Overview tab hosts the 7-step
+// setup wizard (see profile_wizard.mjs) instead of the flat form.
 
 import { CLS } from '../ui/classes.mjs';
 import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
-import { button, pageHeader, formField, emptyState, inlineError, setInlineError, badge, tab, chip, removablePill } from '../ui/components.mjs';
+import { button, pageHeader, formField, emptyState, helpText, inlineError, setInlineError, badge, logPanel, tab, removablePill } from '../ui/components.mjs';
 import { toast } from '../ui/toast.mjs';
 import { t } from '../i18n.mjs';
 import {
-  getOverview, updateOverview, markOnboarded, clearOnboarded, SKILL_LEVELS,
+  getOverview, updateOverview, clearOnboarded, SKILL_LEVELS,
+  getWizardProgress, clearWizardProgress,
 } from '../entities/profile-overview.mjs';
 import {
   listSparks, createSpark, deleteSpark, countSparks,
@@ -30,6 +27,7 @@ import { generateBragTags } from '../rpc.mjs';
 import { createProgress } from '../ui/progress.mjs';
 import { uploadAttachment, sanitizeFolder } from '../storage/attachments.mjs';
 import { compileTypstToPdf } from '../workers/typst-client.mjs';
+import { renderWizard as renderWizardModule } from './profile_wizard.mjs';
 
 // Tab identity + display label in one place — order determines tab-strip
 // order (relying on JS insertion order for object keys, guaranteed since ES2015).
@@ -48,11 +46,13 @@ const CURRENT_YEAR = String(new Date().getFullYear());
 const state = {
   tab: 'overview',
   wizardStep: 0,
-  wizardOverview: { name: '', headline: '', summary: '', skills: [] },
-  // Sparks the user added in each themed wizard step, keyed by step number.
-  // Only these ids are shown on that step's screen — collected sparks from
-  // other steps stay hidden until the recap, so each theme feels focused.
-  wizardSparkIds: { 5: [], 6: [], 7: [] },
+  wizardOverview: { name: '', pitch: '', direction: '', environment: '', skills: [], tools: [] },
+  // Sparks the user picked in the values step (4). Tracked so Back to step 4
+  // can restore selection state without re-fetching by body text.
+  wizardValuesSparkIds: [],
+  // Custom "add your own" values captured on step 4 so re-entering the step
+  // keeps them selected even before Next commits.
+  wizardValuesCustom: [],
   resumeEditorId: null,
   resumeEditorNew: false,
   resumePdfBlob: null,
@@ -71,11 +71,11 @@ const state = {
 const shellHtml = () => `
   <div class="space-y-6">
     <div id="toast" class="hidden"></div>
-    <section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      ${pageHeader({ title: t('page.profile.title'), tagline: t('profile.tagline') })}
+    <section class="${CLS.pageHeadRow}">
+      ${pageHeader({ page: 'profile', title: t('page.profile.title'), tagline: t('profile.tagline') })}
     </section>
 
-    <div class="border-b border-slate-200">
+    <div class="${CLS.hairline}">
       <nav class="flex gap-1" role="tablist" id="tab-strip">
         ${TAB_NAMES.map(t => tabButton(t)).join('')}
       </nav>
@@ -148,26 +148,51 @@ const wireTabStrip = () => {
 // ============================================================================
 
 const renderOverviewTab = async (el) => {
-  el.innerHTML = `<p class="text-sm text-slate-500">${t('app.loading')}</p>`;
-  const [overview, sparkCount] = await Promise.all([getOverview(), countSparks()]);
-  const isFirstRun =
-    !overview?.onboarded_at &&
+  el.innerHTML = `${helpText(t('app.loading'))}`;
+  const [overview, sparkCount, progress] = await Promise.all([getOverview(), countSparks(), getWizardProgress()]);
+  // Wizard shows until the user hits Finish (onboarded_at set). Resume via
+  // wizard_progress covers the mid-flow reload; the empty-fields check covers
+  // a truly fresh DB where the user hasn't touched anything yet.
+  const inFlight = progress != null;
+  const untouched =
     !(overview?.name || '').trim() &&
     !(overview?.headline || '').trim() &&
     !(overview?.summary || '').trim() &&
+    !(overview?.environment || '').trim() &&
+    !(overview?.tools || []).length &&
     sparkCount === 0;
+  const isFirstRun = !overview?.onboarded_at && (inFlight || untouched);
   if (isFirstRun) {
-    state.wizardStep = 1;
-    state.wizardOverview = {
-      name: overview?.name || '',
-      headline: overview?.headline || '',
-      summary: overview?.summary || '',
-      skills: overview?.skills || [],
-    };
-    state.wizardSparkIds = { 5: [], 6: [], 7: [] };
+    await seedWizardStateFrom(overview);
     renderWizard(el);
   } else {
     renderOverviewFlat(el, overview);
+  }
+};
+
+const seedWizardStateFrom = async (overview) => {
+  state.wizardOverview = {
+    name: overview?.name || '',
+    pitch: overview?.headline || '',
+    direction: overview?.summary || '',
+    environment: overview?.environment || '',
+    skills: overview?.skills || [],
+    tools: overview?.tools || [],
+  };
+  state.wizardValuesSparkIds = [];
+  state.wizardValuesCustom = [];
+  const progress = await getWizardProgress();
+  if (progress && typeof progress === 'object') {
+    if (progress.name != null) state.wizardOverview.name = progress.name;
+    if (progress.pitch != null) state.wizardOverview.pitch = progress.pitch;
+    if (progress.direction != null) state.wizardOverview.direction = progress.direction;
+    if (progress.environment != null) state.wizardOverview.environment = progress.environment;
+    if (Array.isArray(progress.tools)) state.wizardOverview.tools = progress.tools;
+    if (Array.isArray(progress.valuesSparkIds)) state.wizardValuesSparkIds = progress.valuesSparkIds;
+    if (Array.isArray(progress.valuesCustom)) state.wizardValuesCustom = progress.valuesCustom;
+    state.wizardStep = Math.min(Math.max(1, Number(progress.step) || 1), 7);
+  } else {
+    state.wizardStep = 1;
   }
 };
 
@@ -178,7 +203,7 @@ const renderOverviewFlat = async (el, overview) => {
   el.innerHTML = `
     <div class="space-y-6">
       <div class="${CLS.card}">
-        <div class="flex items-baseline justify-between">
+        <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${t('profile.overview.about_eyebrow')}</p>
           ${button({ id: 'btn-redo-intro', variant: 'primaryCompact', icon: 'arrowPath', label: t('profile.action.redo_intro') })}
         </div>
@@ -187,28 +212,42 @@ const renderOverviewFlat = async (el, overview) => {
           ${formField({ type: 'text', name: 'ov-name', label: t('profile.field.name.label'),
                         value: overview?.name || '', placeholder: t('profile.field.name.placeholder'),
                         dataset: { field: 'name' } })}
-          ${formField({ type: 'text', name: 'ov-headline', label: t('profile.field.headline.label'),
+          ${formField({ type: 'text', name: 'ov-headline', label: t('profile.field.pitch.label'),
                         value: overview?.headline || '',
                         placeholder: t('profile.field.headline.placeholder'),
                         hint: t('profile.field.headline.hint'),
                         dataset: { field: 'headline' } })}
-          ${formField({ type: 'textarea', name: 'ov-summary', label: t('profile.field.summary.label'),
+          ${formField({ type: 'textarea', name: 'ov-summary', label: t('profile.field.direction.label'),
                         value: overview?.summary || '', rows: 6,
                         placeholder: t('profile.field.summary.placeholder'),
                         dataset: { field: 'summary' } })}
           <div class="grid gap-2">
             <label class="${CLS.label}">${t('profile.skills.label')}</label>
             ${skillsEditorHtml({ mountId: 'ov-skills-editor', skills: overview?.skills || [] })}
-            <p class="text-xs text-slate-500">${t('profile.skills.help')}</p>
+            ${helpText(t('profile.skills.help'))}
+          </div>
+          <div class="grid gap-2">
+            <label class="${CLS.label}">${t('profile.field.environment.label')}</label>
+            <div id="ov-env-cards" class="${CLS.choiceCardRow}">
+              ${envCardsHtml(overview?.environment || '')}
+            </div>
+          </div>
+          <div class="grid gap-2">
+            <label class="${CLS.label}" for="ov-tools-input">${t('profile.field.tools.label')}</label>
+            <div id="ov-tools-list">${toolsListHtml(overview?.tools || [])}</div>
+            <div class="flex items-center gap-2">
+              <input id="ov-tools-input" type="text" placeholder="${t('profile.tools.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
+              ${button({ id: 'btn-add-tool', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
+            </div>
           </div>
         </div>
       </div>
 
       <div class="${CLS.card}">
-        <div class="flex items-baseline justify-between">
+        <div class="${CLS.formHeadRow}">
           <div>
             <p class="${CLS.eyebrow}">${t('profile.sparks.eyebrow')}</p>
-            <p class="mt-1 text-sm text-slate-500">${t('profile.sparks.help')}</p>
+            <p class="mt-1 ${CLS.helpText}">${t('profile.sparks.help')}</p>
           </div>
         </div>
         <div id="sparks-list" class="space-y-2">${sparksListHtml(sparks)}</div>
@@ -221,18 +260,14 @@ const renderOverviewFlat = async (el, overview) => {
 
 const sparksListHtml = (sparks) => {
   if (!sparks.length) {
-    return `<p class="text-sm text-slate-400">${t('profile.sparks.empty')}</p>`;
+    return `${helpText(t('profile.sparks.empty'))}`;
   }
   // "Top priority" = the smallest sort_order present. Any spark at that tier
   // (there may be several tied) is highlighted; the rest render muted.
   const topSort = Math.min(...sparks.map(s => Number(s.sort_order ?? 0)));
-  return `<div class="flex flex-wrap gap-2">${sparks.map(s => sparkPillHtml(s, Number(s.sort_order ?? 0) === topSort)).join('')}</div>`;
+  return `<div class="${CLS.chipRow}">${sparks.map(s => sparkPillHtml(s, Number(s.sort_order ?? 0) === topSort)).join('')}</div>`;
 };
 
-// Sparks reuse the shared badge() component with a custom body — same visual
-// language as brag-entry tags, application status pills, etc. The × button
-// deletes. Sparks at the top-priority tier render in the prominent blue
-// palette; the rest use slate so the eye lands on the top tier first.
 const sparkPillHtml = (s, isTopTier) => {
   const idAttr = { 'spark-id': String(s.id) };
   return removablePill({
@@ -267,12 +302,42 @@ const sparkInputHtml = () => `
       <option value="1">${t('profile.sparks.priority.p1')}</option>
       <option value="2">${t('profile.sparks.priority.p2')}</option>
       <option value="3" selected>${t('profile.sparks.priority.p3')}</option>
-      <option value="4">${t('profile.sparks.priority.p4')}</option>
-      <option value="5">${t('profile.sparks.priority.p5')}</option>
     </select>
     ${button({ id: 'btn-add-spark', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
   </div>
 `;
+
+// Environment cards + tools chip editor markup — shared between the flat
+// form and (for the cards) the wizard step. envValue is one of
+// 'remote'|'hybrid'|'onsite' or '' (nothing selected yet).
+const ENV_CHOICES = ['remote', 'hybrid', 'onsite'];
+
+const envCardHtml = (choice, activeValue) => {
+  const active = choice === activeValue;
+  const palette = active ? CLS.choiceCardActive : CLS.choiceCardInactive;
+  return `
+    <button type="button" class="${CLS.choiceCardBase} ${palette} js-env-choice" data-env="${choice}" aria-pressed="${active}">
+      <span class="${CLS.choiceCardTitle}">${t(`profile.env.card.${choice}.title`)}</span>
+      <span class="${CLS.choiceCardHelp}">${t(`profile.env.card.${choice}.help`)}</span>
+    </button>
+  `;
+};
+
+const envCardsHtml = (activeValue) =>
+  ENV_CHOICES.map(c => envCardHtml(c, activeValue)).join('');
+
+const toolPillHtml = (name) => removablePill({
+  label: name,
+  color: 'slate',
+  classes: 'gap-1.5',
+  dataset: { tool: name },
+  dismissClass: 'js-tool-delete',
+  dismissLabel: t('common.action.delete'),
+});
+
+const toolsListHtml = (tools) => tools.length
+  ? `<div class="${CLS.chipRow}">${tools.map(toolPillHtml).join('')}</div>`
+  : `${helpText(t('profile.tools.empty'))}`;
 
 const wireOverviewFlat = (overview) => {
   ['ov-name', 'ov-headline', 'ov-summary'].forEach(id => {
@@ -292,19 +357,14 @@ const wireOverviewFlat = (overview) => {
 
   document.getElementById('btn-redo-intro')?.addEventListener('click', async () => {
     await clearOnboarded();
-    const overview = await getOverview();
+    await clearWizardProgress();
+    const fresh = await getOverview();
+    await seedWizardStateFrom(fresh);
     state.wizardStep = 1;
-    state.wizardOverview = {
-      name: overview?.name || '',
-      headline: overview?.headline || '',
-      summary: overview?.summary || '',
-      skills: overview?.skills || [],
-    };
-    state.wizardSparkIds = { 5: [], 6: [], 7: [] };
     renderWizard(document.getElementById('tab-content'));
   });
 
-  wireSparkInput({ inWizard: false });
+  wireSparkInput();
   wireSparks();
 
   // Wire the skills editor on the flat form: any change flushes to the DB.
@@ -312,19 +372,69 @@ const wireOverviewFlat = (overview) => {
   wireSkillsEditor('ov-skills-editor', overview?.skills || [], async (skills) => {
     await updateOverview({ skills });
   });
+
+  // Environment cards — clicking a card commits immediately and rerenders
+  // the row so the active palette moves. Clicking the already-active card
+  // clears the selection.
+  const rerenderEnvCards = (value) => {
+    const mount = document.getElementById('ov-env-cards');
+    if (!mount) return;
+    mount.innerHTML = envCardsHtml(value);
+    wireEnvCards();
+  };
+  const wireEnvCards = () => {
+    document.querySelectorAll('#ov-env-cards .js-env-choice').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const current = overview?.environment || '';
+        const clicked = btn.dataset.env;
+        const next = current === clicked ? '' : clicked;
+        overview.environment = next;
+        try { await updateOverview({ environment: next }); }
+        catch (err) { setInlineError('overview-error', err.message || String(err)); return; }
+        rerenderEnvCards(next);
+      });
+    });
+  };
+  wireEnvCards();
+
+  // Tools chip editor — Enter or click Add appends a normalized tool string;
+  // × on a pill removes it. Each mutation flushes to the DB.
+  let tools = [...(overview?.tools || [])];
+  const rerenderTools = () => {
+    const listEl = document.getElementById('ov-tools-list');
+    if (!listEl) return;
+    listEl.innerHTML = toolsListHtml(tools);
+    listEl.querySelectorAll('.js-tool-delete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const name = btn.dataset.tool;
+        tools = tools.filter(x => x !== name);
+        try { await updateOverview({ tools }); }
+        catch (err) { setInlineError('overview-error', err.message || String(err)); return; }
+        rerenderTools();
+      });
+    });
+  };
+  const addTool = async () => {
+    const input = document.getElementById('ov-tools-input');
+    const val = (input.value || '').trim();
+    if (!val) return;
+    if (!tools.includes(val)) tools.push(val);
+    input.value = '';
+    try { await updateOverview({ tools }); }
+    catch (err) { setInlineError('overview-error', err.message || String(err)); return; }
+    rerenderTools();
+    input.focus();
+  };
+  document.getElementById('ov-tools-input')?.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') { ev.preventDefault(); addTool(); }
+  });
+  document.getElementById('btn-add-tool')?.addEventListener('click', addTool);
+  rerenderTools();
 };
 
 // ---------- skills editor ----------
-//
-// Pill mode: existing skills render as color-coded pills (color encodes
-// level — expert=emerald, advanced=blue, intermediate=amber, beginner=slate,
-// unset=slate). Adding a skill uses a single input row (name / years /
-// level) that clears on submit. To change a skill, delete the pill and
-// re-add it. Same interaction model as sparks.
-//
-// Used on the flat form and inside the wizard. Renders as HTML;
-// wireSkillsEditor attaches handlers and invokes onChange(skills[]) whenever
-// the current skill set mutates (add or delete).
+// Shared by the flat form and the wizard: renders a pill list + input row;
+// wireSkillsEditor invokes onChange(skills[]) on every mutation.
 
 const SKILL_LEVEL_COLOR = {
   expert:       'emerald',
@@ -333,13 +443,16 @@ const SKILL_LEVEL_COLOR = {
   beginner:     'slate',
 };
 
-const capitalize = (s) => s ? s[0].toUpperCase() + s.slice(1) : '';
+// Map a stored level enum to its localized display label. Colors key off the
+// enum, so translation only affects the visible text.
+const skillLevelLabel = (level) =>
+  level && SKILL_LEVELS.includes(level) ? t(`profile.skill.level.${level}`) : '';
 
 const skillPillHtml = (s, i) => {
   const color = SKILL_LEVEL_COLOR[s.level] || 'slate';
   const suffix = [];
   if (s.years != null) suffix.push(`${s.years}y`);
-  if (s.level) suffix.push(capitalize(s.level));
+  if (s.level) suffix.push(skillLevelLabel(s.level));
   const suffixHtml = suffix.length
     ? ` <span class="opacity-70">· ${escapeHtml(suffix.join(' · '))}</span>`
     : '';
@@ -357,18 +470,18 @@ const skillsEditorHtml = ({ mountId, skills = [] }) => `
   <div id="${mountId}" data-skills-editor class="space-y-3">
     <div class="flex items-center gap-2">
       <input type="text" class="${CLS.inputBase} flex-1 min-w-0 js-skill-name" placeholder="${t('profile.skills.name_placeholder')}" autocomplete="off" />
-      <input type="number" class="${CLS.inputBase} w-16 shrink-0 px-2 text-center js-skill-years"
+      <input type="number" class="${CLS.inputBase} w-24 shrink-0 px-2 text-center js-skill-years"
              min="0" step="0.5" placeholder="${t('profile.skills.years_placeholder')}" title="${t('profile.skills.years_title')}" />
       <select class="${CLS.inputBase} w-32 shrink-0 js-skill-level" title="${t('profile.skills.level_title')}">
         <option value="">—</option>
-        ${SKILL_LEVELS.map(lvl => `<option value="${lvl}">${capitalize(lvl)}</option>`).join('')}
+        ${SKILL_LEVELS.map(lvl => `<option value="${lvl}">${skillLevelLabel(lvl)}</option>`).join('')}
       </select>
       ${button({ variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add'), extraClass: 'js-add-skill' })}
     </div>
     <div class="js-skill-pills flex flex-wrap gap-2">
       ${skills.length
         ? skills.map((s, i) => skillPillHtml(s, i)).join('')
-        : `<p class="text-sm text-slate-400">${t('profile.skills.empty')}</p>`}
+        : `${helpText(t('profile.skills.empty'))}`}
     </div>
   </div>
 `;
@@ -387,7 +500,7 @@ const wireSkillsEditor = (mountId, initialSkills, onChange) => {
     if (!pillsEl) return;
     pillsEl.innerHTML = skills.length
       ? skills.map((s, i) => skillPillHtml(s, i)).join('')
-      : `<p class="text-sm text-slate-400">${t('profile.skills.empty')}</p>`;
+      : `${helpText(t('profile.skills.empty'))}`;
     wirePills();
   };
 
@@ -439,10 +552,8 @@ const wireSkillsEditor = (mountId, initialSkills, onChange) => {
   wirePills();
 };
 
-// Wire the shared "type a spark and press Enter" input. inWizard=true tracks
-// each newly-created spark against the current themed step so it only shows
-// under that theme.
-const wireSparkInput = ({ inWizard }) => {
+// Wire the shared "type a spark and press Enter" input on the flat form.
+const wireSparkInput = () => {
   const input = document.getElementById('spark-input');
   const priority = document.getElementById('spark-priority');
   const addBtn = document.getElementById('btn-add-spark');
@@ -452,10 +563,7 @@ const wireSparkInput = ({ inWizard }) => {
     const val = input.value.trim();
     if (!val) return;
     const p = priority ? Number(priority.value) : undefined;
-    const id = await createSpark(val, p);
-    if (inWizard) {
-      (state.wizardSparkIds[state.wizardStep] ||= []).push(id);
-    }
+    await createSpark(val, p);
     input.value = '';
     if (priority) priority.value = '3'; // reset so the next add starts neutral
     await rerenderSparksList();
@@ -467,326 +575,50 @@ const wireSparkInput = ({ inWizard }) => {
   addBtn.addEventListener('click', submit);
 };
 
-// Refresh the sparks-list block using the current view context (wizard step
-// subset vs. flat full list). During themed wizard steps that also render an
-// "already on file" carryover block, refresh that too so deletes there
-// update immediately.
 const rerenderSparksList = async () => {
   const listEl = document.getElementById('sparks-list');
   if (!listEl) return;
-  const inThemedStep = state.wizardStep >= 5 && state.wizardStep <= 7;
-  const stepIds = inThemedStep ? state.wizardSparkIds[state.wizardStep] : null;
   const all = await listSparks();
-  const shown = stepIds ? all.filter(s => stepIds.includes(s.id)) : all;
-  listEl.innerHTML = sparksListHtml(shown);
-
-  const carryoverEl = document.getElementById('carryover-sparks');
-  if (carryoverEl && inThemedStep) {
-    const tracked = new Set([
-      ...(state.wizardSparkIds[5] || []),
-      ...(state.wizardSparkIds[6] || []),
-      ...(state.wizardSparkIds[7] || []),
-    ]);
-    carryoverEl.innerHTML = sparksListHtml(all.filter(s => !tracked.has(s.id)));
-  }
-
+  listEl.innerHTML = sparksListHtml(all);
   wireSparks();
 };
 
 const wireSparks = () => {
   const listEl = document.getElementById('sparks-list');
   if (!listEl) return;
-
   listEl.querySelectorAll('.js-spark-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = Number(btn.dataset.sparkId);
       await deleteSpark(id);
-      if (state.wizardStep >= 5 && state.wizardStep <= 7) {
-        const arr = state.wizardSparkIds[state.wizardStep] || [];
-        const idx = arr.indexOf(id);
-        if (idx >= 0) arr.splice(idx, 1);
-      }
       await rerenderSparksList();
     });
   });
-
 };
 
-// ---------- wizard ----------
-
-const WIZARD_STEPS = 8;
-
-// Themed spark steps sit between the text prompts (1–4) and the recap (8).
-// Keys must match the step numbers so `SPARK_THEMES[step]` works directly.
-const sparkThemes = () => ({
-  5: {
-    title: t('profile.wizard.spark.env.title'),
-    prompt: t('profile.wizard.spark.env.prompt'),
-    hints: t('profile.wizard.spark.env.hint'),
-    chips: ['remote-friendly', 'async-first', 'small team (<15)', 'hybrid ok'],
-  },
-  6: {
-    title: t('profile.wizard.spark.values.title'),
-    prompt: t('profile.wizard.spark.values.prompt'),
-    hints: t('profile.wizard.spark.values.hint'),
-    chips: ['high-agency', 'ships weekly', 'mission-driven', 'mentorship available'],
-  },
-  7: {
-    title: t('profile.wizard.spark.craft.title'),
-    prompt: t('profile.wizard.spark.craft.prompt'),
-    hints: t('profile.wizard.spark.craft.hint'),
-    chips: ['Go', 'TypeScript', 'data pipelines', 'no on-call'],
-  },
+// Bundle page state + shared helpers so profile_wizard.mjs can render
+// without circular imports.
+const renderWizard = async (mountEl) => renderWizardModule({
+  state,
+  mountEl,
+  renderOverviewTab,
+  skillsEditorHtml,
+  wireSkillsEditor,
+  envCardsHtml,
+  toolsListHtml,
 });
-
-const renderWizard = async (el) => {
-  const step = state.wizardStep;
-  const dots = Array.from({ length: WIZARD_STEPS }, (_, i) =>
-    `<span class="inline-block h-2 w-2 rounded-full ${i < step ? 'bg-blue-600' : 'bg-slate-200'}"></span>`,
-  ).join(' ');
-
-  let body = '';
-  if (step === 1) body = wizardTextStep({ label: t('profile.wizard.name.label'), hint: t('profile.field.name.hint'), field: 'name', placeholder: t('profile.field.name.placeholder'), multiline: false });
-  else if (step === 2) body = wizardTextStep({ label: t('profile.wizard.headline.label'), hint: t('profile.field.headline.hint'), field: 'headline', placeholder: t('profile.field.headline.placeholder'), multiline: false, examples: [
-    t('profile.wizard.headline.example1'),
-    t('profile.wizard.headline.example2'),
-    t('profile.wizard.headline.example3'),
-    t('profile.wizard.headline.example4'),
-    t('profile.wizard.headline.example5'),
-  ] });
-  else if (step === 3) body = wizardTextStep({ label: t('profile.wizard.summary.label'), hint: t('profile.field.summary.hint'), field: 'summary', placeholder: t('profile.wizard.summary.placeholder'), multiline: true });
-  else if (step === 4) body = wizardSkillsStep();
-  else if (step >= 5 && step <= 7) body = await wizardSparkStep(sparkThemes()[step]);
-  else if (step === 8) body = await wizardRecapStep();
-
-  el.innerHTML = `
-    <div class="${CLS.card} max-w-2xl mx-auto">
-      <div class="flex items-center justify-between">
-        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${t('profile.wizard.progress', { step, total: WIZARD_STEPS })}</p>
-        <div class="flex gap-1.5" aria-hidden="true">${dots}</div>
-      </div>
-      ${inlineError({ id: 'wizard-error' })}
-      <div class="pt-2">${body}</div>
-      <div class="flex items-center justify-between pt-4">
-        <div>
-          ${step > 1 ? button({ id: 'btn-wizard-back', variant: 'secondaryCompact', label: t('profile.wizard.action.back') }) : ''}
-        </div>
-        <div class="flex gap-2">
-          ${step < WIZARD_STEPS
-            ? button({ id: 'btn-wizard-skip', variant: 'linkMuted',
-                label: t(step <= 4 ? 'profile.wizard.action.skip_all' : 'profile.wizard.action.skip_this') })
-            : ''}
-          ${step < WIZARD_STEPS
-            ? button({ id: 'btn-wizard-next', variant: 'primaryCompact', label: t('profile.wizard.action.next') })
-            : button({ id: 'btn-wizard-done', variant: 'primaryCompact', icon: 'check', label: t('profile.wizard.action.finish') })}
-        </div>
-      </div>
-    </div>
-  `;
-  wireWizard(el);
-};
-
-const wizardSkillsStep = () => `
-  <div class="space-y-4">
-    <div>
-      <h2 class="text-lg font-semibold text-slate-900">${t('profile.wizard.skills.heading')}</h2>
-      <p class="mt-1 text-sm text-slate-500">${t('profile.wizard.skills.help')}</p>
-    </div>
-    ${skillsEditorHtml({ mountId: 'wiz-skills-editor', skills: state.wizardOverview.skills || [] })}
-  </div>
-`;
-
-const wizardTextStep = ({ label, hint, field, placeholder, multiline, examples }) => {
-  const val = state.wizardOverview[field] || '';
-  const control = multiline
-    ? `<textarea id="wiz-input" rows="6" placeholder="${escapeHtml(placeholder)}" class="${CLS.textarea}">${escapeHtml(val)}</textarea>`
-    : `<input id="wiz-input" type="text" value="${escapeHtml(val)}" placeholder="${escapeHtml(placeholder)}" class="${CLS.input}" />`;
-  const ex = examples?.length
-    ? `<ul class="mt-3 space-y-1 text-xs text-slate-500">${examples.map(e => `<li>· ${escapeHtml(e)}</li>`).join('')}</ul>`
-    : '';
-  return `
-    <div class="space-y-3">
-      <div>
-        <h2 class="text-lg font-semibold text-slate-900">${escapeHtml(label)}</h2>
-        <p class="mt-1 text-sm text-slate-500">${escapeHtml(hint)}</p>
-      </div>
-      ${control}
-      ${ex}
-    </div>
-  `;
-};
-
-const wizardSparkStep = async (theme) => {
-  const stepSparks = await sparksForCurrentWizardStep();
-  const carryover = await carryoverSparks();
-  return `
-    <div class="space-y-4">
-      <div>
-        <h2 class="text-lg font-semibold text-slate-900">${escapeHtml(theme.title)}</h2>
-        <p class="mt-1 text-sm text-slate-700">${escapeHtml(theme.prompt)}</p>
-        <p class="mt-1 text-xs text-slate-500">${escapeHtml(theme.hints)}</p>
-      </div>
-      <div class="flex flex-wrap gap-2">
-        ${theme.chips.map(c => chip({ label: c, dataset: { chip: c } })).join('')}
-      </div>
-      <div id="sparks-list" class="space-y-2">${sparksListHtml(stepSparks)}</div>
-      ${sparkInputHtml()}
-      ${carryover.length ? `
-        <div class="space-y-2 border-t border-slate-100 pt-4">
-          <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${t('profile.wizard.spark.already_on_file')}</p>
-          <p class="text-xs text-slate-500">${t('profile.wizard.spark.already_on_file_help')}</p>
-          <div id="carryover-sparks" class="opacity-75">${sparksListHtml(carryover)}</div>
-        </div>
-      ` : ''}
-    </div>
-  `;
-};
-
-// Only the sparks the user added during the current themed step. Keeps each
-// step visually focused instead of accumulating a growing list across steps.
-const sparksForCurrentWizardStep = async () => {
-  const ids = new Set(state.wizardSparkIds[state.wizardStep] || []);
-  if (!ids.size) return [];
-  const all = await listSparks();
-  return all.filter(s => ids.has(s.id));
-};
-
-// Sparks that predate this wizard session — anything not tracked in any of
-// the themed-step buckets. Surfaced as an "already on file" section on the
-// themed spark steps so a user who hit "Redo intro" doesn't feel like their
-// prior sparks vanished.
-const carryoverSparks = async () => {
-  const tracked = new Set([
-    ...(state.wizardSparkIds[5] || []),
-    ...(state.wizardSparkIds[6] || []),
-    ...(state.wizardSparkIds[7] || []),
-  ]);
-  const all = await listSparks();
-  return all.filter(s => !tracked.has(s.id));
-};
-
-const wizardRecapStep = async () => {
-  const [ov, sparks] = await Promise.all([getOverview(), listSparks()]);
-  const line = (label, val) => `
-    <div class="grid gap-1">
-      <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${escapeHtml(label)}</p>
-      <p class="text-sm text-slate-900">${val ? escapeHtml(val) : `<span class="text-slate-400">${t('common.status.not_set')}</span>`}</p>
-    </div>
-  `;
-  const formatSkill = (s) => {
-    const bits = [];
-    if (s.years != null) bits.push(`${s.years}y`);
-    if (s.level) bits.push(`${s.level[0].toUpperCase()}${s.level.slice(1)}`);
-    return bits.length ? `${escapeHtml(s.name)} (${bits.join(' · ')})` : escapeHtml(s.name);
-  };
-  const skillsList = (ov?.skills || []).length
-    ? `<ul class="mt-1 space-y-1 text-sm text-slate-900">${ov.skills.map(s => `<li>· ${formatSkill(s)}</li>`).join('')}</ul>`
-    : `<p class="text-sm text-slate-400">${t('common.status.none')}</p>`;
-  const sparkList = sparks.length
-    ? `<ul class="mt-1 space-y-1 text-sm text-slate-900">${sparks.map(s => `<li>· ${escapeHtml(s.body)}</li>`).join('')}</ul>`
-    : `<p class="text-sm text-slate-400">${t('common.status.none')}</p>`;
-  return `
-    <div class="space-y-4">
-      <h2 class="text-lg font-semibold text-slate-900">${t('profile.recap.heading')}</h2>
-      ${line(t('profile.recap.name'), ov?.name)}
-      ${line(t('profile.recap.headline'), ov?.headline)}
-      ${line(t('profile.recap.summary'), ov?.summary)}
-      <div class="grid gap-1">
-        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${t('profile.recap.skills')}</p>
-        ${skillsList}
-      </div>
-      <div class="grid gap-1">
-        <p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">${t('profile.recap.sparks')}</p>
-        ${sparkList}
-      </div>
-    </div>
-  `;
-};
-
-const wireWizard = (el) => {
-  const step = state.wizardStep;
-  const input = document.getElementById('wiz-input');
-  if (input) input.focus();
-
-  document.getElementById('btn-wizard-back')?.addEventListener('click', () => {
-    state.wizardStep = Math.max(1, step - 1);
-    renderWizard(el);
-  });
-
-  document.getElementById('btn-wizard-skip')?.addEventListener('click', async () => {
-    await persistWizardTextIfAny();
-    // Text steps (1–4) treat Skip as "opt out of the whole wizard"; themed
-    // spark steps (5+) treat Skip as "advance to the next step."
-    if (step <= 4) {
-      await markOnboarded();
-      renderOverviewTab(el);
-      return;
-    }
-    state.wizardStep = step + 1;
-    renderWizard(el);
-  });
-
-  document.getElementById('btn-wizard-next')?.addEventListener('click', async () => {
-    try {
-      await persistWizardTextIfAny();
-      state.wizardStep = step + 1;
-      renderWizard(el);
-    } catch (err) {
-      setInlineError('wizard-error', err.message || String(err));
-    }
-  });
-
-  document.getElementById('btn-wizard-done')?.addEventListener('click', async () => {
-    await markOnboarded();
-    renderOverviewTab(el);
-  });
-
-  // Wizard: chip clicks and the shared input feed the same createSpark path,
-  // tagged against the current themed step so only this step's contributions
-  // are shown.
-  document.querySelectorAll('.js-chip').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const id = await createSpark(btn.dataset.chip);
-      (state.wizardSparkIds[state.wizardStep] ||= []).push(id);
-      await rerenderSparksList();
-    });
-  });
-  wireSparkInput({ inWizard: true });
-  wireSparks();
-
-  // Step 4 has the skills editor. Persist to DB on any change and mirror
-  // into state.wizardOverview so the recap step + Back navigation see it.
-  wireSkillsEditor('wiz-skills-editor', state.wizardOverview.skills || [], async (skills) => {
-    state.wizardOverview.skills = skills;
-    await updateOverview({ skills });
-  });
-};
-
-const persistWizardTextIfAny = async () => {
-  const input = document.getElementById('wiz-input');
-  if (!input) return;
-  const step = state.wizardStep;
-  const field = step === 1 ? 'name'
-              : step === 2 ? 'headline'
-              : step === 3 ? 'summary'
-              : null;
-  if (!field) return;
-  state.wizardOverview[field] = input.value;
-  await updateOverview({ [field]: input.value });
-};
 
 // ============================================================================
 // RESUMES TAB
 // ============================================================================
 
 const renderResumesTab = async (el) => {
-  el.innerHTML = `<p class="text-sm text-slate-500">${t('app.loading')}</p>`;
+  el.innerHTML = `${helpText(t('app.loading'))}`;
   refreshProfileTabCounts();
   const resumes = await listResumes();
   el.innerHTML = `
     <div class="space-y-6">
       <section class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">${t('profile.resumes.help')}</p>
+        ${helpText(t('profile.resumes.help'))}
         ${button({ id: 'btn-new-resume', variant: 'primaryCompact', icon: 'plus', label: t('profile.resumes.action.new'), ariaLabel: t('profile.resumes.aria.add') })}
       </section>
       <section id="resume-editor" class="${state.resumeEditorId || state.resumeEditorNew ? '' : 'hidden'}"></section>
@@ -805,17 +637,17 @@ const renderResumesTab = async (el) => {
 const resumesListHtml = (resumes) => `
   <ul class="space-y-3">
     ${resumes.map(r => `
-      <li class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div class="min-w-0 space-y-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="font-semibold text-slate-900">${escapeHtml(r.title || t('profile.resumes.untitled'))}</span>
+      <li class="${CLS.paperCard}">
+        <div class="${CLS.cardHeadRow}">
+          <div class="${CLS.textCol}">
+            <div class="${CLS.chipRowInline}">
+              <span class="font-semibold text-ink">${escapeHtml(r.title || t('profile.resumes.untitled'))}</span>
               ${badge({ label: r.format === 'typ' ? t('profile.resumes.format.typst') : t('profile.resumes.format.markdown'), color: r.format === 'typ' ? 'violet' : 'slate', size: 'xs' })}
               ${r.is_primary ? badge({ label: t('profile.resumes.primary'), color: 'emerald', size: 'xs' }) : ''}
             </div>
-            <p class="text-xs text-slate-500">${t('common.updated_at', { date: formatDate(r.updated_at) })}</p>
+            <p class="${CLS.helpText}">${t('common.updated_at', { date: formatDate(r.updated_at) })}</p>
           </div>
-          <div class="flex items-center gap-2 shrink-0">
+          <div class="${CLS.headActions}">
             ${r.is_primary
               ? ''
               : button({ variant: 'secondaryCompact', label: t('profile.resumes.action.set_primary'), extraClass: 'js-primary', dataset: { id: r.id } })}
@@ -866,7 +698,7 @@ const mountResumeEditor = async () => {
   editorEl.innerHTML = `
     <div class="${CLS.card}">
       <form id="resume-form" class="space-y-4">
-        <div class="flex items-baseline justify-between">
+        <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('profile.resumes.form.new_eyebrow') : t('profile.resumes.form.edit_eyebrow')}</p>
           <div class="flex items-center gap-2">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('common.action.save') })}
@@ -889,23 +721,23 @@ const mountResumeEditor = async () => {
                       placeholder: t('profile.resumes.field.source.placeholder') })}
       </form>
 
-      <div id="typst-panel" class="${r.format === 'typ' ? '' : 'hidden'} space-y-3 border-t border-slate-200 pt-4">
+      <div id="typst-panel" class="${r.format === 'typ' ? '' : 'hidden'} space-y-3 ${CLS.dividerTop}">
         ${inlineError({ id: 'compile-error' })}
         <div class="flex items-center gap-2">
           ${button({ id: 'btn-compile', variant: 'secondaryCompact', icon: 'sparkles', label: t('profile.resumes.action.compile') })}
-          <span id="compile-status" class="text-xs text-slate-500"></span>
+          <span id="compile-status" class="${CLS.helpText}"></span>
         </div>
         <div id="pdf-preview" class="hidden">
-          <iframe id="pdf-iframe" class="h-96 w-full rounded-xl border border-slate-200" title="${t('profile.resumes.pdf_preview_title')}"></iframe>
+          <iframe id="pdf-iframe" class="h-96 w-full rounded-xl border border-line" title="${t('profile.resumes.pdf_preview_title')}"></iframe>
           <div class="mt-2 flex items-center gap-2">
             ${button({ id: 'btn-attach-pdf', variant: 'primaryCompact', icon: 'arrowUpTray', label: t('profile.resumes.action.attach') })}
             ${button({ id: 'btn-download-pdf', variant: 'secondaryCompact', icon: 'arrowDownTray', label: t('profile.resumes.action.download') })}
           </div>
         </div>
-        <div id="compile-log" class="hidden max-h-40 overflow-auto rounded-xl border border-slate-200 bg-slate-50 p-3 font-mono text-[11px] text-slate-700"></div>
+        ${logPanel({ id: 'compile-log' })}
       </div>
 
-      <div class="border-t border-slate-200 pt-4">
+      <div class="${CLS.dividerTop}">
         <p class="${CLS.eyebrow}">${t('profile.resumes.sent.eyebrow')}</p>
         <div id="sent-pdfs" class="mt-3">${sentPdfsHtml(pdfList)}</div>
       </div>
@@ -916,12 +748,12 @@ const mountResumeEditor = async () => {
 };
 
 const sentPdfsHtml = (rows) => {
-  if (!rows.length) return `<p class="text-xs text-slate-500">${t('profile.resumes.sent.empty')}</p>`;
+  if (!rows.length) return `${helpText(t('profile.resumes.sent.empty'))}`;
   return `<ul class="space-y-2">${rows.map(r => `
-    <li class="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+    <li class="flex items-center justify-between rounded-xl border border-line bg-surface px-3 py-2 text-sm">
       <div class="min-w-0">
-        <p class="truncate font-medium text-slate-900">${escapeHtml(r.original_filename || r.filename)}</p>
-        <p class="text-xs text-slate-500">${r.application_role_title
+        <p class="truncate font-medium text-ink">${escapeHtml(r.original_filename || r.filename)}</p>
+        <p class="${CLS.helpText}">${r.application_role_title
           ? (r.application_company_name
               ? t('profile.resumes.sent.item_with_company', { role: escapeHtml(r.application_role_title), company: escapeHtml(r.application_company_name) })
               : t('profile.resumes.sent.item', { role: escapeHtml(r.application_role_title) }))
@@ -1036,7 +868,7 @@ const openAttachDialog = async () => {
   }
   const companyById = new Map(companies.map(c => [c.id, c]));
   const dlg = document.createElement('div');
-  dlg.className = 'fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4';
+  dlg.className = 'fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4';
   dlg.innerHTML = `
     <div class="${CLS.card} w-full max-w-md">
       <p class="${CLS.eyebrow}">${t('profile.resumes.attach.dialog_eyebrow')}</p>
@@ -1095,13 +927,13 @@ const openAttachDialog = async () => {
 // ============================================================================
 
 const renderBragTab = async (el) => {
-  el.innerHTML = `<p class="text-sm text-slate-500">${t('app.loading')}</p>`;
+  el.innerHTML = `${helpText(t('app.loading'))}`;
   refreshProfileTabCounts();
   const [entries, companies] = await Promise.all([listBragEntries(), listCompanies()]);
   el.innerHTML = `
     <div class="space-y-6">
       <section class="flex items-center justify-between">
-        <p class="text-sm text-slate-500">${t('profile.brags.help')}</p>
+        ${helpText(t('profile.brags.help'))}
         ${button({ id: 'btn-new-brag', variant: 'primaryCompact', icon: 'plus', label: t('profile.brags.action.new'), ariaLabel: t('profile.brags.aria.add') })}
       </section>
       <section id="brag-editor" class="${state.bragEditorId || state.bragEditorNew ? '' : 'hidden'}"></section>
@@ -1120,22 +952,22 @@ const renderBragTab = async (el) => {
 const bragListHtml = (entries) => `
   <ul class="space-y-3">
     ${entries.map(e => `
-      <li class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div class="min-w-0 space-y-1">
-            <div class="flex flex-wrap items-center gap-2">
-              <p class="font-semibold text-slate-900">${escapeHtml(e.title || t('profile.brags.untitled'))}</p>
+      <li class="${CLS.paperCard}">
+        <div class="${CLS.cardHeadRow}">
+          <div class="${CLS.textCol}">
+            <div class="${CLS.chipRowInline}">
+              <p class="font-semibold text-ink">${escapeHtml(e.title || t('profile.brags.untitled'))}</p>
               ${e.entry_date ? badge({ label: String(e.entry_date).slice(0, 4), color: 'violet', size: 'xs' }) : ''}
             </div>
-            <p class="line-clamp-1 text-sm text-slate-700">${escapeHtml(e.body)}</p>
-            ${e.impact ? `<p class="line-clamp-1 text-sm font-medium text-emerald-700">${t('profile.brags.impact', { text: escapeHtml(e.impact) })}</p>` : ''}
+            <p class="line-clamp-1 ${CLS.bodyText}">${escapeHtml(e.body)}</p>
+            ${e.impact ? `<p class="line-clamp-1 ${CLS.winText}">${t('profile.brags.impact', { text: escapeHtml(e.impact) })}</p>` : ''}
             <div class="flex flex-wrap items-center gap-2 pt-1">
               ${e.company_name ? badge({ label: e.company_name, color: 'blue', size: 'xs' }) : ''}
               ${(e.tags || []).map(tag => badge({ label: tag, color: 'slate', size: 'xs' })).join('')}
             </div>
-            ${e.tags_generated_at ? `<p class="text-xs text-slate-500">${t('profile.brags.tags_updated', { date: formatDate(e.tags_generated_at) })}</p>` : ''}
+            ${e.tags_generated_at ? `<p class="${CLS.helpText}">${t('profile.brags.tags_updated', { date: formatDate(e.tags_generated_at) })}</p>` : ''}
           </div>
-          <div class="flex items-center gap-2 shrink-0">
+          <div class="${CLS.headActions}">
             ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('common.action.edit'), extraClass: 'js-edit-brag', dataset: { id: e.id } })}
             ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('common.action.delete'), extraClass: 'js-delete-brag', dataset: { id: e.id, title: e.title || t('profile.brags.untitled') } })}
           </div>
@@ -1180,7 +1012,7 @@ const mountBragEditor = async (companies) => {
   editorEl.innerHTML = `
     <div class="${CLS.card}">
       <form id="brag-form" class="space-y-4">
-        <div class="flex items-baseline justify-between">
+        <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('profile.brags.form.new_eyebrow') : t('profile.brags.form.edit_eyebrow')}</p>
           <div class="flex items-center gap-2">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('common.action.save') })}
@@ -1225,7 +1057,7 @@ const mountBragEditor = async (companies) => {
             <input id="brag-tag-input" type="text" placeholder="${t('profile.brags.tags.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
             ${button({ id: 'btn-add-brag-tag', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
           </div>
-          <p id="brag-tags-updated" class="text-xs text-slate-500 hidden"></p>
+          <p id="brag-tags-updated" class="text-xs text-ink-faint hidden"></p>
         </div>
       </form>
     </div>
@@ -1235,8 +1067,8 @@ const mountBragEditor = async (companies) => {
   const renderTagList = () => {
     const listEl = document.getElementById('brag-tags-list');
     listEl.innerHTML = state.bragDraftTags.length
-      ? `<div class="flex flex-wrap gap-2">${state.bragDraftTags.map(bragTagPillHtml).join('')}</div>`
-      : `<p class="text-sm text-slate-400">${t('profile.brags.tags.empty')}</p>`;
+      ? `<div class="${CLS.chipRow}">${state.bragDraftTags.map(bragTagPillHtml).join('')}</div>`
+      : `${helpText(t('profile.brags.tags.empty'))}`;
     listEl.querySelectorAll('.js-brag-tag-delete').forEach(btn => btn.addEventListener('click', () => {
       const tag = normalizeTag(btn.dataset.tag);
       state.bragDraftTags = state.bragDraftTags.filter(t => normalizeTag(t) !== tag);

@@ -5,10 +5,10 @@ import { escapeHtml } from './dom.mjs';
 import { icon } from './icons.mjs';
 
 const STYLES = {
-  ok:      'border-emerald-300 bg-emerald-50 text-emerald-900',
-  error:   'border-red-200 bg-red-50 text-red-700',
-  warning: 'border-amber-200 bg-amber-50 text-amber-800',
-  info:    'border-slate-200 bg-slate-50 text-slate-700',
+  ok:      'border-status-win/40 bg-status-win-bg text-status-win',
+  error:   'border-status-out/30 bg-status-out-bg text-status-out',
+  warning: 'border-brass/30 bg-brass-tint text-brass',
+  info:    'border-line bg-paper text-ink-soft',
 };
 
 export const toast = (msg, kind = 'info') => {

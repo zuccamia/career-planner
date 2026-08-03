@@ -1,7 +1,9 @@
 // Renders the "AI provider" pill in the sidebar. Three states:
-//   - BYOK active                      → emerald "BYOK · <model>"
-//   - BYOK off, server-side LLM set    → emerald "Server · <model>"
-//   - BYOK off, no server-side LLM     → amber   "AI: setup needed"
+//   - BYOK active                      → slate  "BYOK · <model>"
+//   - BYOK off, server-side LLM set    → slate  "Server · <model>"
+//   - BYOK off, no server-side LLM     → amber  "AI: setup needed"
+// The active states are neutral config facts, not success — reserve
+// green for actual success states.
 // BYOK takes precedence — a user who configured their own key sees the BYOK
 // badge even when the deploy also has a server-side LLM. Clicking navigates
 // to Settings → AI provider.
@@ -18,9 +20,9 @@ export const refreshAiModeBadge = async () => {
     const [cfg, serverLLM] = await Promise.all([getByokConfig(), getServerLLMStatus()]);
     const byokActive = !!(cfg && cfg.enabled && cfg.baseUrl && cfg.apiKey && cfg.model);
     if (byokActive) {
-      wrap.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'sparkles', label: `BYOK · ${cfg.model}` });
+      wrap.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'sparkles', label: `BYOK · ${cfg.model}` });
     } else if (serverLLM.available) {
-      wrap.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'sparkles', label: `Server · ${serverLLM.model}` });
+      wrap.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'sparkles', label: `Server · ${serverLLM.model}` });
     } else {
       wrap.innerHTML = badge({ color: 'amber', size: 'xs', icon: 'sparkles', label: 'AI: setup needed' });
     }

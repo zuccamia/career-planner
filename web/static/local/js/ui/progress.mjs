@@ -12,20 +12,20 @@ import { escapeHtml } from './dom.mjs';
 import { t } from '../i18n.mjs';
 
 const STATES = {
-  running: { color: 'text-blue-600', glyph: '<span class="inline-block h-3.5 w-3.5 animate-pulse rounded-full bg-blue-500"></span>' },
-  done:    { color: 'text-emerald-600', glyph: icon('check', 4) },
-  failed:  { color: 'text-red-600', glyph: icon('close', 4) },
-  pending: { color: 'text-slate-400', glyph: '<span class="inline-block h-3.5 w-3.5 rounded-full border border-slate-300"></span>' },
+  running: { color: 'text-brand', glyph: '<span class="inline-block h-3.5 w-3.5 animate-pulse rounded-full bg-brand"></span>' },
+  done:    { color: 'text-status-win', glyph: icon('check', 4) },
+  failed:  { color: 'text-status-out', glyph: icon('close', 4) },
+  pending: { color: 'text-ink-faint', glyph: '<span class="inline-block h-3.5 w-3.5 rounded-full border border-line-strong"></span>' },
 };
 
 const renderStep = (name, s) => {
   const state = STATES[s.state] || STATES.pending;
   const label = s.labelKey ? t(s.labelKey) : name;
   const suffix = s.state === 'failed' && s.error
-    ? `<span class="text-xs text-red-600">— ${escapeHtml(s.error)}</span>`
+    ? `<span class="text-xs text-status-out">— ${escapeHtml(s.error)}</span>`
     : '';
   const hint = s.hintKey
-    ? `<span class="mt-0.5 block text-xs text-slate-500">↳ ${escapeHtml(t(s.hintKey))}</span>`
+    ? `<span class="mt-0.5 block text-xs text-ink-faint">↳ ${escapeHtml(t(s.hintKey))}</span>`
     : '';
   return `
     <li class="flex items-start gap-2 text-sm ${state.color}">

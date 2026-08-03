@@ -11,7 +11,10 @@ import {
   createApplication, updateApplication, updateApplicationStatus,
   deleteApplication, updateApplicationExtraction,
   listEventsByApplication, clearAllApplications,
+  headlineStatus,
 } from '../entities/applications.mjs';
+import { relativeAge } from '../ui/format.mjs';
+import { collectionListPanel, filterPillsHtml as collectionFilterPillsHtml, collectionRowsHtml } from '../ui/collection_list.mjs';
 import {
   listAttachmentsByParent, createAttachment, deleteAttachment,
 } from '../entities/attachments.mjs';
@@ -19,16 +22,17 @@ import {
   sanitizeFolder, uploadAttachment, downloadAttachment,
 } from '../storage/attachments.mjs';
 import { listCompanies, getCompany } from '../entities/companies.mjs';
-import { listPeopleByCompanyID } from '../entities/people.mjs';
+import { getPerson, listPeopleByCompanyID } from '../entities/people.mjs';
 import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { badge, badgeClasses, button, collapsible, emptyState, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, pageHeader, setPageCount } from '../ui/components.mjs';
+import { badge, badgeClasses, bulletList, button, codeBlock, collapsible, dtLabel, emptyState, faintSpan, fileRow, fileStamp, filterBanner, helpSpan, helpText, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, pageHeader, panelTitle, sectionTitle, setPageCount, subsectionTitle } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { extractJobDescription } from '../rpc.mjs';
 import { createProgress } from '../ui/progress.mjs';
 import { outputLanguageSelect, readOutputLanguage } from '../ui/output_language.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
+import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../ui/slide_over.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
 import { t } from '../i18n.mjs';
 
@@ -41,25 +45,28 @@ const humanize = (s) =>
 // Localized label for an application status slug. Falls back to humanize()
 // for unknown values (e.g. legacy rows) so nothing renders blank.
 const APPLICATION_STATUS_SLUGS = new Set([
-  'wishlist', 'applied', 'online_assessment',
+  'lead', 'applied', 'online_assessment',
   'first_interview', 'second_interview', 'additional_interview',
-  'offer', 'rejected', 'withdrawn',
+  'offer', 'rejected', 'ghosted', 'withdrawn',
 ]);
 const statusLabel = (s) =>
   s && APPLICATION_STATUS_SLUGS.has(s) ? t(`applications.status.${s}`) : humanize(s);
 
-// Status → badge palette. Matches internal/http/render.go applicationStatusClasses
-// so pills look identical between the legacy and local surfaces.
+// Status → headline pill color. The four interview sub-stages collapse onto
+// one brass pill — only the Sankey / stage strip in dashboard.mjs distinguishes
+// their light→dark ramp. Withdrawn and Ghosted are distinct values that both
+// render as hold gray.
 const STATUS_BADGE_COLOR = {
-  wishlist: 'slate',
-  applied: 'blue',
-  online_assessment: 'cyan',
-  first_interview: 'amber',
-  second_interview: 'orange',
-  additional_interview: 'fuchsia',
-  offer: 'emerald',
-  rejected: 'rose',
-  withdrawn: 'violet',
+  lead:                 'indigo',   // status-lead slate-blue
+  applied:              'blue',     // brand teal
+  online_assessment:    'amber',    // interview (brass)
+  first_interview:      'amber',    // interview (brass)
+  second_interview:     'amber',    // interview (brass)
+  additional_interview: 'amber',    // interview (brass)
+  offer:                'emerald',  // status-win green
+  rejected:             'rose',     // status-out clay
+  withdrawn:            'slate',    // status-hold gray (you exited)
+  ghosted:              'slate',    // status-hold gray (they went silent)
 };
 
 const formatSalary = (currency, amount) => {
@@ -110,28 +117,30 @@ const shellHtml = () => `
   <div class="space-y-6">
     <div id="toast" class="hidden"></div>
 
-    <section class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      ${pageHeader({ title: t('page.applications.title'), countId: 'app-count' })}
+    <section class="${CLS.pageHeadRow}">
+      ${pageHeader({ page: 'applications', title: t('page.applications.title'), countId: 'app-count' })}
       ${button({ id: 'btn-new', variant: 'primaryCompact', icon: 'plus', label: t('applications.action.new'), ariaLabel: t('applications.aria.add') })}
     </section>
 
     <section id="editor-panel" class="hidden"></section>
     <section id="details-panel" class="hidden"></section>
 
-    <section id="list-panel" class="${CLS.card}">
-      ${inlineError({ id: 'list-error' })}
-      <div id="list-content"></div>
-    </section>
+    ${collectionListPanel({
+      searchId: 'apps-search',
+      searchPlaceholder: t('applications.search.placeholder'),
+      filtersId: 'apps-filters',
+      filtersAriaLabel: t('applications.filters.aria'),
+    })}
   </div>
 `;
 
 const noCompaniesHtml = () => `
   <div class="${CLS.card}">
-    <div class="flex items-baseline justify-between">
+    <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('applications.no_company.heading')}</p>
       ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
     </div>
-    <p class="text-sm text-slate-600">
+    <p class="${CLS.bodyText}">
       ${t('applications.no_company.body')}
     </p>
     ${button({ kind: 'link', href: '/local/companies?new=1', icon: 'plus', label: t('applications.no_company.cta') })}
@@ -152,7 +161,7 @@ const personOptions = (people, selectedID) => [
 const editorHtml = (app, companies, people) => {
   const isNew = !app;
   const a = app || {};
-  const status = a.status || 'wishlist';
+  const status = a.status || 'lead';
   const selectedCompany = isNew ? '' : String(a.company_id ?? '');
   const companyOptions = [
     `<option value="" disabled ${selectedCompany ? '' : 'selected'}>${t('applications.field.company.placeholder')}</option>`,
@@ -164,7 +173,7 @@ const editorHtml = (app, companies, people) => {
   return `
     <div class="${CLS.card}">
       <form id="editor-form" class="space-y-5">
-        <div class="flex items-baseline justify-between">
+        <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('applications.form.new_eyebrow') : t('applications.form.edit_eyebrow')}</p>
           <div class="flex items-center gap-2">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('applications.form.aria.create') : t('common.action.save_changes') })}
@@ -180,8 +189,8 @@ const editorHtml = (app, companies, people) => {
             <select id="company_id" name="company_id" required class="${CLS.select}">
               ${companyOptions}
             </select>
-            <p class="text-xs text-slate-500">
-              ${t('applications.field.company.help_prefix')} <a href="/local/companies?new=1" class="text-blue-700 underline hover:text-blue-800">${t('applications.field.company.help_link')}</a>
+            <p class="${CLS.helpText}">
+              ${t('applications.field.company.help_prefix')} <a href="/local/companies?new=1" class="${CLS.brandLink}">${t('applications.field.company.help_link')}</a>
             </p>
           </div>
           <div class="grid gap-2">
@@ -197,9 +206,7 @@ const editorHtml = (app, companies, people) => {
           <select id="person_id" name="person_id" class="${CLS.select}">
             ${personOptions(people, a.person_id)}
           </select>
-          <p class="text-xs text-slate-500">
-            ${t('applications.field.contact.help')}
-          </p>
+          ${helpText(t('applications.field.contact.help'))}
         </div>
 
         <div class="grid gap-2">
@@ -234,47 +241,45 @@ const editorHtml = (app, companies, people) => {
   `;
 };
 
-const listHtml = (apps) => {
-  if (!apps.length) {
-    return emptyState({ message: t('applications.list.empty') });
-  }
-  return `
-    <ul class="space-y-3">
-      ${apps.map(a => {
-        const pillClass = badgeClasses(STATUS_BADGE_COLOR[a.status] || 'slate', 'xs');
-        const url = escapeHtml(a.job_posting_url);
-        const roleLabel = escapeHtml(a.role_title) || `<span class="italic text-slate-400">${t('applications.list.untitled_role')}</span>`;
-        // Role title is a hyperlink to the posting when we have a URL,
-        // otherwise falls back to opening the inline details panel.
-        const roleEl = a.job_posting_url
-          ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="font-semibold text-slate-900 hover:text-blue-700 hover:underline">${roleLabel}</a>`
-          : `<button type="button" class="js-details bg-transparent p-0 text-left font-semibold text-slate-900 hover:text-blue-700 hover:underline" data-id="${a.id}">${roleLabel}</button>`;
-        return `
-          <li data-panel-row="${a.id}">
-            <div class="block rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 transition hover:border-blue-200 hover:bg-blue-50/40">
-              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div class="space-y-2 min-w-0">
-                  ${roleEl}
-                  <p class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                    <span>${escapeHtml(a.company_name) || `<span class="italic text-slate-400">${t('applications.details.unknown_company')}</span>`}${a.person_name ? ` · ${escapeHtml(a.person_name)}` : ''}</span>
-                    <span class="${pillClass}">${escapeHtml(statusLabel(a.status))}</span>
-                  </p>
-                </div>
-                <div class="flex items-center gap-3 shrink-0">
-                  <span class="text-sm text-slate-500">${t('common.updated_at', { date: formatDate(a.updated_at) })}</span>
-                  ${button({ variant: 'secondaryCompact', label: t('common.action.view'), extraClass: 'js-details', dataset: { id: a.id } })}
-                  ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('applications.aria.edit'), extraClass: 'js-edit', dataset: { id: a.id } })}
-                  ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('applications.aria.delete', { label: a.role_title || t('applications.list.untitled_role') }), extraClass: 'js-delete', dataset: { id: a.id, label: a.role_title || `#${a.id}` } })}
-                </div>
-              </div>
-            </div>
-          </li>`;
-      }).join('')}
-    </ul>
-    <div class="mt-6 flex justify-end border-t border-slate-100 pt-4">
-      ${button({ id: 'btn-clear-all', variant: 'dangerCompact', icon: 'trash', label: t('applications.action.clear_all') })}
-    </div>`;
+const HEADLINE_BADGE = {
+  lead:      'indigo',
+  applied:   'blue',
+  interview: 'amber',
+  offer:     'emerald',
+  rejected:  'rose',
+  ghosted:   'slate',
+  withdrawn: 'slate',
 };
+
+const headlinePill = (h) => h
+  ? badge({ color: HEADLINE_BADGE[h] || 'slate', size: 'xs', label: t(`applications.status.headline.${h}`) })
+  : '';
+
+const rowMeta = (a) => {
+  const parts = [];
+  parts.push(a.company_name || t('applications.details.unknown_company'));
+  const ageKey = a.status === 'lead'
+    ? 'companies.dossier.applications.added'
+    : 'companies.dossier.applications.applied';
+  if (a.created_at) parts.push(t(ageKey, { age: relativeAge(a.created_at) }));
+  return parts.join('  ·  ');
+};
+
+const appFileRow = (a) => {
+  return fileRow({
+    id: a.id,
+    jsClass: 'js-details',
+    ariaLabel: t('applications.aria.open', { label: a.role_title }),
+    title: a.role_title,
+    pill: headlinePill(headlineStatus(a.status)),
+    meta: rowMeta(a),
+  });
+};
+
+const clearAllHtml = () => `
+  <div class="mt-6 flex justify-end ${CLS.dividerTop}">
+    ${button({ id: 'btn-clear-all', variant: 'dangerCompact', icon: 'trash', label: t('applications.action.clear_all') })}
+  </div>`;
 
 // ---------- markup: details panel ----------
 
@@ -282,18 +287,10 @@ const chips = (items, color) => (items || [])
   .map(item => `<span class="${badgeClasses(color, 'sm')} mb-2 mr-2">${escapeHtml(item)}</span>`)
   .join('');
 
-const bulletList = (items) => `
-  <ul class="list-disc space-y-2 pl-5 text-sm text-slate-700">
-    ${items.map(item => `<li>${escapeHtml(item)}</li>`).join('')}
-  </ul>`;
-
-const emptyLine = (msg) => `<p class="text-sm text-slate-500">${escapeHtml(msg)}</p>`;
 
 const structuredHtml = (parsed) => {
   if (!parsed.ok) {
-    return `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-      ${t('applications.details.jd_error')}
-    </div>`;
+    return inlineWarning({ message: t('applications.details.jd_error') });
   }
   const s = parsed.data;
   if (!s) {
@@ -307,7 +304,7 @@ const structuredHtml = (parsed) => {
   return `
     <div class="space-y-6">
       <section class="space-y-4">
-        <div class="flex flex-wrap gap-2">
+        <div class="${CLS.chipRow}">
           ${s.role_level ? badge({ label: humanize(s.role_level), color: 'violet' }) : ''}
           ${s.employment_type ? badge({ label: humanize(s.employment_type), color: 'blue' }) : ''}
           ${s.season
@@ -315,47 +312,47 @@ const structuredHtml = (parsed) => {
             : (s.year > 0 ? badge({ label: String(s.year), color: 'emerald' }) : '')}
           ${hasDeadline ? badge({ label: s.application_deadline, color: 'rose' }) : ''}
           ${hasSalary ? badge({ label: salaryLabel, color: 'amber' }) : ''}
-          ${!anyBadge ? `<span class="text-slate-500">${t('applications.details.meta_empty')}</span>` : ''}
+          ${!anyBadge ? `${helpSpan(t('applications.details.meta_empty'))}` : ''}
         </div>
         <div class="grid gap-1">
-          <dt class="text-sm font-semibold text-slate-500">${t('applications.details.summary_label')}</dt>
-          <dd>${(s.summary || '').trim() ? escapeHtml(s.summary) : `<span class="text-slate-500">${t('applications.details.summary_empty')}</span>`}</dd>
+          ${dtLabel(t('applications.details.summary_label'))}
+          <dd>${(s.summary || '').trim() ? escapeHtml(s.summary) : `${helpSpan(t('applications.details.summary_empty'))}`}</dd>
         </div>
       </section>
 
       <section class="grid gap-6 lg:grid-cols-2">
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.minimum_qualifications')}</h3>
-          ${(s.minimum_qualifications || []).length ? bulletList(s.minimum_qualifications) : emptyLine(t('applications.details.minimum_qualifications_empty'))}
+          ${subsectionTitle(t('applications.details.minimum_qualifications'))}
+          ${(s.minimum_qualifications || []).length ? bulletList(s.minimum_qualifications) : emptyState({ message: t('applications.details.minimum_qualifications_empty') })}
         </div>
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.preferred_qualifications')}</h3>
-          ${(s.preferred_qualifications || []).length ? bulletList(s.preferred_qualifications) : emptyLine(t('applications.details.preferred_qualifications_empty'))}
+          ${subsectionTitle(t('applications.details.preferred_qualifications'))}
+          ${(s.preferred_qualifications || []).length ? bulletList(s.preferred_qualifications) : emptyState({ message: t('applications.details.preferred_qualifications_empty') })}
         </div>
       </section>
 
       <section class="grid gap-6 lg:grid-cols-2">
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.responsibilities')}</h3>
-          ${(s.responsibilities || []).length ? bulletList(s.responsibilities) : emptyLine(t('applications.details.responsibilities_empty'))}
+          ${subsectionTitle(t('applications.details.responsibilities'))}
+          ${(s.responsibilities || []).length ? bulletList(s.responsibilities) : emptyState({ message: t('applications.details.responsibilities_empty') })}
         </div>
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.requirements')}</h3>
+          ${subsectionTitle(t('applications.details.requirements'))}
           <dl class="space-y-3">
-            <div class="flex flex-wrap gap-2">
+            <div class="${CLS.chipRow}">
               ${req.transcript_required ? badge({ label: t('applications.details.transcript_required'), color: 'rose' }) : ''}
               ${chips(req.education, 'slate')}
               ${chips(req.majors, 'indigo')}
             </div>
             <div class="grid gap-1">
-              <dt class="text-sm font-semibold text-slate-500">${t('applications.details.work_auth')}</dt>
-              <dd class="text-sm text-slate-700">${(req.work_authorization || '').trim() ? escapeHtml(req.work_authorization) : `<span class="text-slate-500">${t('common.status.not_identified')}</span>`}</dd>
+              ${dtLabel(t('applications.details.work_auth'))}
+              <dd class="${CLS.bodyText}">${(req.work_authorization || '').trim() ? escapeHtml(req.work_authorization) : `${helpSpan(t('common.status.not_identified'))}`}</dd>
             </div>
             <div class="grid gap-1">
-              <dt class="text-sm font-semibold text-slate-500">${t('applications.details.availability')}</dt>
-              <dd class="text-sm text-slate-700">${(req.availability || []).length
+              ${dtLabel(t('applications.details.availability'))}
+              <dd class="${CLS.bodyText}">${(req.availability || []).length
                 ? `<div class="space-y-1">${req.availability.map(v => `<p>${escapeHtml(v)}</p>`).join('')}</div>`
-                : `<span class="text-slate-500">${t('common.status.not_identified')}</span>`}</dd>
+                : `${helpSpan(t('common.status.not_identified'))}`}</dd>
             </div>
           </dl>
         </div>
@@ -363,29 +360,29 @@ const structuredHtml = (parsed) => {
 
       <section class="grid gap-6 lg:grid-cols-3">
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.languages')}</h3>
-          <div>${(s.languages || []).length ? chips(s.languages, 'emerald') : `<span class="text-sm text-slate-500">${t('common.status.not_identified')}</span>`}</div>
+          ${subsectionTitle(t('applications.details.languages'))}
+          <div>${(s.languages || []).length ? chips(s.languages, 'emerald') : `${helpSpan(t('common.status.not_identified'))}`}</div>
         </div>
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.skills')}</h3>
-          <div>${(s.skills || []).length ? chips(s.skills, 'emerald') : `<span class="text-sm text-slate-500">${t('common.status.not_identified')}</span>`}</div>
+          ${subsectionTitle(t('applications.details.skills'))}
+          <div>${(s.skills || []).length ? chips(s.skills, 'emerald') : `${helpSpan(t('common.status.not_identified'))}`}</div>
         </div>
         <div class="space-y-3">
-          <h3 class="text-base font-semibold text-slate-900">${t('applications.details.domains')}</h3>
-          <div>${(s.domains || []).length ? chips(s.domains, 'emerald') : `<span class="text-sm text-slate-500">${t('common.status.not_identified')}</span>`}</div>
+          ${subsectionTitle(t('applications.details.domains'))}
+          <div>${(s.domains || []).length ? chips(s.domains, 'emerald') : `${helpSpan(t('common.status.not_identified'))}`}</div>
         </div>
       </section>
 
       <section class="space-y-3">
-        <h3 class="text-base font-semibold text-slate-900">${t('applications.details.logistics')}</h3>
+        ${subsectionTitle(t('applications.details.logistics'))}
         <dl class="grid gap-4 sm:grid-cols-2">
           <div class="grid gap-1 sm:col-span-2">
-            <dt class="text-sm font-semibold text-slate-500">${t('applications.details.locations')}</dt>
-            <dd>${(s.locations || []).length ? chips(s.locations, 'blue') : `<span class="text-slate-500">${t('common.status.not_identified')}</span>`}</dd>
+            ${dtLabel(t('applications.details.locations'))}
+            <dd>${(s.locations || []).length ? chips(s.locations, 'blue') : `${helpSpan(t('common.status.not_identified'))}`}</dd>
           </div>
           <div class="grid gap-1 sm:col-span-2">
-            <dt class="text-sm font-semibold text-slate-500">${t('applications.details.location_notes')}</dt>
-            <dd>${(s.location_notes || '').trim() ? escapeHtml(s.location_notes) : `<span class="text-slate-500">${t('applications.details.location_notes_empty')}</span>`}</dd>
+            ${dtLabel(t('applications.details.location_notes'))}
+            <dd>${(s.location_notes || '').trim() ? escapeHtml(s.location_notes) : helpSpan(t('applications.details.location_notes_empty'))}</dd>
           </div>
         </dl>
       </section>
@@ -397,7 +394,7 @@ const attachmentCardHtml = (att) => {
   const nameBtn = button({
     variant: 'linkMuted',
     label: att.original_filename,
-    extraClass: 'js-download-attachment !text-slate-900 hover:!text-blue-700 hover:underline font-semibold',
+    extraClass: 'js-download-attachment !text-ink hover:!text-brand hover:underline font-semibold',
     ariaLabel: t('applications.aria.download_attachment', { name: att.original_filename }),
     dataset: {
       id: att.id,
@@ -416,18 +413,18 @@ const attachmentCardHtml = (att) => {
     dataset: { id: att.id },
   });
   return `
-    <li class="rounded-2xl bg-slate-50 px-4 py-3">
+    <li class="${CLS.softRow}">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="min-w-0 flex-1">
           ${nameBtn}
-          <p class="mt-1 text-xs text-slate-500">
+          <p class="mt-1 ${CLS.helpText}">
             <span class="break-all">${escapeHtml(att.folder)}/${escapeHtml(att.filename)}</span>
             <span class="mx-1">·</span>
             <span>${escapeHtml(formatBytes(att.size_bytes))}</span>
             ${att.mime_type ? `<span class="mx-1">·</span><span>${escapeHtml(att.mime_type)}</span>` : ''}
           </p>
         </div>
-        <div class="flex items-center gap-2 shrink-0">${deleteBtn}</div>
+        <div class="${CLS.headActions}">${deleteBtn}</div>
       </div>
     </li>
   `;
@@ -438,7 +435,7 @@ const attachmentsSectionHtml = (a, attachments) => {
   return `
     <div class="space-y-3">
       <div class="flex items-center justify-between gap-2">
-        <h3 class="text-lg font-semibold text-slate-900">${t('applications.details.attachments')}</h3>
+        ${sectionTitle(t('applications.details.attachments'))}
       </div>
       ${inlineError({ id: 'attachment-upload-error' })}
       <label class="${CLS.btnSecondaryCompact} cursor-pointer">
@@ -446,9 +443,7 @@ const attachmentsSectionHtml = (a, attachments) => {
         ${icon('arrowUpTray')}
         <span id="attachment-upload-label">${t('applications.action.upload_file')}</span>
       </label>
-      <p class="text-xs text-slate-500">
-        ${t('applications.details.attachments_help', { folder: escapeHtml(folderPreview) })}
-      </p>
+      ${helpText(t('applications.details.attachments_help', { folder: escapeHtml(folderPreview) }))}
       ${attachments.length
         ? `<ul class="space-y-3">${attachments.map(attachmentCardHtml).join('')}</ul>`
         : emptyState({ message: t('applications.details.attachments_empty') })}
@@ -460,8 +455,8 @@ const attachmentsSectionHtml = (a, attachments) => {
 // native <details> "more…" toggle. Events arrive sorted DESC by occurred_at
 // (see listEventsByApplication) so events[0] is the latest.
 const timelineEventHtml = (ev) => `
-  <li class="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-700">
-    <span class="text-slate-500">${escapeHtml(formatDate(ev.occurred_at))}</span>
+  <li class="${CLS.softRow} ${CLS.bodyText}">
+    ${faintSpan(formatDate(ev.occurred_at))}
     <span aria-hidden="true"> — </span>
     <span>${escapeHtml(eventSummary(ev))}</span>
   </li>
@@ -479,8 +474,8 @@ const timelineHtml = (events) => {
   `;
 };
 
-const detailsHtml = (a, events, attachments) => {
-  const status = a.status || 'wishlist';
+const detailsHtml = (a, events, attachments, { editing = false, companies = [], people = [] } = {}) => {
+  const status = a.status || 'lead';
   const pillClass = badgeClasses(STATUS_BADGE_COLOR[status] || 'slate');
   const url = escapeHtml(a.job_posting_url || '');
   const hasRaw = !!(a.job_description_raw || '').trim();
@@ -489,34 +484,34 @@ const detailsHtml = (a, events, attachments) => {
   const hasNotes = !!(a.notes || '').trim();
   const hasPerson = !!a.person_id;
   return `
-    <div class="${CLS.card}">
-      <div class="flex items-baseline justify-between gap-3">
-        <p class="${CLS.eyebrow}">${escapeHtml(a.company_name) || t('applications.details.unknown_company')}</p>
-        <div class="flex items-center gap-2">
+    <div class="${CLS.slideOverBody}">
+      <header class="${CLS.panelHeadRow}">
+        <div class="${CLS.textCol}">
+          ${fileStamp('application', a.id)}
+          <p class="${CLS.eyebrow}">${escapeHtml(a.company_name) || t('applications.details.unknown_company')}</p>
+          <div class="flex flex-wrap items-center gap-3">
+            ${panelTitle(a.role_title, hasURL
+              ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="hover:text-brand hover:underline">${escapeHtml(a.role_title)}</a>`
+              : '')}
+            <span class="${pillClass}">${escapeHtml(statusLabel(status))}</span>
+          </div>
+        </div>
+        <div class="${CLS.headActions}">
           ${hasRaw || hasURL ? outputLanguageSelect('out-lang-extract-jd') : ''}
-          ${hasRaw || hasURL ? button({ id: 'btn-details-extract', variant: 'secondaryCompact', icon: 'sparkles', label: t('applications.action.extract_description') }) : ''}
+          ${hasRaw || hasURL ? button({ id: 'btn-details-extract', icon: 'sparkles', label: t('applications.action.extract_description') }) : ''}
+          ${button({ id: 'btn-details-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('applications.aria.edit') })}
+          ${button({ id: 'btn-details-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('applications.aria.delete', { label: a.role_title }) })}
           ${button({ id: 'btn-details-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
         </div>
-      </div>
-
-      <div class="space-y-2">
-        <div class="flex flex-wrap items-center gap-3">
-          <h2 class="text-2xl font-semibold tracking-tight text-slate-900">
-            ${hasURL
-              ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="hover:text-blue-700 hover:underline">${escapeHtml(a.role_title) || `<span class="italic text-slate-400">${t('applications.list.untitled_role')}</span>`}</a>`
-              : (escapeHtml(a.role_title) || `<span class="italic text-slate-400">${t('applications.list.untitled_role')}</span>`)}
-          </h2>
-          <span class="${pillClass}">${escapeHtml(statusLabel(status))}</span>
-        </div>
-        ${a.person_name ? `<p class="text-slate-600">${escapeHtml(a.person_name)}</p>` : ''}
-      </div>
+      </header>
 
       ${inlineError({ id: 'details-error' })}
       ${inlineNote({ id: 'details-note' })}
       ${inlineWarning({ id: 'details-warning' })}
       <div id="details-progress" class="hidden"></div>
 
-      <form id="quick-status-form" class="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 pt-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] sm:items-end">
+      ${editing ? editorHtml(a, companies, people) : `
+      <form id="quick-status-form" class="${CLS.paperCard} grid gap-3 pt-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] sm:items-end">
         <div class="grid gap-2">
           <label class="${CLS.label}" for="quick-status">${t('applications.quickstatus.status.label')}</label>
           <select class="${CLS.select}" id="quick-status" name="status">
@@ -539,26 +534,26 @@ const detailsHtml = (a, events, attachments) => {
       </form>
 
       ${(hasPerson || hasNotes) ? `
-        <dl class="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+        <dl class="${CLS.paperCard} grid gap-4 sm:grid-cols-2">
           ${hasPerson ? `
             <div class="grid gap-1">
-              <dt class="text-sm font-semibold text-slate-500">${t('applications.details.point_of_contact')}</dt>
+              ${dtLabel(t('applications.details.point_of_contact'))}
               <dd>${a.person_name ? escapeHtml(a.person_name) : t('applications.details.person_fallback', { id: a.person_id })}</dd>
             </div>` : ''}
           <div class="grid gap-1 sm:col-span-2">
-            <dt class="text-sm font-semibold text-slate-500">${t('applications.details.notes')}</dt>
-            <dd>${hasNotes ? escapeHtml(a.notes) : `<span class="text-slate-500">${t('applications.details.notes_empty')}</span>`}</dd>
+            ${dtLabel(t('applications.details.notes'))}
+            <dd>${hasNotes ? escapeHtml(a.notes) : `${helpSpan(t('applications.details.notes_empty'))}`}</dd>
           </div>
         </dl>` : ''}
 
       <div class="space-y-3">
-        <h3 class="text-lg font-semibold text-slate-900">${t('applications.details.jd_section')}</h3>
+        ${sectionTitle(t('applications.details.jd_section'))}
         ${structuredHtml(parsed)}
       </div>
 
       <div class="grid gap-4 lg:grid-cols-2">
         <div class="space-y-3">
-          <h3 class="text-lg font-semibold text-slate-900">${t('applications.details.timeline')}</h3>
+          ${sectionTitle(t('applications.details.timeline'))}
           ${events.length ? timelineHtml(events) : emptyState({ message: t('applications.details.timeline_empty') })}
         </div>
         ${attachmentsSectionHtml(a, attachments)}
@@ -568,11 +563,12 @@ const detailsHtml = (a, events, attachments) => {
         title: t('applications.details.raw_jd'),
         summary: t('common.action.show'),
         openSummary: t('common.action.hide'),
-        extraClass: 'rounded-2xl border border-slate-200 bg-slate-50 p-4',
+        extraClass: CLS.paperCard,
         content: `<div class="mt-4">${hasRaw
-          ? `<pre class="overflow-x-auto rounded-2xl bg-white p-4 text-sm whitespace-pre-wrap text-slate-700">${escapeHtml(a.job_description_raw)}</pre>`
-          : `<div class="rounded-2xl bg-white px-4 py-6 text-center text-sm text-slate-500">${t('applications.details.raw_jd_empty')}</div>`}</div>`,
+          ? codeBlock(a.job_description_raw)
+          : emptyState({ message: t('applications.details.raw_jd_empty') })}</div>`,
       })}
+      `}
     </div>
   `;
 };
@@ -583,36 +579,71 @@ let editorSubject = null; // cached row loaded into the editor — used to
                           // preserve fields the form doesn't expose (extracted
                           // JD JSON, person_id) so saves don't wipe them.
 let detailsID = null;     // null | number — id of the application shown in details panel
+let applicationEditing = false;
 // Optional company_id filter (from ?company_id=… — set by company-card pill).
 let companyFilter = null; // { id, name } | null
+// Optional person_id filter (from ?person_id=… — silent, no banner/pill;
+// used by the "View" link on a person's slide-over).
+let personFilter = null;  // { id, name } | null
+let filterState = { headline: 'all', query: '' };
+let cachedApps = [];
+
+const HEADLINE_FILTERS = ['all', 'lead', 'applied', 'interview', 'offer', 'rejected', 'ghosted'];
+const filterOptions = () => HEADLINE_FILTERS.map(k => ({ key: k, label: t(`applications.filters.${k}`) }));
 
 const filterBannerHtml = () => companyFilter
-  ? `<div class="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-900">
-       <span>${t('people.list.filter_by_company')} <span class="font-semibold">${escapeHtml(companyFilter.name)}</span></span>
-       <a href="/local/applications" class="font-semibold text-blue-700 underline hover:text-blue-800">${t('people.list.clear_filter')}</a>
-     </div>`
+  ? filterBanner({
+      label: t('common.filter.by_company'),
+      name: companyFilter.name,
+      clearHref: '/local/applications',
+      clearLabel: t('common.filter.clear'),
+    })
   : '';
 
-const refreshList = async () => {
-  const all = await listApplications();
-  const apps = companyFilter
-    ? all.filter(a => a.company_id === companyFilter.id)
-    : all;
+const applyFilters = () => {
+  const q = filterState.query.trim().toLowerCase();
+  return cachedApps.filter(a => {
+    if (companyFilter && a.company_id !== companyFilter.id) return false;
+    if (personFilter && a.person_id !== personFilter.id) return false;
+    if (q) {
+      const hay = `${a.role_title || ''} ${a.company_name || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    if (filterState.headline === 'all') return true;
+    return headlineStatus(a.status) === filterState.headline;
+  });
+};
+
+const renderList = () => {
+  const filtered = applyFilters();
   restoreAllPanels(PANEL_IDS);
-  document.getElementById('list-content').innerHTML = filterBannerHtml() + listHtml(apps);
+  document.getElementById('list-content').innerHTML =
+    filterBannerHtml()
+    + collectionRowsHtml({ rows: filtered.map(appFileRow), emptyMessage: t('applications.list.empty') })
+    + (filtered.length ? clearAllHtml() : '');
   if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
-  if (detailsID) mountInlinePanel('details-panel', detailsID);
-  setPageCount('app-count', apps.length, n => companyFilter
+  setPageCount('app-count', filtered.length, n => companyFilter
     ? t(n === 1 ? 'applications.list.count_one_at_company' : 'applications.list.count_many_at_company', { n, company: companyFilter.name })
     : t(n === 1 ? 'applications.list.count_one_all' : 'applications.list.count_many_all', { n }));
-  refreshSidebarCounts().catch(() => {});
-  document.querySelectorAll('.js-edit').forEach(btn =>
-    btn.addEventListener('click', () => openEditor({ id: Number(btn.dataset.id) })));
+  document.getElementById('apps-filters').innerHTML = collectionFilterPillsHtml(filterOptions(), filterState.headline);
+  wireListHandlers();
+};
+
+const wireListHandlers = () => {
   document.querySelectorAll('.js-details').forEach(btn =>
-    btn.addEventListener('click', () => openDetails(Number(btn.dataset.id))));
-  document.querySelectorAll('.js-delete').forEach(btn =>
-    btn.addEventListener('click', () => deleteApplicationFromList(Number(btn.dataset.id), btn.dataset.label)));
+    btn.addEventListener('click', () => openDetails(Number(btn.dataset.id), btn)));
+  document.querySelectorAll('.js-filter').forEach(btn =>
+    btn.addEventListener('click', () => {
+      filterState.headline = btn.dataset.filter;
+      renderList();
+    }));
   document.getElementById('btn-clear-all')?.addEventListener('click', clearAllApplicationsFromList);
+};
+
+const refreshList = async () => {
+  cachedApps = await listApplications();
+  renderList();
+  refreshSidebarCounts().catch(() => {});
 };
 
 // Clear every application (and its events + attachment records) in one shot.
@@ -632,9 +663,9 @@ const clearAllApplicationsFromList = async () => {
   }
 };
 
-const deleteApplicationFromList = async (id, label) => {
+const deleteApplicationFromList = async (id, label, errorID = 'list-error') => {
   if (!confirm(t('applications.confirm.delete', { label }))) return;
-  setInlineError('list-error', '');
+  setInlineError(errorID, '');
   try {
     await deleteApplication(id);
     if (editorMode && editorMode !== 'new' && editorMode.id === id) closeEditor();
@@ -642,7 +673,7 @@ const deleteApplicationFromList = async (id, label) => {
     toast(t('applications.toast.deleted'), 'ok');
     await refreshList();
   } catch (err) {
-    setInlineError('list-error', t('common.error.delete_failed', { err: err.message }));
+    setInlineError(errorID, t('common.error.delete_failed', { err: err.message }));
   }
 };
 
@@ -695,15 +726,17 @@ const readForm = (form) => {
     person_id: Number(fd.get('person_id')) || null,
     role_title: (fd.get('role_title') || '').toString().trim(),
     job_posting_url: (fd.get('job_posting_url') || '').toString().trim(),
-    status: (fd.get('status') || 'wishlist').toString(),
+    status: (fd.get('status') || 'lead').toString(),
     job_description_raw: (fd.get('job_description_raw') || '').toString(),
     notes: (fd.get('notes') || '').toString(),
   };
 };
 
-const wireEditor = () => {
+const wireEditor = ({ onCancel, onSaved } = {}) => {
+  const cancelFn = onCancel || closeEditor;
+  const savedFn = onSaved || (async () => { closeEditor(); await refreshList(); });
   const form = document.getElementById('editor-form');
-  document.getElementById('btn-cancel').addEventListener('click', closeEditor);
+  document.getElementById('btn-cancel').addEventListener('click', cancelFn);
 
   // Repopulate the person dropdown whenever the company selection changes.
   // Clears the current selection to avoid leaving a mismatched contact.
@@ -735,10 +768,8 @@ const wireEditor = () => {
           job_description_extracted_json: editorSubject?.job_description_extracted_json ?? '{}',
         });
         toast(t('applications.toast.saved'), 'ok');
-        if (detailsID === editorMode.id) await renderDetails();
       }
-      closeEditor();
-      await refreshList();
+      await savedFn();
     } catch (err) {
       setInlineError('editor-error', t('common.error.save_failed', { err: err.message }));
     }
@@ -748,11 +779,16 @@ const wireEditor = () => {
 // ---------- details panel ----------
 
 const closeDetails = () => {
+  if (isSlideOverOpen('details-panel')) {
+    closeSlideOver('details-panel');
+    return;
+  }
   detailsID = null;
-  mountInlinePanel('details-panel', null);
   const panel = document.getElementById('details-panel');
-  panel.classList.add('hidden');
-  panel.innerHTML = '';
+  if (panel) {
+    panel.classList.add('hidden');
+    panel.innerHTML = '';
+  }
 };
 
 const renderDetails = async () => {
@@ -767,24 +803,65 @@ const renderDetails = async () => {
     listEventsByApplication(detailsID),
     listAttachmentsByParent('application', detailsID),
   ]);
+  let companies = [];
+  let people = [];
+  if (applicationEditing) {
+    [companies, people] = await Promise.all([
+      listCompanies(),
+      app.company_id ? listPeopleByCompanyID(app.company_id) : Promise.resolve([]),
+    ]);
+    editorMode = { id: app.id };
+    editorSubject = app;
+  }
   const panel = document.getElementById('details-panel');
-  panel.innerHTML = detailsHtml(app, events, attachments);
+  panel.innerHTML = detailsHtml(app, events, attachments, { editing: applicationEditing, companies, people });
   wireDetails(app);
+  if (applicationEditing) {
+    wireEditor({
+      onCancel: () => {
+        applicationEditing = false;
+        editorMode = null;
+        editorSubject = null;
+        renderDetails();
+      },
+      onSaved: async () => {
+        applicationEditing = false;
+        editorMode = null;
+        editorSubject = null;
+        await refreshList();
+        await renderDetails();
+      },
+    });
+  }
 };
 
-const openDetails = async (id) => {
-  // Editor and details are mutually exclusive to keep focus clear.
+const openDetails = async (id, triggerEl = null) => {
   closeEditor();
   detailsID = id;
-  const panel = document.getElementById('details-panel');
-  panel.classList.remove('hidden');
   await renderDetails();
-  mountInlinePanel('details-panel', id);
-  panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  openSlideOver({
+    panelId: 'details-panel',
+    trigger: triggerEl,
+    onClose: () => {
+      detailsID = null;
+      applicationEditing = false;
+      editorMode = null;
+      editorSubject = null;
+    },
+  });
 };
 
 const wireDetails = (app) => {
   document.getElementById('btn-details-close').addEventListener('click', closeDetails);
+  document.getElementById('btn-details-edit')?.addEventListener('click', () => {
+    if (!detailsID) return;
+    applicationEditing = true;
+    renderDetails();
+  });
+  document.getElementById('btn-details-delete')?.addEventListener('click', () => {
+    if (!detailsID) return;
+    deleteApplicationFromList(detailsID, app.role_title || `#${detailsID}`, 'details-error');
+  });
 
   document.getElementById('quick-status-form')?.addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -926,6 +1003,10 @@ export const mountApplications = async (root) => {
   root.innerHTML = shellHtml();
   PANEL_IDS.forEach(rememberPanelAnchor);
   document.getElementById('btn-new').addEventListener('click', () => openEditor('new'));
+  document.getElementById('apps-search').addEventListener('input', (e) => {
+    filterState.query = e.target.value;
+    renderList();
+  });
 
   // Resolve ?company_id=… before the first list render so the banner and
   // count reflect the filter from the very first paint.
@@ -935,6 +1016,11 @@ export const mountApplications = async (root) => {
     const company = await getCompany(rawCompanyID);
     if (company) companyFilter = { id: company.id, name: company.official_name };
     else toast(t('applications.toast.company_missing_filter', { id: rawCompanyID }), 'warning');
+  }
+  const rawPersonID = Number(params.get('person_id'));
+  if (rawPersonID) {
+    const person = await getPerson(rawPersonID);
+    if (person) personFilter = { id: person.id, name: person.full_name };
   }
 
   await refreshList();

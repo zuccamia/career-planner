@@ -5,87 +5,82 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} — {{ t "app.title_suffix" }}</title>
+  <link rel="preload" href="/static/fonts/newsreader-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/app.css">
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-900 antialiased">
-  <div class="mx-auto flex min-h-screen w-full max-w-7xl flex-col lg:flex-row">
-    <aside class="border-b border-slate-200 bg-white lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-b-0 lg:border-r">
-      <div class="flex h-full flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
+{{$navApp   := "text-ink-soft hover:bg-paper hover:text-ink"}}
+{{$navSet   := "bg-brand-tint text-brand"}}
+{{$navLabel := "font-mono text-[0.62rem] font-medium uppercase tracking-[0.14em] text-ink-faint px-4"}}
+{{$navLink  := "flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition"}}
+{{$navCount := "ml-auto hidden rounded-full bg-line px-2 py-0.5 font-mono text-xs font-medium tabular-nums text-ink-soft"}}
+{{$btnIcon    := "inline-flex items-center justify-center rounded-full border border-line-strong bg-surface p-2 text-ink-soft transition hover:border-brand hover:bg-brand-tint"}}
+{{$btnPrimary := "inline-flex items-center justify-center gap-2 rounded-full bg-brand px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-deep"}}
+{{$btnSubtle  := "inline-flex items-center justify-center gap-2 rounded-full border border-line-strong bg-surface px-4 py-2 text-sm font-semibold text-ink-soft transition hover:border-brand hover:bg-brand-tint"}}
+<body class="min-h-screen bg-paper text-ink antialiased">
+  <header class="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6">
+    <button id="sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="false"
+            aria-label="{{ t "nav.aria.toggle" }}"
+            class="inline-flex items-center justify-center rounded-xl border border-line-strong bg-surface p-2 text-ink-soft transition hover:border-brand hover:bg-brand-tint">
+      <span data-icon="menu"></span>
+    </button>
+    <a class="font-display text-lg font-semibold text-ink" href="/local/dashboard">{{ t "app.name" }}</a>
+    <div class="ml-auto flex items-center gap-2">
+      <a id="current-snapshot" href="/local/settings" title=""
+         class="hidden flex-row items-center gap-1.5 whitespace-nowrap rounded-full border border-brand/20 bg-brand-tint px-3 py-1 text-brand transition hover:bg-brand-tint/40">
+        <span data-icon="camera" data-icon-size="4" class="shrink-0"></span>
+        <span id="current-snapshot-name" class="max-w-[10rem] truncate text-xs font-semibold leading-none"></span>
+      </a>
+      <a href="/local/companies?new=1" aria-label="{{ t "sidebar.aria.add_company" }}" class="{{$btnPrimary}}">
+        <span data-icon="plus"></span>
+        <span class="hidden sm:inline">{{ t "sidebar.quick_start.add_company" }}</span>
+      </a>
+      <a href="/local/applications?new=1" aria-label="{{ t "sidebar.aria.add_application" }}" class="{{$btnSubtle}}">
+        <span data-icon="plus"></span>
+        <span class="hidden sm:inline">{{ t "sidebar.quick_start.add_application" }}</span>
+      </a>
+    </div>
+  </header>
+
+  <aside id="sidebar"
+         class="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] -translate-x-full flex-col border-r border-line bg-surface transition-transform duration-200 ease-out motion-reduce:transition-none">
+      <div class="flex h-full flex-col gap-8 overflow-y-auto px-4 py-6 sm:px-6">
         <div class="space-y-2">
-          <a class="inline-flex text-base font-semibold text-slate-900" href="/local/dashboard">{{ t "app.name" }}</a>
-          <p class="text-xs uppercase tracking-[0.14em] text-slate-400">{{ t "app.tagline" }}</p>
+          <a class="inline-flex font-display text-lg font-semibold text-ink" href="/local/dashboard">{{ t "app.name" }}</a>
+          <p class="font-mono text-xs uppercase tracking-[0.14em] text-ink-faint">{{ t "app.tagline" }}</p>
+        </div>
+
+        <nav class="flex flex-col gap-6">
+          {{$page := .Page}}
+          {{range .Nav}}
+            <div class="flex flex-col gap-1">
+              <p class="{{$navLabel}}">{{.Label}}</p>
+              {{range .Items}}
+                <a class="{{$navLink}} {{if eq $page .Page}}{{$navSet}}{{else}}{{$navApp}}{{end}}" href="{{.Href}}">
+                  <span data-icon="{{.Icon}}"></span>
+                  <span>{{.Label}}</span>
+                  {{if .CountKey}}<span data-sidebar-count="{{.CountKey}}" class="{{$navCount}}"></span>{{end}}
+                </a>
+              {{end}}
+            </div>
+          {{end}}
+        </nav>
+
+        <div class="mt-auto flex flex-col gap-2 pt-4">
           <a id="ai-mode-badge" href="/local/settings#ai-provider" class="hidden"></a>
           <a id="scraper-mode-badge" href="/local/settings#scraper-provider" class="hidden"></a>
         </div>
 
-        <nav class="flex flex-col gap-2">
-          {{$app := "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}}
-          {{$set := "bg-blue-50 text-blue-700"}}
-          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "dashboard"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/dashboard">
-            <span data-icon="chartBar"></span>
-            <span>{{ t "nav.dashboard" }}</span>
-          </a>
-          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "profile"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/profile">
-            <span data-icon="profileCard"></span>
-            <span>{{ t "nav.profile" }}</span>
-          </a>
-          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "companies"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/companies">
-            <span data-icon="companies"></span>
-            <span>{{ t "nav.companies" }}</span>
-            <span data-sidebar-count="companies" class="ml-auto hidden rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700"></span>
-          </a>
-          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "people"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/people">
-            <span data-icon="people"></span>
-            <span>{{ t "nav.people" }}</span>
-            <span data-sidebar-count="people" class="ml-auto hidden rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700"></span>
-          </a>
-          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "applications"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/applications">
-            <span data-icon="applications"></span>
-            <span>{{ t "nav.applications" }}</span>
-            <span data-sidebar-count="applications" class="ml-auto hidden rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-700"></span>
-          </a>
-          <a class="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition {{if eq .Page "settings"}}{{$set}}{{else}}{{$app}}{{end}}" href="/local/settings">
-            <span data-icon="settings"></span>
-            <span>{{ t "nav.settings" }}</span>
-          </a>
-        </nav>
-
-        <div id="current-snapshot" class="hidden rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 p-3 shadow-sm">
-          <div class="flex items-center gap-1.5 text-blue-700">
-            <span data-icon="camera" data-icon-size="4"></span>
-            <p class="text-[10px] font-semibold uppercase tracking-[0.14em]">{{ t "sidebar.current_snapshot" }}</p>
-          </div>
-          <p id="current-snapshot-name" class="mt-1.5 truncate text-sm font-semibold text-slate-900" title=""></p>
-        </div>
-
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <p class="text-sm font-semibold text-slate-900">{{ t "sidebar.quick_start.title" }}</p>
-          <p class="mt-1 text-sm text-slate-500">{{ t "sidebar.quick_start.body" }}</p>
-          <div class="mt-4 flex flex-wrap gap-3">
-            <a href="/local/companies?new=1" aria-label="{{ t "sidebar.aria.add_company" }}"
-               class="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700">
-              <span data-icon="plus"></span>
-              <span>{{ t "sidebar.quick_start.add_company" }}</span>
-            </a>
-            <a href="/local/applications?new=1" aria-label="{{ t "sidebar.aria.add_application" }}"
-               class="inline-flex items-center justify-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50">
-              <span data-icon="plus"></span>
-              <span>{{ t "sidebar.quick_start.add_application" }}</span>
-            </a>
-          </div>
-        </div>
       </div>
-    </aside>
+  </aside>
 
-    <main class="min-w-0 flex-1 py-8 sm:py-10 lg:py-12">
-      <div class="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 sm:px-6 lg:px-8">
-        <div id="online-banner" class="hidden rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"></div>
-        <div id="app" data-page="{{.Page}}">
-          <p class="text-sm text-slate-500">{{ t "app.loading" }}</p>
-        </div>
+  <main class="py-8 sm:py-10 lg:py-12">
+    <div class="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 sm:px-6 lg:px-8">
+      <div id="online-banner" class="hidden rounded-2xl border border-brass/30 bg-brass-tint px-4 py-3 text-sm text-brass"></div>
+      <div id="app" data-page="{{.Page}}">
+        <p class="text-sm text-ink-faint">{{ t "app.loading" }}</p>
       </div>
-    </main>
-  </div>
+    </div>
+  </main>
   <script type="module" src="/static/local/js/main.mjs"></script>
 </body>
 </html>

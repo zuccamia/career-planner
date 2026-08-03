@@ -18,6 +18,45 @@ type localPageData struct {
 	Title  string
 	Page   string
 	Locale string
+	Nav    []NavGroup
+}
+
+// NavItem drives one <a> in the sidebar. CountKey is optional — when set, the
+// template renders a `data-sidebar-count="…"` badge that JS populates.
+type NavItem struct {
+	Page     string
+	Href     string
+	Icon     string
+	Label    string
+	CountKey string
+}
+
+type NavGroup struct {
+	Key   string // matches nav.group.<key> i18n keys
+	Label string
+	Items []NavItem
+}
+
+// buildNav is the one source of truth for the sidebar layout. Keeping it in Go
+// mirrors the JS-side NAV_GROUPS map used by pageHeader, so a change here + the
+// same page → group mapping in ui/components.mjs keeps the eyebrow and sidebar
+// aligned.
+func buildNav(locale string) []NavGroup {
+	tt := func(k string) string { return i18n.T(locale, k) }
+	return []NavGroup{
+		{Key: "workspace", Label: tt("nav.group.workspace"), Items: []NavItem{
+			{Page: "dashboard", Href: "/local/dashboard", Icon: "chartBar",    Label: tt("nav.dashboard")},
+			{Page: "profile",   Href: "/local/profile",   Icon: "profileCard", Label: tt("nav.profile")},
+		}},
+		{Key: "collections", Label: tt("nav.group.collections"), Items: []NavItem{
+			{Page: "companies",    Href: "/local/companies",    Icon: "companies",    Label: tt("nav.companies"),    CountKey: "companies"},
+			{Page: "people",       Href: "/local/people",       Icon: "people",       Label: tt("nav.people"),       CountKey: "people"},
+			{Page: "applications", Href: "/local/applications", Icon: "applications", Label: tt("nav.applications"), CountKey: "applications"},
+		}},
+		{Key: "system", Label: tt("nav.group.system"), Items: []NavItem{
+			{Page: "settings", Href: "/local/settings", Icon: "settings", Label: tt("nav.settings")},
+		}},
+	}
 }
 
 // parseLocalTemplate builds the template set for a page. locale is baked into
@@ -50,6 +89,7 @@ func renderLocal(w http.ResponseWriter, r *http.Request, page, block, titleKey, 
 		Title:  i18n.T(locale, titleKey),
 		Page:   page,
 		Locale: locale,
+		Nav:    buildNav(locale),
 	}
 	if err := tmpl.ExecuteTemplate(w, block, data); err != nil {
 		log.Printf("local %s render: %v", page, err)
