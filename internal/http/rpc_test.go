@@ -16,6 +16,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/profile"
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
@@ -45,6 +46,7 @@ func newTestServer(t *testing.T, cLLM, dLLM, aLLM, bragLLM, commLLM llm.Client) 
 		applications:   applications.NewService(aLLM, nil, nil, nil),
 		brags:          brags.NewService(bragLLM),
 		communications: communications.NewService(commLLM),
+		profile:        profile.NewService(bragLLM),
 	}
 }
 
@@ -244,6 +246,82 @@ func TestRPCGenerateBragTagsSuccess(t *testing.T) {
 	decodeBody(t, rr, &body)
 	if len(body.Tags) != 2 || body.Tags[0] != "feature flags" || body.Tags[1] != "observability" {
 		t.Fatalf("tags = %#v, want normalized tags", body.Tags)
+	}
+}
+
+// ---------- rpcExtractBragsFromResume ----------
+
+func TestRPCExtractBragsFromResumeBadJSON(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcExtractBragsFromResume, `nope`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCExtractBragsFromResumeEmptyMarkdown(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcExtractBragsFromResume, `{"markdown":"   "}`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCExtractBragsFromResumeServiceError(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, &fakeLLM{err: errors.New("boom")}, nil)
+	rr := doJSON(t, s.rpcExtractBragsFromResume, `{"markdown":"# CV\n- did work"}`)
+	if rr.Code != nethttp.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rr.Code)
+	}
+}
+
+func TestRPCExtractBragsFromResumeSuccess(t *testing.T) {
+	payload := `{"brags":[{"title":"Cut latency","body":"Rewrote planner.","impact":"7s → 0.5s","tags":["performance"],"company":"Stripe","confidence":0.9}]}`
+	s := newTestServer(t, nil, nil, nil, &fakeLLM{payload: payload}, nil)
+	rr := doJSON(t, s.rpcExtractBragsFromResume, `{"markdown":"# CV\n- Cut latency"}`)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200", rr.Code)
+	}
+	var body brags.ExtractResumeResult
+	decodeBody(t, rr, &body)
+	if len(body.Brags) != 1 || body.Brags[0].Title != "Cut latency" || body.Brags[0].Company != "Stripe" {
+		t.Fatalf("unexpected body: %+v", body)
+	}
+}
+
+// ---------- rpcExtractOverviewFromResume ----------
+
+func TestRPCExtractOverviewFromResumeBadJSON(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcExtractOverviewFromResume, `nope`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCExtractOverviewFromResumeEmptyMarkdown(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcExtractOverviewFromResume, `{"markdown":"   "}`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+// ---------- rpcExtractStructuredResumeFromMd ----------
+
+func TestRPCExtractStructuredResumeBadJSON(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcExtractStructuredResumeFromMd, `nope`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCExtractStructuredResumeEmptyMarkdown(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcExtractStructuredResumeFromMd, `{"markdown":"   "}`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
 	}
 }
 

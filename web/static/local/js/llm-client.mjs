@@ -51,7 +51,7 @@ const classifyError = (status, text, baseUrl) => {
     return { code: 'network', message: 'Network error or CORS blocked. Some providers do not allow browser calls — see docs.' };
   }
   if (status === 401 || status === 403) return { code: 'auth', message: 'API key rejected. Check the key in Settings.' };
-  if (status === 429) return { code: 'rate_limit', message: 'Provider rate-limited this call. Wait a moment.' };
+  if (status === 429) return { code: 'rate_limit', message: `HTTP 429${text ? `: ${text}` : ''}` };
   if (status >= 500) return { code: 'provider', message: `Provider error (HTTP ${status}). ${text || ''}`.trim() };
   return { code: 'other', message: `HTTP ${status}${text ? `: ${text}` : ''}` };
 };

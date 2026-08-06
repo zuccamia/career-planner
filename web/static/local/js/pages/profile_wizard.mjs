@@ -207,7 +207,7 @@ const valuesStep = async (state) => {
       </div>
       <div id="wiz-values-chips" class="grid grid-cols-1 gap-2 sm:grid-cols-2">${chipHtml}</div>
       <p id="wiz-values-max" class="${CLS.helpText} hidden">${escapeHtml(t('profile.wizard.step.values.max_reached'))}</p>
-      <div class="flex items-center gap-2">
+      <div class="${CLS.inlineRow}">
         <input id="wiz-values-custom-input" type="text" placeholder="${t('profile.wizard.step.values.add_own')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
         ${button({ id: 'btn-wiz-values-add', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
       </div>
@@ -244,7 +244,7 @@ const toolsStep = ({ state, toolsListHtml }) => `
       <p class="mt-1 ${CLS.helpText}">${escapeHtml(t('profile.wizard.step.tools.help'))}</p>
     </div>
     <div id="wiz-tools-list">${toolsListHtml(state.wizardOverview.tools || [])}</div>
-    <div class="flex items-center gap-2">
+    <div class="${CLS.inlineRow}">
       <input id="wiz-tools-input" type="text" placeholder="${t('profile.wizard.step.tools.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
       ${button({ id: 'btn-wiz-tools-add', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
     </div>

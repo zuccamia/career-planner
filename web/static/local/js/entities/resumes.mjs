@@ -4,6 +4,28 @@
 
 import { exec, transaction } from '../db/client.mjs';
 
+// resumePdfFilename builds "{name} - CV - YYYYMMDD.pdf" when a name is
+// available, or falls back to the raw resume title. Both branches strip
+// filesystem-hostile characters. Shared by the Resumes-tab download
+// button and the import-time preview download so exports are named
+// consistently across the app.
+const stripFsHostile = (s) =>
+  String(s ?? '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '').trim();
+
+export const resumePdfFilename = ({ name, fallback, date } = {}) => {
+  const d = date instanceof Date ? date : new Date();
+  // Local date so the stamp matches the wall clock the user sees when they
+  // hit "download" — a UTC stamp is off by a day for evenings in Asia and
+  // early mornings in the Americas.
+  const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+  // Sanitize name first so all-garbage input (e.g. "///") falls through to
+  // the fallback instead of producing "- CV - YYYYMMDD.pdf".
+  const cleanName = stripFsHostile(name);
+  if (cleanName) return `${cleanName} - CV - ${stamp}.pdf`;
+  const cleanFallback = stripFsHostile(fallback);
+  return `${cleanFallback || 'resume'}.pdf`;
+};
+
 const EDITABLE_COLS = ['title', 'format', 'body'];
 const ALLOWED_FORMATS = new Set(['md', 'typ']);
 

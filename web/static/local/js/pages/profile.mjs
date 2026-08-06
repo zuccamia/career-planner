@@ -3,8 +3,10 @@
 // setup wizard (see profile_wizard.mjs) instead of the flat form.
 
 import { CLS } from '../ui/classes.mjs';
-import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
-import { button, pageHeader, formField, emptyState, helpText, inlineError, setInlineError, badge, logPanel, tab, removablePill } from '../ui/components.mjs';
+import { escapeHtml, formatDate } from '../ui/dom.mjs';
+import { button, pageHeader, formField, emptyState, fileRow, helpText, inlineError, inlineNote, setInlineError, badge, tab, removablePill } from '../ui/components.mjs';
+import { collectionRowsHtml } from '../ui/collection_list.mjs';
+import { relativeAge } from '../ui/format.mjs';
 import { toast } from '../ui/toast.mjs';
 import { t } from '../i18n.mjs';
 import {
@@ -14,20 +16,16 @@ import {
 import {
   listSparks, createSpark, deleteSpark, countSparks,
 } from '../entities/career-sparks.mjs';
-import {
-  listResumes, getResume, createResume, updateResume, deleteResume, setPrimaryResume, countResumes,
-} from '../entities/resumes.mjs';
+import { listResumes, countResumes } from '../entities/resumes.mjs';
 import {
   listBragEntries, createBragEntry, updateBragEntry, deleteBragEntry, countBragEntries,
 } from '../entities/brag-entries.mjs';
-import { listPdfsForResume, linkPdfToApplication } from '../entities/resume-pdfs.mjs';
-import { listApplications } from '../entities/applications.mjs';
 import { listCompanies } from '../entities/companies.mjs';
 import { generateBragTags } from '../rpc.mjs';
 import { createProgress } from '../ui/progress.mjs';
-import { uploadAttachment, sanitizeFolder } from '../storage/attachments.mjs';
-import { compileTypstToPdf } from '../workers/typst-client.mjs';
 import { renderWizard as renderWizardModule } from './profile_wizard.mjs';
+import { renderImport } from './profile-import.mjs';
+import { openResumePanel } from './profile-resume-panel.mjs';
 
 // Tab identity + display label in one place — order determines tab-strip
 // order (relying on JS insertion order for object keys, guaranteed since ES2015).
@@ -39,6 +37,11 @@ const TABS = {
   brag: 'profile.tab.brag_sheet',
 };
 const TAB_NAMES = Object.keys(TABS);
+// Import is a virtual view rendered inside the tab-content area. It never
+// appears in the tab strip but is a valid `state.tab` value so its state
+// round-trips through the `?tab=import` URL param.
+const IMPORT_TAB = 'import';
+const VALID_TABS = [...TAB_NAMES, IMPORT_TAB];
 const CURRENT_YEAR = String(new Date().getFullYear());
 
 // ---------- state ----------
@@ -53,10 +56,6 @@ const state = {
   // Custom "add your own" values captured on step 4 so re-entering the step
   // keeps them selected even before Next commits.
   wizardValuesCustom: [],
-  resumeEditorId: null,
-  resumeEditorNew: false,
-  resumePdfBlob: null,
-  resumePdfUrl: null,
   bragEditorId: null,
   bragEditorNew: false,
   // Brag tags are editable inside the unsaved brag-entry form: the user can
@@ -73,6 +72,7 @@ const shellHtml = () => `
     <div id="toast" class="hidden"></div>
     <section class="${CLS.pageHeadRow}">
       ${pageHeader({ page: 'profile', title: t('page.profile.title'), tagline: t('profile.tagline') })}
+      ${button({ id: 'btn-import', variant: 'subtle', icon: 'sparkles', label: t('profile.action.import') })}
     </section>
 
     <div class="${CLS.hairline}">
@@ -99,7 +99,7 @@ const syncTabInUrl = (tab) => {
 };
 
 const setTab = (tab) => {
-  if (!TAB_NAMES.includes(tab)) tab = 'overview';
+  if (!VALID_TABS.includes(tab)) tab = 'overview';
   state.tab = tab;
   syncTabInUrl(tab);
   document.getElementById('tab-strip').innerHTML = TAB_NAMES.map(t => tabButton(t)).join('');
@@ -135,6 +135,7 @@ const renderTab = () => {
   if (state.tab === 'overview') return renderOverviewTab(el);
   if (state.tab === 'resumes') return renderResumesTab(el);
   if (state.tab === 'brag') return renderBragTab(el);
+  if (state.tab === IMPORT_TAB) return renderImport({ mountEl: el, onExit: (tab = 'overview') => setTab(tab) });
 };
 
 const wireTabStrip = () => {
@@ -235,7 +236,7 @@ const renderOverviewFlat = async (el, overview) => {
           <div class="grid gap-2">
             <label class="${CLS.label}" for="ov-tools-input">${t('profile.field.tools.label')}</label>
             <div id="ov-tools-list">${toolsListHtml(overview?.tools || [])}</div>
-            <div class="flex items-center gap-2">
+            <div class="${CLS.inlineRow}">
               <input id="ov-tools-input" type="text" placeholder="${t('profile.tools.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
               ${button({ id: 'btn-add-tool', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
             </div>
@@ -296,7 +297,7 @@ const bragTagPillHtml = (tag) => {
 // can mark several sparks as equally top-tier. Default priority is 3
 // (middle) so the first spark added isn't automatically the top.
 const sparkInputHtml = () => `
-  <div class="flex items-center gap-2">
+  <div class="${CLS.inlineRow}">
     <input id="spark-input" type="text" placeholder="${t('profile.sparks.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
     <select id="spark-priority" title="${t('profile.sparks.priority_title')}" class="${CLS.inputBase} w-24 shrink-0">
       <option value="1">${t('profile.sparks.priority.p1')}</option>
@@ -468,7 +469,7 @@ const skillPillHtml = (s, i) => {
 
 const skillsEditorHtml = ({ mountId, skills = [] }) => `
   <div id="${mountId}" data-skills-editor class="space-y-3">
-    <div class="flex items-center gap-2">
+    <div class="${CLS.inlineRow}">
       <input type="text" class="${CLS.inputBase} flex-1 min-w-0 js-skill-name" placeholder="${t('profile.skills.name_placeholder')}" autocomplete="off" />
       <input type="number" class="${CLS.inputBase} w-24 shrink-0 px-2 text-center js-skill-years"
              min="0" step="0.5" placeholder="${t('profile.skills.years_placeholder')}" title="${t('profile.skills.years_title')}" />
@@ -621,306 +622,58 @@ const renderResumesTab = async (el) => {
         ${helpText(t('profile.resumes.help'))}
         ${button({ id: 'btn-new-resume', variant: 'primaryCompact', icon: 'plus', label: t('profile.resumes.action.new'), ariaLabel: t('profile.resumes.aria.add') })}
       </section>
-      <section id="resume-editor" class="${state.resumeEditorId || state.resumeEditorNew ? '' : 'hidden'}"></section>
-      <section id="resume-list" class="${CLS.card}">
-        ${resumes.length ? resumesListHtml(resumes) : emptyState({ message: t('profile.resumes.empty') })}
+      <section id="resume-list">
+        ${collectionRowsHtml({
+          rows: resumes.map(resumeFileRow),
+          emptyMessage: t('profile.resumes.empty'),
+        })}
       </section>
+      <section id="resume-panel" class="hidden"></section>
     </div>
   `;
-  document.getElementById('btn-new-resume').addEventListener('click', () => openResumeEditor(null));
-  wireResumesList();
-  if (state.resumeEditorId || state.resumeEditorNew) {
-    await mountResumeEditor();
-  }
-};
-
-const resumesListHtml = (resumes) => `
-  <ul class="space-y-3">
-    ${resumes.map(r => `
-      <li class="${CLS.paperCard}">
-        <div class="${CLS.cardHeadRow}">
-          <div class="${CLS.textCol}">
-            <div class="${CLS.chipRowInline}">
-              <span class="font-semibold text-ink">${escapeHtml(r.title || t('profile.resumes.untitled'))}</span>
-              ${badge({ label: r.format === 'typ' ? t('profile.resumes.format.typst') : t('profile.resumes.format.markdown'), color: r.format === 'typ' ? 'violet' : 'slate', size: 'xs' })}
-              ${r.is_primary ? badge({ label: t('profile.resumes.primary'), color: 'emerald', size: 'xs' }) : ''}
-            </div>
-            <p class="${CLS.helpText}">${t('common.updated_at', { date: formatDate(r.updated_at) })}</p>
-          </div>
-          <div class="${CLS.headActions}">
-            ${r.is_primary
-              ? ''
-              : button({ variant: 'secondaryCompact', label: t('profile.resumes.action.set_primary'), extraClass: 'js-primary', dataset: { id: r.id } })}
-            ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('common.action.edit'), extraClass: 'js-edit-resume', dataset: { id: r.id } })}
-            ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('common.action.delete'), extraClass: 'js-delete-resume', dataset: { id: r.id, title: r.title || t('profile.resumes.untitled') } })}
-          </div>
-        </div>
-      </li>
-    `).join('')}
-  </ul>
-`;
-
-const wireResumesList = () => {
-  document.querySelectorAll('.js-edit-resume').forEach(b => b.addEventListener('click', () => openResumeEditor(Number(b.dataset.id))));
-  document.querySelectorAll('.js-delete-resume').forEach(b => b.addEventListener('click', async () => {
-    if (!confirm(t('profile.resumes.confirm.delete', { title: b.dataset.title }))) return;
-    await deleteResume(Number(b.dataset.id));
-    if (state.resumeEditorId === Number(b.dataset.id)) closeResumeEditor();
-    toast(t('profile.resumes.toast.deleted'), 'ok');
-    renderResumesTab(document.getElementById('tab-content'));
-  }));
-  document.querySelectorAll('.js-primary').forEach(b => b.addEventListener('click', async () => {
-    await setPrimaryResume(Number(b.dataset.id));
-    renderResumesTab(document.getElementById('tab-content'));
-  }));
-};
-
-const openResumeEditor = (id) => {
-  state.resumeEditorId = id;
-  state.resumeEditorNew = id == null;
-  renderResumesTab(document.getElementById('tab-content'));
-};
-
-const closeResumeEditor = () => {
-  state.resumeEditorId = null;
-  state.resumeEditorNew = false;
-  if (state.resumePdfUrl) { URL.revokeObjectURL(state.resumePdfUrl); state.resumePdfUrl = null; }
-  state.resumePdfBlob = null;
-};
-
-const mountResumeEditor = async () => {
-  const editorEl = document.getElementById('resume-editor');
-  const resume = state.resumeEditorId ? await getResume(state.resumeEditorId) : null;
-  const isNew = !resume;
-  const r = resume || { title: '', format: 'md', body: '' };
-  const pdfList = resume ? await listPdfsForResume(resume.id) : [];
-
-  editorEl.innerHTML = `
-    <div class="${CLS.card}">
-      <form id="resume-form" class="space-y-4">
-        <div class="${CLS.formHeadRow}">
-          <p class="${CLS.eyebrow}">${isNew ? t('profile.resumes.form.new_eyebrow') : t('profile.resumes.form.edit_eyebrow')}</p>
-          <div class="flex items-center gap-2">
-            ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('common.action.save') })}
-            ${button({ id: 'btn-close-resume', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
-          </div>
-        </div>
-        ${inlineError({ id: 'resume-error' })}
-        <div class="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-          ${formField({ type: 'text', name: 'res-title', label: t('profile.resumes.field.title.label'),
-                        value: r.title, required: true,
-                        placeholder: t('profile.resumes.field.title.placeholder') })}
-          ${formField({ type: 'select', name: 'res-format', label: t('profile.resumes.field.format.label'),
-                        options: [
-                          { value: 'md',  label: t('profile.resumes.field.format.markdown'), selected: r.format === 'md' },
-                          { value: 'typ', label: t('profile.resumes.field.format.typst'),   selected: r.format === 'typ' },
-                        ] })}
-        </div>
-        ${formField({ type: 'textarea', name: 'res-body', label: t('profile.resumes.field.source.label'),
-                      value: r.body, rows: 25, extraClass: 'font-mono text-xs',
-                      placeholder: t('profile.resumes.field.source.placeholder') })}
-      </form>
-
-      <div id="typst-panel" class="${r.format === 'typ' ? '' : 'hidden'} space-y-3 ${CLS.dividerTop}">
-        ${inlineError({ id: 'compile-error' })}
-        <div class="flex items-center gap-2">
-          ${button({ id: 'btn-compile', variant: 'secondaryCompact', icon: 'sparkles', label: t('profile.resumes.action.compile') })}
-          <span id="compile-status" class="${CLS.helpText}"></span>
-        </div>
-        <div id="pdf-preview" class="hidden">
-          <iframe id="pdf-iframe" class="h-96 w-full rounded-xl border border-line" title="${t('profile.resumes.pdf_preview_title')}"></iframe>
-          <div class="mt-2 flex items-center gap-2">
-            ${button({ id: 'btn-attach-pdf', variant: 'primaryCompact', icon: 'arrowUpTray', label: t('profile.resumes.action.attach') })}
-            ${button({ id: 'btn-download-pdf', variant: 'secondaryCompact', icon: 'arrowDownTray', label: t('profile.resumes.action.download') })}
-          </div>
-        </div>
-        ${logPanel({ id: 'compile-log' })}
-      </div>
-
-      <div class="${CLS.dividerTop}">
-        <p class="${CLS.eyebrow}">${t('profile.resumes.sent.eyebrow')}</p>
-        <div id="sent-pdfs" class="mt-3">${sentPdfsHtml(pdfList)}</div>
-      </div>
-    </div>
-  `;
-
-  wireResumeEditor();
-};
-
-const sentPdfsHtml = (rows) => {
-  if (!rows.length) return `${helpText(t('profile.resumes.sent.empty'))}`;
-  return `<ul class="space-y-2">${rows.map(r => `
-    <li class="flex items-center justify-between rounded-xl border border-line bg-surface px-3 py-2 text-sm">
-      <div class="min-w-0">
-        <p class="truncate font-medium text-ink">${escapeHtml(r.original_filename || r.filename)}</p>
-        <p class="${CLS.helpText}">${r.application_role_title
-          ? (r.application_company_name
-              ? t('profile.resumes.sent.item_with_company', { role: escapeHtml(r.application_role_title), company: escapeHtml(r.application_company_name) })
-              : t('profile.resumes.sent.item', { role: escapeHtml(r.application_role_title) }))
-          : t('profile.resumes.sent.deleted')} · ${formatDate(r.created_at)}${r.size_bytes ? ' · ' + formatBytes(r.size_bytes) : ''}</p>
-      </div>
-    </li>
-  `).join('')}</ul>`;
-};
-
-const wireResumeEditor = () => {
-  const form = document.getElementById('resume-form');
-  const formatSel = document.getElementById('res-format');
-  const typstPanel = document.getElementById('typst-panel');
-  formatSel.addEventListener('change', () => {
-    typstPanel.classList.toggle('hidden', formatSel.value !== 'typ');
+  document.getElementById('btn-new-resume').addEventListener('click', (ev) => launchResumePanel(null, ev.currentTarget));
+  document.querySelectorAll('.js-open-resume').forEach((b) => {
+    b.addEventListener('click', () => launchResumePanel(Number(b.dataset.id), b));
   });
+};
 
-  form.addEventListener('submit', async (ev) => {
-    ev.preventDefault();
-    const data = {
-      title: document.getElementById('res-title').value,
-      format: formatSel.value,
-      body: document.getElementById('res-body').value,
-    };
-    if (!data.title.trim()) {
-      setInlineError('resume-error', t('profile.resumes.error.title_required'));
-      return;
-    }
-    try {
-      if (state.resumeEditorId) {
-        await updateResume(state.resumeEditorId, data);
-        toast(t('profile.resumes.toast.saved'), 'ok');
-      } else {
-        const id = await createResume(data);
-        state.resumeEditorId = id;
-        state.resumeEditorNew = false;
-        toast(t('profile.resumes.toast.created', { id }), 'ok');
+// launchResumePanel opens the slide-over and refreshes the list when it
+// closes with any observable change (save / delete / attach).
+const launchResumePanel = (resumeId, triggerEl) => {
+  openResumePanel({
+    resumeId,
+    triggerEl,
+    onClose: (report) => {
+      if (report?.saved || report?.deleted || report?.attached) {
+        renderResumesTab(document.getElementById('tab-content'));
       }
-      renderResumesTab(document.getElementById('tab-content'));
-    } catch (err) {
-      setInlineError('resume-error', err.message || String(err));
-    }
-  });
-
-  document.getElementById('btn-close-resume')?.addEventListener('click', () => {
-    closeResumeEditor();
-    renderResumesTab(document.getElementById('tab-content'));
-  });
-
-  document.getElementById('btn-compile')?.addEventListener('click', () => compileCurrentResume());
-  document.getElementById('btn-attach-pdf')?.addEventListener('click', () => openAttachDialog());
-  document.getElementById('btn-download-pdf')?.addEventListener('click', () => downloadCurrentPdf());
-};
-
-const compileCurrentResume = async () => {
-  const status = document.getElementById('compile-status');
-  const preview = document.getElementById('pdf-preview');
-  const iframe = document.getElementById('pdf-iframe');
-  const logEl = document.getElementById('compile-log');
-  const source = document.getElementById('res-body').value;
-  setInlineError('compile-error', '');
-  if (!source.trim()) { setInlineError('compile-error', t('profile.resumes.compile.empty')); return; }
-  status.textContent = t('profile.resumes.compile.running');
-  preview.classList.add('hidden');
-  logEl.classList.add('hidden');
-  try {
-    const { pdf, log } = await compileTypstToPdf(source);
-    if (state.resumePdfUrl) URL.revokeObjectURL(state.resumePdfUrl);
-    state.resumePdfBlob = new Blob([pdf], { type: 'application/pdf' });
-    state.resumePdfUrl = URL.createObjectURL(state.resumePdfBlob);
-    iframe.src = state.resumePdfUrl;
-    preview.classList.remove('hidden');
-    status.textContent = t('profile.resumes.compile.done', { size: formatBytes(state.resumePdfBlob.size) });
-    if (log) {
-      logEl.textContent = log;
-      logEl.classList.remove('hidden');
-    }
-  } catch (err) {
-    status.textContent = '';
-    const friendly = err.code === 'not_typst_source'
-      ? t('profile.resumes.compile.not_typst_source')
-      : (err.message || String(err));
-    setInlineError('compile-error', t('profile.resumes.compile.failed', { err: friendly }));
-    if (err.log) {
-      logEl.textContent = err.log;
-      logEl.classList.remove('hidden');
-    }
-  }
-};
-
-const downloadCurrentPdf = () => {
-  if (!state.resumePdfBlob) return;
-  const a = document.createElement('a');
-  a.href = state.resumePdfUrl;
-  a.download = `${(document.getElementById('res-title').value || 'resume').replace(/[^\w-]+/g, '_')}.pdf`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-};
-
-// ---------- attach-to-application dialog ----------
-
-const openAttachDialog = async () => {
-  if (!state.resumePdfBlob || !state.resumeEditorId) {
-    setInlineError('resume-error', t('profile.resumes.attach.compile_first'));
-    return;
-  }
-  const [apps, companies] = await Promise.all([listApplications(), listCompanies()]);
-  if (!apps.length) {
-    setInlineError('resume-error', t('profile.resumes.attach.no_applications'));
-    return;
-  }
-  const companyById = new Map(companies.map(c => [c.id, c]));
-  const dlg = document.createElement('div');
-  dlg.className = 'fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4';
-  dlg.innerHTML = `
-    <div class="${CLS.card} w-full max-w-md">
-      <p class="${CLS.eyebrow}">${t('profile.resumes.attach.dialog_eyebrow')}</p>
-      ${inlineError({ id: 'attach-error' })}
-      <div class="grid gap-2">
-        <label class="${CLS.label}" for="attach-app">${t('profile.resumes.attach.application_label')}</label>
-        <select id="attach-app" class="${CLS.select}">
-          ${apps.map(a => {
-            const co = companyById.get(a.company_id);
-            const label = `${a.role_title || '(no title)'} — ${co?.official_name || 'unknown'}`;
-            return `<option value="${a.id}" data-company="${escapeHtml(co?.official_name || '')}">${escapeHtml(label)}</option>`;
-          }).join('')}
-        </select>
-      </div>
-      <div class="flex justify-end gap-2 pt-2">
-        ${button({ id: 'btn-confirm-attach', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('profile.resumes.attach.attach') })}
-        ${button({ id: 'btn-cancel-attach', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
-      </div>
-    </div>
-  `;
-  document.body.appendChild(dlg);
-  const close = () => dlg.remove();
-  dlg.querySelector('#btn-cancel-attach').addEventListener('click', close);
-  dlg.querySelector('#btn-confirm-attach').addEventListener('click', async () => {
-    const sel = dlg.querySelector('#attach-app');
-    const applicationId = Number(sel.value);
-    const companyName = sel.selectedOptions[0]?.dataset.company || '';
-    try {
-      const title = document.getElementById('res-title').value || 'resume';
-      const filename = `${title.replace(/[^\w-]+/g, '_')}.pdf`;
-      const file = new File([state.resumePdfBlob], filename, { type: 'application/pdf' });
-      const folder = sanitizeFolder(companyName);
-      const meta = await uploadAttachment(folder, file);
-      await linkPdfToApplication({
-        resumeId: state.resumeEditorId,
-        applicationId,
-        folder: meta.folder,
-        storedFilename: meta.storedFilename,
-        originalFilename: meta.originalFilename,
-        mimeType: meta.mimeType,
-        sizeBytes: meta.sizeBytes,
-        sha256: meta.sha256,
-      });
-      close();
-      toast(t('profile.resumes.toast.attached', { name: meta.storedFilename }), 'ok');
-      await mountResumeEditor();
-    } catch (err) {
-      const msg = err.code === 'no_storage_backend' ? t('common.error.no_storage_backend') : (err.message || String(err));
-      setInlineError('attach-error', msg);
-    }
+    },
   });
 };
+
+// Row matches the collection-index pattern (companies/applications/people):
+// single click-to-open button, one pill slot (format + optional primary
+// badge), one meta line. All row-level actions live in the slide-over.
+const resumeFileRow = (r) => {
+  const title = r.title || t('profile.resumes.untitled');
+  const formatBadge = badge({
+    label: r.format === 'typ' ? t('profile.resumes.format.typst') : t('profile.resumes.format.markdown'),
+    color: r.format === 'typ' ? 'violet' : 'slate',
+    size: 'xs',
+  });
+  const primaryBadge = r.is_primary
+    ? badge({ label: t('profile.resumes.primary'), color: 'emerald', size: 'xs' })
+    : '';
+  return fileRow({
+    id: r.id,
+    jsClass: 'js-open-resume',
+    ariaLabel: t('profile.resumes.aria.open', { title }),
+    title,
+    pill: `${formatBadge}${primaryBadge}`,
+    meta: t('common.updated_at', { date: relativeAge(r.updated_at) }),
+  });
+};
+
 
 // ============================================================================
 // BRAG SHEET TAB
@@ -936,6 +689,7 @@ const renderBragTab = async (el) => {
         ${helpText(t('profile.brags.help'))}
         ${button({ id: 'btn-new-brag', variant: 'primaryCompact', icon: 'plus', label: t('profile.brags.action.new'), ariaLabel: t('profile.brags.aria.add') })}
       </section>
+      ${inlineNote({ message: t('profile.brags.help_quote') })}
       <section id="brag-editor" class="${state.bragEditorId || state.bragEditorNew ? '' : 'hidden'}"></section>
       <section id="brag-list" class="${CLS.card}">
         ${entries.length ? bragListHtml(entries) : emptyState({ message: t('profile.brags.empty') })}
@@ -957,7 +711,7 @@ const bragListHtml = (entries) => `
           <div class="${CLS.textCol}">
             <div class="${CLS.chipRowInline}">
               <p class="font-semibold text-ink">${escapeHtml(e.title || t('profile.brags.untitled'))}</p>
-              ${e.entry_date ? badge({ label: String(e.entry_date).slice(0, 4), color: 'violet', size: 'xs' }) : ''}
+              ${e.entry_year ? badge({ label: String(e.entry_year), color: 'violet', size: 'xs' }) : ''}
             </div>
             <p class="line-clamp-1 ${CLS.bodyText}">${escapeHtml(e.body)}</p>
             ${e.impact ? `<p class="line-clamp-1 ${CLS.winText}">${t('profile.brags.impact', { text: escapeHtml(e.impact) })}</p>` : ''}
@@ -1007,14 +761,14 @@ const mountBragEditor = async (companies) => {
   const editorEl = document.getElementById('brag-editor');
   const entry = state.bragEditorId ? await (await import('../entities/brag-entries.mjs')).getBragEntry(state.bragEditorId) : null;
   const isNew = !entry;
-  const e = entry || { title: '', body: '', impact: '', tags: [], tags_generated_at: null, company_id: null, entry_date: null };
+  const e = entry || { title: '', body: '', impact: '', tags: [], tags_generated_at: null, company_id: null, entry_year: null };
   if (!state.bragDraftTags.length) state.bragDraftTags = [...(e.tags || [])];
   editorEl.innerHTML = `
     <div class="${CLS.card}">
       <form id="brag-form" class="space-y-4">
         <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('profile.brags.form.new_eyebrow') : t('profile.brags.form.edit_eyebrow')}</p>
-          <div class="flex items-center gap-2">
+          <div class="${CLS.inlineRow}">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('common.action.save') })}
             ${button({ id: 'btn-close-brag', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
@@ -1029,7 +783,7 @@ const mountBragEditor = async (companies) => {
         ${formField({ type: 'text', name: 'brag-impact', label: t('profile.brags.field.impact.label'),
                       value: e.impact || '',
                       placeholder: t('profile.brags.field.impact.placeholder') })}
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="${CLS.gridTwoCol} gap-4">
           ${formField({ type: 'select', name: 'brag-company', label: t('profile.brags.field.company.label'),
                         options: [
                           { value: '', label: t('common.status.none'), selected: !e.company_id },
@@ -1039,8 +793,8 @@ const mountBragEditor = async (companies) => {
                             selected: c.id === e.company_id,
                           })),
                         ] })}
-          ${formField({ type: 'number', name: 'brag-date', label: t('profile.brags.field.year.label'),
-                        value: (e.entry_date || '').slice(0, 4),
+          ${formField({ type: 'number', name: 'brag-year', label: t('profile.brags.field.year.label'),
+                        value: e.entry_year ? String(e.entry_year) : '',
                         placeholder: CURRENT_YEAR,
                         min: '1970',
                         step: '1' })}
@@ -1053,7 +807,7 @@ const mountBragEditor = async (companies) => {
           ${inlineError({ id: 'brag-tags-error' })}
           <div id="brag-tags-progress" class="hidden"></div>
           <div id="brag-tags-list"></div>
-          <div class="flex items-center gap-2">
+          <div class="${CLS.inlineRow}">
             <input id="brag-tag-input" type="text" placeholder="${t('profile.brags.tags.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
             ${button({ id: 'btn-add-brag-tag', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
           </div>
@@ -1122,9 +876,9 @@ const mountBragEditor = async (companies) => {
       body: document.getElementById('brag-body').value,
       impact: document.getElementById('brag-impact').value,
       company_id: document.getElementById('brag-company').value || null,
-      entry_date: (() => {
-        const raw = document.getElementById('brag-date').value.trim();
-        return /^\d{4}$/.test(raw) ? `${raw}-01-01` : null;
+      entry_year: (() => {
+        const raw = document.getElementById('brag-year').value.trim();
+        return /^\d{4}$/.test(raw) ? Number(raw) : null;
       })(),
       tags: state.bragDraftTags,
       tags_generated_at: state.bragPendingTagsGeneratedAt || e.tags_generated_at || null,
@@ -1154,13 +908,14 @@ const mountBragEditor = async (companies) => {
 // ============================================================================
 
 export const mountProfile = async (appEl) => {
-  // Optional deep-link: /local/profile?tab=resumes
+  // Optional deep-link: /local/profile?tab=resumes | ?tab=import
   const params = new URLSearchParams(window.location.search);
   const initialTab = params.get('tab');
-  if (initialTab && TAB_NAMES.includes(initialTab)) state.tab = initialTab;
+  if (initialTab && VALID_TABS.includes(initialTab)) state.tab = initialTab;
 
   appEl.innerHTML = shellHtml();
   wireTabStrip();
+  document.getElementById('btn-import')?.addEventListener('click', () => setTab(IMPORT_TAB));
   refreshProfileTabCounts();
   renderTab();
 };

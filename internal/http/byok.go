@@ -12,7 +12,6 @@ package http
 // SSRF-hardened fetcher the server-side LLM path already runs on.
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -23,6 +22,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/profile"
 	"github.com/zuccamia/career-planner/internal/sources/ats"
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
@@ -54,8 +54,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			Name           string `json:"name"`
 			OutputLanguage string `json:"output_language"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+		if !decodeJSON(r, w, &body) {
 			return
 		}
 		if strings.TrimSpace(body.Name) == "" {
@@ -80,8 +79,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			BlogContent    string `json:"blog_content"`
 			CareersContent string `json:"careers_content"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+		if !decodeJSON(r, w, &body) {
 			return
 		}
 		if strings.TrimSpace(body.OfficialName) == "" {
@@ -128,8 +126,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			Body           string `json:"body"`
 			OutputLanguage string `json:"output_language"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+		if !decodeJSON(r, w, &body) {
 			return
 		}
 		if strings.TrimSpace(body.Body) == "" {
@@ -139,10 +136,54 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 		prompt := s.brags.BuildGenerateTagsPrompt(body.Body, body.OutputLanguage)
 		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
 
+	case "extract-brags-from-resume":
+		var body struct {
+			Markdown       string `json:"markdown"`
+			OutputLanguage string `json:"output_language"`
+		}
+		if !decodeJSON(r, w, &body) {
+			return
+		}
+		if strings.TrimSpace(body.Markdown) == "" {
+			writeErr(w, http.StatusBadRequest, "markdown is required")
+			return
+		}
+		prompt := s.brags.BuildExtractFromResumePrompt(body.Markdown, body.OutputLanguage)
+		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
+
+	case "extract-overview-from-resume":
+		var body struct {
+			Markdown       string `json:"markdown"`
+			OutputLanguage string `json:"output_language"`
+		}
+		if !decodeJSON(r, w, &body) {
+			return
+		}
+		if strings.TrimSpace(body.Markdown) == "" {
+			writeErr(w, http.StatusBadRequest, "markdown is required")
+			return
+		}
+		prompt := s.profile.BuildExtractFromResumePrompt(body.Markdown, body.OutputLanguage)
+		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
+
+	case "extract-structured-resume-from-md":
+		var body struct {
+			Markdown       string `json:"markdown"`
+			OutputLanguage string `json:"output_language"`
+		}
+		if !decodeJSON(r, w, &body) {
+			return
+		}
+		if strings.TrimSpace(body.Markdown) == "" {
+			writeErr(w, http.StatusBadRequest, "markdown is required")
+			return
+		}
+		prompt := s.profile.BuildExtractStructuredResumePrompt(body.Markdown, body.OutputLanguage)
+		writeJSON(w, http.StatusOK, promptEnvelope{System: prompt.System, User: prompt.User})
+
 	case "summarize-thread":
 		var body threadDetailPayload
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+		if !decodeJSON(r, w, &body) {
 			return
 		}
 		prompt := s.communications.BuildSummaryPrompt(body.toThreadDetail(), body.OutputLanguage)
@@ -153,8 +194,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			threadDetailPayload
 			Goal string `json:"goal"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+		if !decodeJSON(r, w, &body) {
 			return
 		}
 		prompt, err := s.communications.BuildMessagePrompt(body.threadDetailPayload.toThreadDetail(), body.Goal, body.threadDetailPayload.OutputLanguage)
@@ -172,8 +212,7 @@ func (s *Server) rpcBYOKPrompt(w http.ResponseWriter, r *http.Request) {
 			JobDescriptionRaw string `json:"job_description_raw"`
 			OutputLanguage    string `json:"output_language"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+		if !decodeJSON(r, w, &body) {
 			return
 		}
 		prep, err := s.applications.PrepareJDExtraction(r.Context(), applications.ExtractJobDescriptionTextInput{
@@ -213,8 +252,7 @@ func (s *Server) rpcBYOKParse(w http.ResponseWriter, r *http.Request) {
 				Name string `json:"name"`
 			} `json:"input"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+		if !decodeJSON(r, w, &body) {
 			return
 		}
 		var candidate companies.Candidate
@@ -229,8 +267,7 @@ func (s *Server) rpcBYOKParse(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Raw string `json:"raw"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+		if !decodeJSON(r, w, &body) {
 			return
 		}
 		// FinalizeDossier operates on the package-private llmResult shape. The
@@ -243,46 +280,43 @@ func (s *Server) rpcBYOKParse(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, result)
 
 	case "generate-brag-tags":
-		var body struct {
-			Raw string `json:"raw"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
 		var out brags.TagResult
-		if err := llm.DecodeJSONResponse(body.Raw, &out); err != nil {
-			writeErr(w, http.StatusBadGateway, err.Error())
+		if !decodeRawResponse(r, w, &out) {
 			return
 		}
 		writeJSON(w, http.StatusOK, brags.TagResult{Tags: s.brags.FinalizeTags(out)})
 
-	case "summarize-thread":
-		var body struct {
-			Raw string `json:"raw"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+	case "extract-brags-from-resume":
+		var out brags.ExtractResumeResult
+		if !decodeRawResponse(r, w, &out) {
 			return
 		}
+		writeJSON(w, http.StatusOK, brags.ExtractResumeResult{Brags: s.brags.FinalizeExtracted(out)})
+
+	case "extract-overview-from-resume":
+		var out profile.ExtractedOverview
+		if !decodeRawResponse(r, w, &out) {
+			return
+		}
+		writeJSON(w, http.StatusOK, s.profile.FinalizeExtracted(out))
+
+	case "extract-structured-resume-from-md":
+		var out profile.ResumeStructured
+		if !decodeRawResponse(r, w, &out) {
+			return
+		}
+		writeJSON(w, http.StatusOK, s.profile.FinalizeStructuredResume(out))
+
+	case "summarize-thread":
 		var out communications.SummaryResult
-		if err := llm.DecodeJSONResponse(body.Raw, &out); err != nil {
-			writeErr(w, http.StatusBadGateway, err.Error())
+		if !decodeRawResponse(r, w, &out) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"summary": s.communications.FinalizeSummary(out)})
 
 	case "generate-message":
-		var body struct {
-			Raw string `json:"raw"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
 		var out communications.MessageResult
-		if err := llm.DecodeJSONResponse(body.Raw, &out); err != nil {
-			writeErr(w, http.StatusBadGateway, err.Error())
+		if !decodeRawResponse(r, w, &out) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"message": s.communications.FinalizeMessage(out)})
@@ -299,8 +333,7 @@ func (s *Server) rpcBYOKParse(w http.ResponseWriter, r *http.Request) {
 			EnrichedRaw string      `json:"enriched_raw"`
 			Posting     ats.Posting `json:"posting"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			writeErr(w, http.StatusBadRequest, "invalid json body")
+		if !decodeJSON(r, w, &body) {
 			return
 		}
 		var out applications.JobDescriptionStructured

@@ -272,7 +272,8 @@ func seedProfile(ctx context.Context, database *sql.DB, now time.Time) (string, 
 	}
 
 	brags := []struct {
-		title, body, impact, tagsJSON, entryDate string
+		title, body, impact, tagsJSON string
+		entryYear                     int
 	}{
 		{
 			"Shipped incident-detection MVP",
@@ -280,7 +281,7 @@ func seedProfile(ctx context.Context, database *sql.DB, now time.Time) (string, 
 				"Onboarded on-call to the new dashboard.",
 			"Cut mean time to detect from 22 min to under 4 min for the top 10 services.",
 			`["reliability","observability","ownership"]`,
-			"2025-03-12",
+			2025,
 		},
 		{
 			"Rebuilt onboarding flow with legal + design",
@@ -289,7 +290,7 @@ func seedProfile(ctx context.Context, database *sql.DB, now time.Time) (string, 
 				"cycles), and support (updated help docs).",
 			"Reduced 30-day churn by 18%.",
 			`["cross-functional","ownership","growth"]`,
-			"2024-11-04",
+			2024,
 		},
 		{
 			"Mentored two junior engineers through first incidents",
@@ -298,14 +299,14 @@ func seedProfile(ctx context.Context, database *sql.DB, now time.Time) (string, 
 				"practice for new hires.",
 			"Both engineers now run on-call independently.",
 			`["mentorship","process"]`,
-			"2024-08-20",
+			2024,
 		},
 	}
 	for _, b := range brags {
 		if _, err := database.ExecContext(ctx, `
-			INSERT INTO brag_entries (title, body, impact, tags_json, entry_date, created_at, updated_at)
+			INSERT INTO brag_entries (title, body, impact, tags_json, entry_year, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			b.title, b.body, b.impact, b.tagsJSON, b.entryDate, tsFmt, tsFmt,
+			b.title, b.body, b.impact, b.tagsJSON, b.entryYear, tsFmt, tsFmt,
 		); err != nil {
 			return "", fmt.Errorf("insert brag %q: %w", b.title, err)
 		}

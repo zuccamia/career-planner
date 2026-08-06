@@ -88,12 +88,12 @@ const render = (root) => {
         </div>
         ${inlineError({ id: 'snapshot-error' })}
         <div class="${CLS.formRow}">
-          <label class="flex items-center gap-2 text-sm text-ink-soft">
+          <label class="${CLS.inlineRow} text-sm text-ink-soft">
             ${t('settings.snapshot.keep_last_prefix')}
             <input id="keep-count" type="number" min="1" value="5" class="${CLS.inputCompact}">
             ${t('settings.snapshot.keep_last_suffix')}
           </label>
-          <label class="flex items-center gap-2 text-sm text-ink-soft">
+          <label class="${CLS.inlineRow} text-sm text-ink-soft">
             ${t('settings.snapshot.label_field')}
             <input id="snapshot-label" type="text" placeholder="${t('settings.snapshot.label_placeholder')}" maxlength="40" class="${CLS.inputCompact}" style="width: 14rem">
           </label>
@@ -116,7 +116,7 @@ const render = (root) => {
 
       <section id="ai-provider" class="${CLS.card}">
         <header class="space-y-1">
-          <div class="flex items-center gap-2">
+          <div class="${CLS.inlineRow}">
             <p class="${CLS.eyebrow}">${t('settings.ai.eyebrow')}</p>
             <span id="byok-status"></span>
           </div>
@@ -135,12 +135,12 @@ const render = (root) => {
           <label class="block ${CLS.bodyText}">
             ${t('settings.ai.field.api_key.label')}
             <span class="ml-1 ${CLS.helpText}">${t('settings.ai.field.api_key.note')}</span>
-            <div class="mt-1 flex items-center gap-2">
+            <div class="mt-1 ${CLS.inlineRow}">
               <input id="byok-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" class="${CLS.input} flex-1">
               ${button({ id: 'btn-byok-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: t('settings.ai.field.api_key.show') })}
             </div>
           </label>
-          <label class="flex items-center gap-2 text-sm text-ink-soft">
+          <label class="${CLS.inlineRow} text-sm text-ink-soft">
             <input id="byok-clear-on-signout" type="checkbox" class="h-4 w-4">
             <span>${t('settings.ai.field.clear_with_drive.label')}</span>
           </label>
@@ -155,7 +155,7 @@ const render = (root) => {
 
       <section id="scraper-provider" class="${CLS.card}">
         <header class="space-y-1">
-          <div class="flex items-center gap-2">
+          <div class="${CLS.inlineRow}">
             <p class="${CLS.eyebrow}">${t('settings.scraper.eyebrow')}</p>
             <span id="scraper-status"></span>
           </div>
@@ -177,7 +177,7 @@ const render = (root) => {
           <label class="block ${CLS.bodyText}">
             ${t('settings.scraper.field.api_key.label')}
             <span class="ml-1 ${CLS.helpText}">${t('settings.scraper.field.api_key.note')}</span>
-            <div class="mt-1 flex items-center gap-2">
+            <div class="mt-1 ${CLS.inlineRow}">
               <input id="scraper-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="fc-…" class="${CLS.input} flex-1">
               ${button({ id: 'btn-scraper-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: t('settings.scraper.field.api_key.show') })}
             </div>

@@ -241,8 +241,8 @@ const shellHtml = () => `
     <section class="space-y-2">
       ${pageHeader({ page: 'dashboard', title: t('page.dashboard.title'), tagline: null })}
     </section>
-    <section id="pipeline-section"></section>
     <section id="activity-section"></section>
+    <section id="pipeline-section"></section>
   </div>
 `;
 

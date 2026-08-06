@@ -5,7 +5,7 @@
 
 import { exec } from '../db/client.mjs';
 
-const EDITABLE_COLS = ['title', 'body', 'impact', 'tags_json', 'tags_generated_at', 'company_id', 'entry_date'];
+const EDITABLE_COLS = ['title', 'body', 'impact', 'tags_json', 'tags_generated_at', 'company_id', 'entry_year'];
 
 const normalize = (data) => ({
   title: (data.title ?? '').toString().trim(),
@@ -14,7 +14,7 @@ const normalize = (data) => ({
   tags_json: JSON.stringify(Array.isArray(data.tags) ? data.tags : (data.tags_json ? JSON.parse(data.tags_json) : [])),
   tags_generated_at: data.tags_generated_at || null,
   company_id: data.company_id ? Number(data.company_id) : null,
-  entry_date: data.entry_date || null,
+  entry_year: data.entry_year ? Number(data.entry_year) : null,
 });
 
 const hydrate = (row) => {
@@ -30,7 +30,7 @@ export const listBragEntries = async () => {
     SELECT b.*, c.official_name AS company_name
     FROM brag_entries b
     LEFT JOIN companies c ON c.id = b.company_id
-    ORDER BY datetime(COALESCE(b.entry_date, b.updated_at)) DESC, b.id DESC
+    ORDER BY b.entry_year DESC NULLS LAST, b.updated_at DESC, b.id DESC
   `);
   return rows.map(hydrate);
 };
@@ -50,7 +50,7 @@ export const getBragEntry = async (id) => {
 export const listBragEntriesByCompany = async (companyID) => {
   const rows = await exec(
     `SELECT * FROM brag_entries WHERE company_id = ?
-     ORDER BY datetime(COALESCE(entry_date, updated_at)) DESC, id DESC`,
+     ORDER BY entry_year DESC NULLS LAST, updated_at DESC, id DESC`,
     [companyID],
   );
   return rows.map(hydrate);

@@ -10,6 +10,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/applications"
 	"github.com/zuccamia/career-planner/internal/brags"
 	"github.com/zuccamia/career-planner/internal/communications"
+	"github.com/zuccamia/career-planner/internal/profile"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
 	apphttp "github.com/zuccamia/career-planner/internal/http"
@@ -55,6 +56,7 @@ func New() App {
 		applications.NewService(llmClient, atsRegistry.Fetch, atsRegistry.HasSupportingProvider, newMarkdownScraper(scrapeClient)),
 		brags.NewService(llmClient),
 		communications.NewService(llmClient),
+		profile.NewService(llmClient),
 		serverLLM,
 		serverScrape,
 		scrapeClient,

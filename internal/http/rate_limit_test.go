@@ -131,3 +131,18 @@ func TestRateLimiterEvictsStaleVisitors(t *testing.T) {
 		t.Errorf("after TTL, stale visitor should get a fresh bucket: got %d, want 200", rr.Code)
 	}
 }
+
+func TestRateLimiterBypassesLoopback(t *testing.T) {
+	// Burst=1, effectively no refill. Loopback should still get through
+	// unlimited times because the shared-key drain concern doesn't apply.
+	l := newTestLimiter(rate.Every(time.Hour), 1)
+	h := l.middleware(okHandler())
+
+	for _, addr := range []string{"127.0.0.1:5000", "127.0.0.1:5001", "[::1]:5000"} {
+		for i := 0; i < 5; i++ {
+			if rr := doRequest(t, h, addr, ""); rr.Code != nethttp.StatusOK {
+				t.Fatalf("loopback %s request %d: code = %d, want 200", addr, i+1, rr.Code)
+			}
+		}
+	}
+}

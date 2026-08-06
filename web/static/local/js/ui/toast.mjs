@@ -8,7 +8,7 @@ const STYLES = {
   ok:      'border-status-win/40 bg-status-win-bg text-status-win',
   error:   'border-status-out/30 bg-status-out-bg text-status-out',
   warning: 'border-brass/30 bg-brass-tint text-brass',
-  info:    'border-line bg-paper text-ink-soft',
+  info:    'border-line-strong bg-surface text-ink-soft shadow-sm',
 };
 
 export const toast = (msg, kind = 'info') => {

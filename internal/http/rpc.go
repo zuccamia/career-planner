@@ -17,6 +17,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/dossiers"
 	"github.com/zuccamia/career-planner/internal/people"
 	"github.com/zuccamia/career-planner/internal/sources/ats"
+	"github.com/zuccamia/career-planner/internal/sources/llm"
 	"github.com/zuccamia/career-planner/internal/sources/scrape"
 )
 
@@ -36,6 +37,35 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
+// decodeJSON reads r.Body into dst. On decode failure it writes a 400 with a
+// stable error string and returns false, so callers can `return` immediately.
+// On success returns true with dst populated.
+func decodeJSON[T any](r *http.Request, w http.ResponseWriter, dst *T) bool {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json body")
+		return false
+	}
+	return true
+}
+
+// decodeRawResponse decodes the standard BYOK parse envelope `{raw: "..."}`
+// and unmarshals the LLM's raw text into out via llm.DecodeJSONResponse.
+// Returns false after writing a 400 (bad envelope) or 502 (bad LLM JSON);
+// on success out is populated and returns true.
+func decodeRawResponse[T any](r *http.Request, w http.ResponseWriter, out *T) bool {
+	var body struct {
+		Raw string `json:"raw"`
+	}
+	if !decodeJSON(r, w, &body) {
+		return false
+	}
+	if err := llm.DecodeJSONResponse(body.Raw, out); err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return false
+	}
+	return true
+}
+
 // rpcGuessCompanyCandidate wraps companies.Service.GuessCandidate for the
 // browser client. Input: {"name": "..."}. Output: the Candidate struct.
 func (s *Server) rpcGuessCompanyCandidate(w http.ResponseWriter, r *http.Request) {
@@ -43,8 +73,7 @@ func (s *Server) rpcGuessCompanyCandidate(w http.ResponseWriter, r *http.Request
 		Name           string `json:"name"`
 		OutputLanguage string `json:"output_language"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid json body")
+	if !decodeJSON(r, w, &body) {
 		return
 	}
 	name := strings.TrimSpace(body.Name)
@@ -85,8 +114,7 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 		BlogContent    string `json:"blog_content"`
 		CareersContent string `json:"careers_content"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid json body")
+	if !decodeJSON(r, w, &body) {
 		return
 	}
 	name := strings.TrimSpace(body.OfficialName)
@@ -177,8 +205,7 @@ func (s *Server) rpcGenerateBragTags(w http.ResponseWriter, r *http.Request) {
 		Body           string `json:"body"`
 		OutputLanguage string `json:"output_language"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid json body")
+	if !decodeJSON(r, w, &body) {
 		return
 	}
 	if strings.TrimSpace(body.Body) == "" {
@@ -192,6 +219,82 @@ func (s *Server) rpcGenerateBragTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, brags.TagResult{Tags: tags})
+}
+
+// rpcExtractBragsFromResume wraps brags.Service.ExtractFromResume. The browser
+// sends the edited résumé Markdown; the response is a list of candidate brag
+// entries the review UI presents for per-entry accept/reject.
+// Input: {"markdown":"...","output_language":"en|vi"}. Output: {"brags":[...]}.
+func (s *Server) rpcExtractBragsFromResume(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Markdown       string `json:"markdown"`
+		OutputLanguage string `json:"output_language"`
+	}
+	if !decodeJSON(r, w, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Markdown) == "" {
+		writeErr(w, http.StatusBadRequest, "markdown is required")
+		return
+	}
+	entries, err := s.brags.ExtractFromResume(r.Context(), body.Markdown, body.OutputLanguage)
+	if err != nil {
+		log.Printf("rpc extract-brags-from-resume: %v", err)
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, brags.ExtractResumeResult{Brags: entries})
+}
+
+// rpcExtractOverviewFromResume wraps profile.Service.ExtractFromResume. The
+// browser sends the edited résumé Markdown; the response is a suggested
+// overview the user reviews per-field before applying.
+// Input: {"markdown":"...","output_language":"en|vi"}.
+// Output: the profile.ExtractedOverview struct.
+func (s *Server) rpcExtractOverviewFromResume(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Markdown       string `json:"markdown"`
+		OutputLanguage string `json:"output_language"`
+	}
+	if !decodeJSON(r, w, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Markdown) == "" {
+		writeErr(w, http.StatusBadRequest, "markdown is required")
+		return
+	}
+	overview, err := s.profile.ExtractFromResume(r.Context(), body.Markdown, body.OutputLanguage)
+	if err != nil {
+		log.Printf("rpc extract-overview-from-resume: %v", err)
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, overview)
+}
+
+// rpcExtractStructuredResumeFromMd wraps profile.Service.ExtractStructuredResume.
+// Input: {"markdown":"...","output_language":"en|vi"}.
+// Output: the profile.ResumeStructured struct — the browser hands it to a
+// deterministic Typst renderer to produce a .typ file.
+func (s *Server) rpcExtractStructuredResumeFromMd(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Markdown       string `json:"markdown"`
+		OutputLanguage string `json:"output_language"`
+	}
+	if !decodeJSON(r, w, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Markdown) == "" {
+		writeErr(w, http.StatusBadRequest, "markdown is required")
+		return
+	}
+	resume, err := s.profile.ExtractStructuredResume(r.Context(), body.Markdown, body.OutputLanguage)
+	if err != nil {
+		log.Printf("rpc extract-structured-resume-from-md: %v", err)
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resume)
 }
 
 // threadDetailPayload matches the JSON shape the browser sends when calling
@@ -249,8 +352,7 @@ func (p threadDetailPayload) toThreadDetail() communications.ThreadDetail {
 // owns persistence — this endpoint only runs the LLM prompt.
 func (s *Server) rpcSummarizeThread(w http.ResponseWriter, r *http.Request) {
 	var body threadDetailPayload
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid json body")
+	if !decodeJSON(r, w, &body) {
 		return
 	}
 	summary, err := s.communications.SummarizeThreadContext(r.Context(), body.toThreadDetail(), body.OutputLanguage)
@@ -273,8 +375,7 @@ func (s *Server) rpcGenerateMessage(w http.ResponseWriter, r *http.Request) {
 		threadDetailPayload
 		Goal string `json:"goal"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid json body")
+	if !decodeJSON(r, w, &body) {
 		return
 	}
 	message, err := s.communications.GenerateMessageFromContext(r.Context(), body.threadDetailPayload.toThreadDetail(), body.Goal, body.threadDetailPayload.OutputLanguage)
@@ -301,8 +402,7 @@ func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request
 		JobDescriptionRaw string `json:"job_description_raw"`
 		OutputLanguage    string `json:"output_language"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid json body")
+	if !decodeJSON(r, w, &body) {
 		return
 	}
 	structured, raw, err := s.applications.ExtractJobDescriptionText(r.Context(), applications.ExtractJobDescriptionTextInput{

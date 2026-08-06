@@ -13,6 +13,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/profile"
 	"github.com/zuccamia/career-planner/internal/sources/scrape"
 )
 
@@ -24,6 +25,7 @@ type Server struct {
 	brags          *brags.Service
 	communications *communications.Service
 	dossiers       *dossiers.Service
+	profile        *profile.Service
 
 	// Optional server-side scraper. Non-nil only when SCRAPER_* env vars are
 	// configured. Used by rpcBuildDossier to enrich the LLM prompt with
@@ -67,13 +69,14 @@ type ServerScrape struct {
 }
 
 // NewRouter wires handlers, static assets, and middleware into the application router.
-func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, applicationsService *applications.Service, bragsService *brags.Service, communicationsService *communications.Service, serverLLM ServerLLM, serverScrape ServerScrape, scrapeClient scrape.Client) http.Handler {
+func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, applicationsService *applications.Service, bragsService *brags.Service, communicationsService *communications.Service, profileService *profile.Service, serverLLM ServerLLM, serverScrape ServerScrape, scrapeClient scrape.Client) http.Handler {
 	server := &Server{
 		companies:             companiesService,
 		applications:          applicationsService,
 		brags:                 bragsService,
 		communications:        communicationsService,
 		dossiers:              dossiersService,
+		profile:               profileService,
 		scrape:                scrapeClient,
 		serverLLMAvailable:    serverLLM.Available,
 		serverLLMProvider:     serverLLM.Provider,
@@ -99,6 +102,9 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.Handle("POST /api/dossiers/build", llm(server.rpcBuildDossier))
 	mux.Handle("POST /api/applications/extract-job-description", llm(server.rpcExtractJobDescription))
 	mux.Handle("POST /api/profile/generate-brag-tags", llm(server.rpcGenerateBragTags))
+	mux.Handle("POST /api/profile/extract-brags-from-resume", llm(server.rpcExtractBragsFromResume))
+	mux.Handle("POST /api/profile/extract-overview-from-resume", llm(server.rpcExtractOverviewFromResume))
+	mux.Handle("POST /api/profile/extract-structured-resume-from-md", llm(server.rpcExtractStructuredResumeFromMd))
 	mux.Handle("POST /api/communications/summarize-thread", llm(server.rpcSummarizeThread))
 	mux.Handle("POST /api/communications/generate-message", llm(server.rpcGenerateMessage))
 	// BYOK helpers — the browser calls these before + after hitting the user's

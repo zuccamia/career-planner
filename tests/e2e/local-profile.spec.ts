@@ -109,21 +109,25 @@ test.describe('local profile page — resumes tab', () => {
     await resumesTab.click();
     await page.getByRole('button', { name: 'Add resume' }).click();
     await page.getByLabel('Title').fill('Test resume');
-    // Format defaults to Markdown; save.
+    // New résumés default to Typst format; save.
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.locator('#toast')).toContainText(/Created resume/);
+    // Close the slide-over so the list refreshes with the new row + count.
+    await page.locator('#btn-resume-close').click();
 
     // Tab counter now shows "1".
     await expect(resumesTab.locator('[data-tab-count="resumes"]')).toHaveText('1');
 
-    // Row visible with title + Markdown badge.
+    // Row visible with title + Typst badge.
     const row = page.locator('#resume-list li', { hasText: 'Test resume' });
     await expect(row).toBeVisible();
-    await expect(row.getByText('Markdown', { exact: true })).toBeVisible();
+    await expect(row.getByText('Typst', { exact: true })).toBeVisible();
 
-    // Delete via row × — confirm dialog auto-accepted by the handler.
+    // Delete lives inside the slide-over header now — reopen the panel and
+    // click the trash button there.
+    await row.locator('.js-open-resume').click();
     page.once('dialog', d => d.accept());
-    await row.getByRole('button', { name: 'Delete' }).click();
+    await page.locator('#btn-resume-delete').click();
     await expect(page.locator('#toast')).toContainText(/Resume deleted/);
     await expect(resumesTab.locator('[data-tab-count="resumes"]')).toBeHidden();
   });
@@ -134,7 +138,7 @@ test.describe('local profile page — brag sheet tab', () => {
     await gotoProfile(page);
     await skipWizardIfPresent(page);
 
-    const bragTab = page.getByRole('tab', { name: 'Brag Sheet' });
+    const bragTab = page.getByRole('tab', { name: 'Brags' });
     await bragTab.click();
 
     await expect(page).toHaveURL(/\/local\/profile\?tab=brag$/);
@@ -143,7 +147,7 @@ test.describe('local profile page — brag sheet tab', () => {
     await page.reload();
 
     await expect(page).toHaveURL(/\/local\/profile\?tab=brag$/);
-    await expect(page.getByRole('tab', { name: 'Brag Sheet', selected: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Brags', selected: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add brag entry' })).toBeVisible();
   });
 
@@ -151,7 +155,7 @@ test.describe('local profile page — brag sheet tab', () => {
     await gotoProfile(page);
     await skipWizardIfPresent(page);
 
-    const bragTab = page.getByRole('tab', { name: 'Brag Sheet' });
+    const bragTab = page.getByRole('tab', { name: 'Brags' });
     await expect(bragTab.locator('[data-tab-count="brag"]')).toBeHidden();
 
     await bragTab.click();
@@ -182,7 +186,7 @@ test.describe('local profile page — brag sheet tab', () => {
     await gotoProfile(page);
     await skipWizardIfPresent(page);
 
-    const bragTab = page.getByRole('tab', { name: 'Brag Sheet' });
+    const bragTab = page.getByRole('tab', { name: 'Brags' });
     await bragTab.click();
     await page.getByRole('button', { name: 'Add brag entry' }).click();
 

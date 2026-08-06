@@ -26,11 +26,10 @@ import { getPerson, listPeopleByCompanyID } from '../entities/people.mjs';
 import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { badge, badgeClasses, bulletList, button, codeBlock, collapsible, dtLabel, emptyState, faintSpan, fileRow, fileStamp, filterBanner, helpSpan, helpText, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, pageHeader, panelTitle, sectionTitle, setPageCount, subsectionTitle } from '../ui/components.mjs';
+import { badge, badgeClasses, bulletList, button, codeBlock, collapsible, dtLabel, emptyState, faintSpan, fileRow, fileStamp, filterBanner, helpSpan, helpText, hintLink, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, outputLanguageSelect, pageHeader, panelTitle, readOutputLanguage, sectionTitle, setPageCount, subsectionTitle, uploadButton } from '../ui/components.mjs';
 import { icon } from '../ui/icons.mjs';
 import { extractJobDescription } from '../rpc.mjs';
 import { createProgress } from '../ui/progress.mjs';
-import { outputLanguageSelect, readOutputLanguage } from '../ui/output_language.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
 import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../ui/slide_over.mjs';
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
@@ -175,7 +174,7 @@ const editorHtml = (app, companies, people) => {
       <form id="editor-form" class="space-y-5">
         <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('applications.form.new_eyebrow') : t('applications.form.edit_eyebrow')}</p>
-          <div class="flex items-center gap-2">
+          <div class="${CLS.inlineRow}">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('applications.form.aria.create') : t('common.action.save_changes') })}
             ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
@@ -189,9 +188,11 @@ const editorHtml = (app, companies, people) => {
             <select id="company_id" name="company_id" required class="${CLS.select}">
               ${companyOptions}
             </select>
-            <p class="${CLS.helpText}">
-              ${t('applications.field.company.help_prefix')} <a href="/local/companies?new=1" class="${CLS.brandLink}">${t('applications.field.company.help_link')}</a>
-            </p>
+            ${hintLink({
+              prefix: t('applications.field.company.help_prefix'),
+              href: '/local/companies?new=1',
+              linkLabel: t('applications.field.company.help_link'),
+            })}
           </div>
           <div class="grid gap-2">
             <label class="${CLS.label}" for="role_title">${t('applications.field.role.label')}</label>
@@ -375,7 +376,7 @@ const structuredHtml = (parsed) => {
 
       <section class="space-y-3">
         ${subsectionTitle(t('applications.details.logistics'))}
-        <dl class="grid gap-4 sm:grid-cols-2">
+        <dl class="${CLS.gridTwoCol} gap-4">
           <div class="grid gap-1 sm:col-span-2">
             ${dtLabel(t('applications.details.locations'))}
             <dd>${(s.locations || []).length ? chips(s.locations, 'blue') : `${helpSpan(t('common.status.not_identified'))}`}</dd>
@@ -414,7 +415,7 @@ const attachmentCardHtml = (att) => {
   });
   return `
     <li class="${CLS.softRow}">
-      <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="${CLS.actionRowBetween}">
         <div class="min-w-0 flex-1">
           ${nameBtn}
           <p class="mt-1 ${CLS.helpText}">
@@ -438,12 +439,12 @@ const attachmentsSectionHtml = (a, attachments) => {
         ${sectionTitle(t('applications.details.attachments'))}
       </div>
       ${inlineError({ id: 'attachment-upload-error' })}
-      <label class="${CLS.btnSecondaryCompact} cursor-pointer">
-        <input id="attachment-upload-input" type="file" class="hidden">
-        ${icon('arrowUpTray')}
-        <span id="attachment-upload-label">${t('applications.action.upload_file')}</span>
-      </label>
-      ${helpText(t('applications.details.attachments_help', { folder: escapeHtml(folderPreview) }))}
+      ${uploadButton({
+        id: 'attachment-upload-input',
+        labelId: 'attachment-upload-label',
+        label: t('applications.action.upload_file'),
+        help: t('applications.details.attachments_help', { folder: escapeHtml(folderPreview) }),
+      })}
       ${attachments.length
         ? `<ul class="space-y-3">${attachments.map(attachmentCardHtml).join('')}</ul>`
         : emptyState({ message: t('applications.details.attachments_empty') })}
@@ -534,7 +535,7 @@ const detailsHtml = (a, events, attachments, { editing = false, companies = [], 
       </form>
 
       ${(hasPerson || hasNotes) ? `
-        <dl class="${CLS.paperCard} grid gap-4 sm:grid-cols-2">
+        <dl class="${CLS.paperCard} ${CLS.gridTwoCol} gap-4">
           ${hasPerson ? `
             <div class="grid gap-1">
               ${dtLabel(t('applications.details.point_of_contact'))}

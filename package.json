@@ -6,6 +6,8 @@
   "scripts": {
     "build:css": "npx @tailwindcss/cli -i ./web/static/tailwind.css -o ./web/static/app.css --minify",
     "watch:css": "npx @tailwindcss/cli -i ./web/static/tailwind.css -o ./web/static/app.css --watch",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
   },
@@ -24,6 +26,8 @@
   "devDependencies": {
     "@playwright/test": "^1.55.0",
     "@tailwindcss/cli": "^4.3.3",
-    "tailwindcss": "^4.3.3"
+    "happy-dom": "^15.7.0",
+    "tailwindcss": "^4.3.3",
+    "vitest": "^2.1.0"
   }
 }

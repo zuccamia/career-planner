@@ -12,8 +12,7 @@ import { guessCompanyCandidate, buildDossier } from '../rpc.mjs';
 import { escapeHtml, formatDate } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { button, badge, bulletList, dossierLabel, emptyDash, emptyState, faintSpan, fileRow, fileStamp, helpText, inlineError, setInlineError, inlineNote, setInlineNote, narrativeText, pageHeader, panelTitle, sectionTitle, setPageCount } from '../ui/components.mjs';
-import { outputLanguageSelect, readOutputLanguage } from '../ui/output_language.mjs';
+import { button, badge, bulletList, dossierLabel, emptyDash, emptyState, faintSpan, fileRow, fileStamp, helpText, inlineError, setInlineError, inlineNote, setInlineNote, narrativeText, outputLanguageSelect, pageHeader, panelTitle, readOutputLanguage, sectionTitle, setPageCount } from '../ui/components.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
 import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../ui/slide_over.mjs';
 import { relativeAge, initials } from '../ui/format.mjs';
@@ -67,7 +66,7 @@ const editorHtml = (company) => {
       <form id="editor-form" class="space-y-5">
         <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('companies.form.new_eyebrow') : t('companies.form.edit_eyebrow')}</p>
-          <div class="flex items-center gap-2">
+          <div class="${CLS.inlineRow}">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('companies.form.aria.create') : t('common.action.save_changes') })}
             ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
@@ -374,7 +373,7 @@ const dossierHtml = (company, { editing = false, apps = [], people = [] } = {}) 
               ${narrativeText(company.what_the_company_does)}
             </div>` : ''}
 
-          <div class="grid gap-6 sm:grid-cols-2 items-start">
+          <div class="${CLS.gridTwoCol} gap-6 items-start">
             <div class="grid gap-1">
               ${dossierLabel(t('companies.dossier.customers'))}
               ${chipRow(company.target_customers)}
@@ -390,7 +389,7 @@ const dossierHtml = (company, { editing = false, apps = [], people = [] } = {}) 
             ${company.business_model_clues?.length ? bulletList(company.business_model_clues) : emptyDash()}
           </div>
 
-          <div class="grid gap-6 sm:grid-cols-2 items-start">
+          <div class="${CLS.gridTwoCol} gap-6 items-start">
             <div class="grid gap-1">
               ${dossierLabel(t('companies.dossier.launches'))}
               ${company.recent_product_launches?.length ? bulletList(company.recent_product_launches) : emptyDash()}
@@ -415,7 +414,7 @@ const dossierHtml = (company, { editing = false, apps = [], people = [] } = {}) 
           ${hasAnyStack ? `
             <div class="grid gap-4">
               ${dossierLabel(t('companies.dossier.tech_stacks'))}
-              <div class="grid gap-4 sm:grid-cols-2">
+              <div class="${CLS.gridTwoCol} gap-4">
                 ${stackGroup(t('companies.dossier.stack.languages'), stacks.languages)}
                 ${stackGroup(t('companies.dossier.stack.frontend'), stacks.frontend)}
                 ${stackGroup(t('companies.dossier.stack.backend'), stacks.backend)}

@@ -4,7 +4,7 @@
 import { escapeHtml } from './dom.mjs';
 import { CLS } from './classes.mjs';
 import { icon } from './icons.mjs';
-import { t } from '../i18n.mjs';
+import { SUPPORTED, currentLocale, localeDisplayName, t } from '../i18n.mjs';
 
 // button renders a <button> or <a> styled to one of the CLS variants.
 //
@@ -91,6 +91,48 @@ export const bulletList = (items) =>
 //   title:     serif title text (escaped internally)
 //   pill:      pre-rendered pill HTML (optional)
 //   meta:      mono meta string (escaped internally)
+// Compact <select> for picking the LLM output language per generation. Sits
+// beside a "Generate" button; defaults to the UI locale. No persistence — the
+// choice applies to the current click only. `id` must be unique per form.
+// Options are the currently-supported locales; the current UI locale is
+// pre-selected. Falls through to the browser default when SUPPORTED is empty
+// (initI18n hasn't run yet, which shouldn't happen from a page module).
+export const outputLanguageSelect = (id) => {
+  const active = currentLocale();
+  const options = SUPPORTED.map(code =>
+    `<option value="${code}"${code === active ? ' selected' : ''}>${localeDisplayName(code)}</option>`,
+  ).join('');
+  return `
+    <label class="${CLS.inlineRow} ${CLS.helpText}">
+      <span>${t('common.output_language')}</span>
+      <select id="${id}" class="${CLS.inputBase} py-1.5 pl-2 pr-7 text-xs">${options}</select>
+    </label>
+  `;
+};
+
+// readOutputLanguage returns the selected value, or the current UI locale if
+// the element is missing (defensive — should never happen when the caller
+// mounted a matching outputLanguageSelect).
+export const readOutputLanguage = (id) => {
+  const el = document.getElementById(id);
+  return (el && el.value) || currentLocale();
+};
+
+// Label-wrapped hidden file input rendered as a compact secondary button,
+// with optional help text below. Callers wire the change event on the
+// returned input's id.
+export const uploadButton = ({
+  id, label, accept = '', help = '', labelId = '', iconName = 'arrowUpTray',
+} = {}) => `
+  <div class="space-y-2">
+    <label class="${CLS.btnSecondaryCompact} cursor-pointer">
+      <input id="${escapeHtml(id)}" type="file"${accept ? ` accept="${escapeHtml(accept)}"` : ''} class="hidden">
+      ${icon(iconName)}
+      <span${labelId ? ` id="${escapeHtml(labelId)}"` : ''}>${escapeHtml(label)}</span>
+    </label>
+    ${help ? helpText(help) : ''}
+  </div>`;
+
 export const fileRow = ({
   id, jsClass, ariaLabel, avatar = '', title, pill = '', meta = '',
 } = {}) => {
@@ -167,6 +209,14 @@ export const metaText = (text, { extraClass = '', id = '' } = {}) => {
   return `<p class="${cls}"${idAttr}>${escapeHtml(text)}</p>`;
 };
 
+// hintLink renders a small help line ending in a link — the "Need a new X?
+// Add one" pattern used below select dropdowns. Both `prefix` and `linkLabel`
+// are HTML-escaped; `href` is inserted verbatim (callers control it).
+export const hintLink = ({ prefix, href, linkLabel }) => `
+  <p class="${CLS.helpText}">
+    ${escapeHtml(prefix)} <a href="${href}" class="${CLS.brandLink}">${escapeHtml(linkLabel)}</a>
+  </p>`;
+
 // The "Filtered by company: X · Clear filter" banner used by Applications and
 // People pages when the URL carries ?company_id=…
 export const filterBanner = ({ label, name, clearHref, clearLabel }) => `
@@ -195,7 +245,7 @@ export const subsectionTitle = (text) =>
   `<h3 class="font-display text-base font-semibold text-ink">${escapeHtml(text)}</h3>`;
 
 // FILE · CP-0042 style stamp. Prefixes are English-only.
-const FILE_STAMP_PREFIX = { company: 'CP', person: 'PPL', application: 'APP' };
+const FILE_STAMP_PREFIX = { company: 'CP', person: 'PPL', application: 'APP', resume: 'CV' };
 export const fileStamp = (kind, id) => {
   const p = FILE_STAMP_PREFIX[kind] || '';
   const ref = `${p}-${String(id).padStart(4, '0')}`;

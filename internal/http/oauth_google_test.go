@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func decodeJSON(t *testing.T, r io.Reader) map[string]string {
+func decodeJSONMap(t *testing.T, r io.Reader) map[string]string {
 	t.Helper()
 	var out map[string]string
 	if err := json.NewDecoder(r).Decode(&out); err != nil {
@@ -38,7 +38,7 @@ func TestGoogleOAuthConfigDefaultsScopes(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
-	body := decodeJSON(t, w.Body)
+	body := decodeJSONMap(t, w.Body)
 	if body["client_id"] != "abc.apps.googleusercontent.com" {
 		t.Errorf("client_id = %q", body["client_id"])
 	}
@@ -52,7 +52,7 @@ func TestGoogleOAuthConfigCustomScopes(t *testing.T) {
 	t.Setenv("GOOGLE_OAUTH_SCOPES", "https://www.googleapis.com/auth/drive")
 	w := httptest.NewRecorder()
 	(&Server{}).googleOAuthConfig(w, httptest.NewRequest("GET", "/oauth/google/config", nil))
-	body := decodeJSON(t, w.Body)
+	body := decodeJSONMap(t, w.Body)
 	if body["scopes"] != "https://www.googleapis.com/auth/drive" {
 		t.Errorf("scopes = %q, want custom override", body["scopes"])
 	}

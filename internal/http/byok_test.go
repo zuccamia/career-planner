@@ -17,6 +17,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/profile"
 )
 
 // newBYOKMux builds a minimal mux with just the two BYOK routes so tests can
@@ -37,6 +38,7 @@ func nilServer() *Server {
 		applications:   applications.NewService(nil, nil, nil, nil),
 		brags:          brags.NewService(nil),
 		communications: communications.NewService(nil),
+		profile:        profile.NewService(nil),
 	}
 }
 
@@ -164,6 +166,27 @@ func TestBYOKPromptGenerateBragTagsSuccess(t *testing.T) {
 	decodeBody(t, rr, &body)
 	if !strings.Contains(body.User, "Shipped feature flags") {
 		t.Errorf("user prompt missing brag body: %q", body.User)
+	}
+}
+
+func TestBYOKPromptExtractBragsFromResumeEmptyMarkdown(t *testing.T) {
+	mux := newBYOKMux(nilServer())
+	rr := doBYOK(t, mux, "POST", "/api/llm/prompts/extract-brags-from-resume", `{"markdown":"   "}`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestBYOKPromptExtractBragsFromResumeSuccess(t *testing.T) {
+	mux := newBYOKMux(nilServer())
+	rr := doBYOK(t, mux, "POST", "/api/llm/prompts/extract-brags-from-resume", `{"markdown":"# CV\n- Cut latency 7s to sub-second"}`)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	var body struct{ System, User string }
+	decodeBody(t, rr, &body)
+	if !strings.Contains(body.User, "Cut latency") || !strings.Contains(body.User, "BEGIN_UNTRUSTED_RESUME_MARKDOWN") {
+		t.Errorf("user prompt missing résumé content or fence: %q", body.User)
 	}
 }
 
@@ -332,6 +355,21 @@ func TestBYOKParseGenerateBragTagsNormalizes(t *testing.T) {
 	decodeBody(t, rr, &out)
 	if len(out.Tags) != 2 || out.Tags[0] != "feature flags" || out.Tags[1] != "observability" {
 		t.Fatalf("tags = %#v, want normalized tags", out.Tags)
+	}
+}
+
+func TestBYOKParseExtractBragsFromResumeNormalizes(t *testing.T) {
+	mux := newBYOKMux(nilServer())
+	raw := `{\"brags\":[{\"title\":\"  Cut latency  \",\"body\":\"Rewrote planner.\",\"impact\":\"7s → 0.5s\",\"tags\":[\"Performance\"],\"company\":\"Stripe\",\"confidence\":1.4},{\"title\":\"\",\"body\":\"drop me\"}]}`
+	body := `{"raw":"` + raw + `"}`
+	rr := doBYOK(t, mux, "POST", "/api/llm/parse/extract-brags-from-resume", body)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	var out brags.ExtractResumeResult
+	decodeBody(t, rr, &out)
+	if len(out.Brags) != 1 || out.Brags[0].Title != "Cut latency" || out.Brags[0].Confidence != 1 {
+		t.Fatalf("unexpected parse output: %+v", out)
 	}
 }
 

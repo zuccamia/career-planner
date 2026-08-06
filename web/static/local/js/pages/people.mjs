@@ -20,9 +20,8 @@ import { createProgress } from '../ui/progress.mjs';
 import { escapeHtml, formatDate } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
-import { badge, button, emptyState, fileRow, fileStamp, filterBanner, helpText, inlineError, setInlineError, metaText, pageHeader, panelTitle, sectionTitle, setPageCount } from '../ui/components.mjs';
+import { badge, button, emptyState, fileRow, fileStamp, filterBanner, helpText, inlineError, setInlineError, metaText, outputLanguageSelect, pageHeader, panelTitle, readOutputLanguage, sectionTitle, setPageCount } from '../ui/components.mjs';
 import { headlineStatus, listApplicationsByPerson } from '../entities/applications.mjs';
-import { outputLanguageSelect, readOutputLanguage } from '../ui/output_language.mjs';
 import { icon } from '../ui/icons.mjs';
 import { rememberPanelAnchor, mountInlinePanel, restoreAllPanels } from '../ui/panels.mjs';
 import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../ui/slide_over.mjs';
@@ -134,7 +133,7 @@ const editorHtml = (person, companies) => {
       <form id="editor-form" class="space-y-5">
         <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('people.form.new_eyebrow') : t('people.form.edit_eyebrow')}</p>
-          <div class="flex items-center gap-2">
+          <div class="${CLS.inlineRow}">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('people.form.aria.create') : t('common.action.save_changes') })}
             ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
@@ -235,7 +234,7 @@ const newThreadFormHtml = () => `
   <form id="new-thread-form" class="${CLS.paperCard} space-y-3">
     <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('people.thread_form.new_eyebrow')}</p>
-      <div class="flex items-center gap-2">
+      <div class="${CLS.inlineRow}">
         ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.create_thread') })}
         ${button({ id: 'btn-cancel-new-thread', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('people.aria.cancel_new_thread') })}
       </div>
@@ -335,7 +334,7 @@ const threadDetailHtml = (thread, entries) => `
         ${button({ id: 'btn-new-entry', variant: 'primaryCompact', icon: 'plus', label: t('people.action.new_entry'), ariaLabel: t('people.aria.add_entry') })}
         ${button({ id: 'btn-generate-outreach', variant: 'secondaryCompact', icon: 'sparkles', label: t('people.action.draft_outreach') })}
         ${button({ id: 'btn-generate-reply', variant: 'secondaryCompact', icon: 'sparkles', label: t('people.action.draft_reply') })}
-        <div class="inline-flex items-center gap-2">
+        <div class="inline-${CLS.inlineRow}">
           ${outputLanguageSelect('out-lang-summary')}
           ${button({ id: 'btn-summarize', variant: 'secondaryCompact', icon: 'sparkles', label: thread.summary ? t('people.action.resummarize') : t('people.action.summarize') })}
         </div>
@@ -369,13 +368,13 @@ const newEntryFormHtml = () => `
   <form id="new-entry-form" class="space-y-3 rounded-xl border border-line bg-surface p-3">
     <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('people.entry_form.new_eyebrow')}</p>
-      <div class="flex items-center gap-2">
+      <div class="${CLS.inlineRow}">
         ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.create_entry') })}
         ${button({ id: 'btn-cancel-new-entry', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('people.aria.cancel_new_entry') })}
       </div>
     </div>
     ${inlineError({ id: 'new-entry-error' })}
-    <div class="grid gap-3 sm:grid-cols-2 sm:items-start">
+    <div class="${CLS.gridTwoCol} gap-3 sm:items-start">
       <div class="grid gap-1">
         <label class="${CLS.label}" for="entry_direction">${t('people.entry_form.direction.label')}</label>
         <select id="entry_direction" name="direction" class="${CLS.select}">
@@ -400,7 +399,7 @@ const draftPanelHtml = (goal, message) => `
   <div class="space-y-3 rounded-xl border border-brand/20 bg-brand-tint/40 p-3">
     <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('people.draft.eyebrow', { goal })}</p>
-      <div class="flex items-center gap-2">
+      <div class="${CLS.inlineRow}">
         ${button({ id: 'btn-save-draft', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.save_draft_entry') })}
         ${button({ id: 'btn-discard-draft', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('people.aria.discard_draft') })}
       </div>

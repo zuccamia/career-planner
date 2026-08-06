@@ -65,13 +65,29 @@ func (l *ipLimiter) middleware(next http.Handler) http.Handler {
 		retryAfter = strconv.Itoa(int(1.0 / float64(l.rate)))
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !l.get(clientIP(r)).Allow() {
+		ip := clientIP(r)
+		// Loopback callers are the local-first app talking to its own bundled
+		// server — the shared-key drain concern doesn't apply, and chunked
+		// résumé extraction would otherwise trip the 5 req/min cap.
+		if isLoopback(ip) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !l.get(ip).Allow() {
 			w.Header().Set("Retry-After", retryAfter)
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isLoopback(ip string) bool {
+	if ip == "" {
+		return false
+	}
+	parsed := net.ParseIP(ip)
+	return parsed != nil && parsed.IsLoopback()
 }
 
 // clientIP returns the best-effort caller IP. Cloud Run sets X-Forwarded-For

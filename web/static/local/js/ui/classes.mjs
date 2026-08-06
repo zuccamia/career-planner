@@ -35,9 +35,23 @@ export const CLS = {
   textCol:              'min-w-0 space-y-1',
   cardTitle:            'font-display text-xl font-semibold text-ink',
   formRow:              'flex flex-wrap items-center gap-3',
+  // Action-button row anchored to the right edge of the section (e.g. the
+  // Save / Re-render pair below a source textarea).
+  actionRowEnd:         'flex flex-wrap items-center justify-end gap-2',
+  // Filename-on-left, buttons-on-right row (e.g. preview headers).
+  actionRowBetween:     'flex flex-wrap items-center justify-between gap-2',
+  // A wide field + narrow field on one row on ≥sm screens; stacks on
+  // mobile. Used for "title + format" and similar pairings.
+  gridFieldPair:        'grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end',
   winText:              'text-sm font-medium text-status-win',
   tightList:            'space-y-1 text-sm text-ink',
   metaText:             'font-mono text-xs text-ink-faint',
+  codeText:             'font-mono text-xs',
+  inlineRow:            'flex items-center gap-2',
+  gridTwoCol:           'grid sm:grid-cols-2',
+  checkbox:             'h-4 w-4 rounded border-line-strong text-brand focus:ring-brand',
+  warningBanner:        'rounded-2xl border border-brass/30 bg-brass-tint px-4 py-3 text-sm text-brass',
+  tagPill:              'rounded-full border border-line bg-paper px-2 py-0.5 font-mono text-[11px] text-ink-soft',
   avatarBadge:          'flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-status-lead-bg font-mono text-xs font-semibold text-status-lead',
   brandLink:            'text-brand underline hover:text-brand-deep',
   tinyLink:             'text-xs font-medium text-brand hover:text-brand-deep',

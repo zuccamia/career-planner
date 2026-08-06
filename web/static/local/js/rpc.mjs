@@ -185,6 +185,24 @@ export const buildDossier = async (company, outputLanguage, onStep = noopStep) =
 export const generateBragTags = (payload, outputLanguage, onStep) =>
   llmCall('generate-brag-tags', payload, '/api/profile/generate-brag-tags', outputLanguage, onStep);
 
+// Extract candidate brag entries from an edited résumé Markdown. Response:
+// { brags: [{title, body, impact, tags, company, entry_year, confidence}] }.
+export const extractBragsFromResume = (markdown, outputLanguage, onStep) =>
+  llmCall('extract-brags-from-resume', { markdown }, '/api/profile/extract-brags-from-resume', outputLanguage, onStep);
+
+// Extract profile-overview fields from an edited résumé Markdown. Response:
+// { name, headline, summary, environment, skills: [{name, years?, level?}], tools: [] }.
+// Extractive fields (name/environment/tools) come from the résumé literally;
+// headline and summary are drafts the user edits before applying.
+export const extractOverviewFromResume = (markdown, outputLanguage, onStep) =>
+  llmCall('extract-overview-from-resume', { markdown }, '/api/profile/extract-overview-from-resume', outputLanguage, onStep);
+
+// Extract a full structured résumé from Markdown, ready to render into the
+// house Typst template. Response is the profile.ResumeStructured shape:
+// { contact, summary, education[], skills[], experience[], projects[], activities[] }.
+export const extractStructuredResumeFromMd = (markdown, outputLanguage, onStep) =>
+  llmCall('extract-structured-resume-from-md', { markdown }, '/api/profile/extract-structured-resume-from-md', outputLanguage, onStep);
+
 // Ask the LLM to summarize one communication thread. Caller ships the full
 // thread + entries context (the server is stateless for local-first data) and
 // receives { summary }. Persisting the summary is the caller's job.

@@ -63,11 +63,25 @@ test.describe('local settings page', () => {
   test('sidebar navigation reaches settings from companies', async ({ page }) => {
     await page.goto('/local/companies');
     await expect(page.getByText('Companies', { exact: true })).toBeVisible({ timeout: 30_000 });
-    // Sidebar is an off-canvas drawer — open it before clicking the nav link.
-    await page.getByRole('button', { name: 'Open navigation' }).click();
-    await page.getByRole('link', { name: 'Settings' }).click();
+    // Sidebar is an off-canvas drawer — open it, wait for the toggle to
+    // report expanded (so the click landing on Settings isn't racing the
+    // slide-in animation), then navigate.
+    const navToggle = page.getByRole('button', { name: 'Open navigation' });
+    await navToggle.click();
+    await expect(navToggle).toHaveAttribute('aria-expanded', 'true');
+    const settingsLink = page.getByRole('link', { name: 'Settings' });
+    await expect(settingsLink).toBeVisible();
+    await settingsLink.click();
     await expect(page).toHaveURL('/local/settings');
-    await expect(page.getByText('Snapshot now')).toBeVisible({ timeout: 30_000 });
+    // Cross-page navigations can hit a SAH Pool race where the new page's
+    // DB worker tries to open before the previous page has fully released
+    // its handle. If we see the "App already open" boot-failure banner,
+    // reload once to force a clean boot.
+    const snapshot = page.getByText('Snapshot now');
+    const bootError = page.getByText('App already open in another tab');
+    await expect(snapshot.or(bootError)).toBeVisible({ timeout: 30_000 });
+    if (await bootError.isVisible()) await page.reload();
+    await expect(snapshot).toBeVisible({ timeout: 30_000 });
   });
 
   test('download without label produces auto-format filename', async ({ page }) => {

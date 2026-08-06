@@ -9,3 +9,8 @@ var generateTagsPrompts = llm.PromptSets{
 	"en": generateTagsEN,
 	"vi": generateTagsVI,
 }
+
+var extractFromResumePrompts = llm.PromptSets{
+	"en": extractFromResumeEN,
+	"vi": extractFromResumeVI,
+}
