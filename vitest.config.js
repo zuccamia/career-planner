@@ -4,7 +4,7 @@
 // themselves stay focused on pure logic, not real DOM interactions.
 export default {
   test: {
-    include: ['web/static/local/js/**/*.test.mjs'],
+    include: ['web/static/js/**/*.test.mjs'],
     environment: 'happy-dom',
   },
 };

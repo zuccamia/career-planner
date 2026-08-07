@@ -91,11 +91,15 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	llm := func(h http.HandlerFunc) http.Handler { return llmLimit.middleware(h) }
 
 	mux := http.NewServeMux()
+	// /health returns 200 for readiness probes and uptime monitors. basicAuth
+	// bypasses this path so probes don't need credentials.
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
 	mux.HandleFunc("GET /", server.rootRedirect)
 	mux.HandleFunc("GET /oauth/google/config", server.googleOAuthConfig)
 	mux.HandleFunc("POST /oauth/google/token", server.googleTokenExchange)
-	mux.HandleFunc("GET /api/db/migrations.json", server.migrationsJSON)
-	mux.HandleFunc("GET /api/db/enums.json", server.schemaEnums)
 	mux.HandleFunc("GET /api/llm/server-status", server.rpcLLMServerStatus)
 	mux.HandleFunc("GET /api/scrape/server-status", server.rpcScrapeServerStatus)
 	mux.Handle("POST /api/companies/guess-candidate", llm(server.rpcGuessCompanyCandidate))
@@ -114,15 +118,11 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	// LLM path uses.
 	mux.HandleFunc("POST /api/llm/prompts/{name}", server.rpcBYOKPrompt)
 	mux.HandleFunc("POST /api/llm/parse/{name}", server.rpcBYOKParse)
-	mux.HandleFunc("GET /local/", server.localHome)
-	mux.HandleFunc("GET /local/dashboard", server.localDashboard)
-	mux.HandleFunc("GET /local/companies", server.localCompanies)
-	mux.HandleFunc("GET /local/applications", server.localApplications)
-	mux.HandleFunc("GET /local/people", server.localPeople)
-	mux.HandleFunc("GET /local/profile", server.localProfile)
-	mux.HandleFunc("GET /local/settings", server.localSettings)
+	for _, p := range Pages {
+		mux.HandleFunc("GET /"+p.Slug, handlerForPage(p))
+	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.Dir("web/static"))))
-	return logging(mux)
+	return basicAuth(logging(mux))
 }
 
 func (s *Server) rootRedirect(w http.ResponseWriter, r *http.Request) {
@@ -130,5 +130,5 @@ func (s *Server) rootRedirect(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.Redirect(w, r, "/local/dashboard", http.StatusFound)
+	http.Redirect(w, r, "/dashboard", http.StatusFound)
 }

@@ -15,8 +15,8 @@ func TestRootRedirectSendsToDashboard(t *testing.T) {
 	if rr.Code != nethttp.StatusFound {
 		t.Fatalf("status = %d, want 302", rr.Code)
 	}
-	if loc := rr.Header().Get("Location"); loc != "/local/dashboard" {
-		t.Errorf("Location = %q, want /local/dashboard", loc)
+	if loc := rr.Header().Get("Location"); loc != "/dashboard" {
+		t.Errorf("Location = %q, want /dashboard", loc)
 	}
 }
 

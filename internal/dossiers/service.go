@@ -45,7 +45,7 @@ func (s *Service) BuildText(ctx context.Context, company companies.Company, outp
 // up to three labeled scraped-content blocks (website / blog / careers page),
 // each capped at ScrapedContentMaxBytes and omitted when empty.
 func (s *Service) BuildDossierPrompt(company companies.Company, outputLanguage string, enrichment WebsiteEnrichment) llm.Prompt {
-	set := llm.PickPromptSet(dossierPrompts, outputLanguage)
+	set := llm.PickPromptSet(dossierPrompts(), outputLanguage)
 	return llm.Prompt{
 		System: set.System,
 		User: fmt.Sprintf(

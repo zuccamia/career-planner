@@ -7,11 +7,13 @@ import (
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
-// TestPromptsCoverManifest guards against adding a locale to manifest.json
-// without adding a corresponding entry to every prompt set — otherwise
-// PickPromptSet would silently fall back to English for that locale.
+// init loads shared prompt JSON before any test in this package runs — some
+// service tests exercise BuildXPrompt call paths that hit llm.PromptSet.
+func init() { testutil.MustLoadPrompts() }
+
 func TestPromptsCoverManifest(t *testing.T) {
-	assertCoversManifest(t, "generateTagsPrompts", generateTagsPrompts)
+	assertCoversManifest(t, "generateTagsPrompts", generateTagsPrompts())
+	assertCoversManifest(t, "extractFromResumePrompts", extractFromResumePrompts())
 }
 
 func assertCoversManifest(t *testing.T, name string, sets llm.PromptSets) {

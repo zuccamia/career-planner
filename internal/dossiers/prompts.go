@@ -2,10 +2,9 @@ package dossiers
 
 import "github.com/zuccamia/career-planner/internal/sources/llm"
 
-// Per-feature prompts, keyed by output locale. Content lives in
-// prompts_{locale}.go — this file only assembles the maps. Missing locales
-// fall back via llm.PickPromptSet.
-var dossierPrompts = llm.PromptSets{
-	"en": dossierEN,
-	"vi": dossierVI,
-}
+// Per-feature prompt getters. Content lives in
+// web/static/i18n/prompts/{name}.{locale}.json — loaded by llm.LoadPrompts in
+// app.New() so the same files can also be fetched by the browser BYOK path.
+// Wrapped as functions (not vars) to defer the PromptSet lookup until request
+// time; a package-var init would resolve before LoadPrompts has run.
+func dossierPrompts() llm.PromptSets { return llm.PromptSet("build-dossier") }

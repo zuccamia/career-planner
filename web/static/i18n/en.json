@@ -755,7 +755,8 @@
   "settings.ai.action.test": "Test connection",
   "settings.ai.action.clear": "Clear key",
   "settings.ai.badge.byok": "BYOK · {model}",
-  "settings.ai.badge.setup_needed": "setup needed",
+  "settings.ai.badge.server": "Server · {model}",
+  "settings.ai.badge.setup_needed": "AI: setup needed",
   "settings.ai.error.test_missing_fields": "Base URL, API key, and model are required to test.",
   "settings.ai.test.running": "Testing…",
   "settings.ai.test.success": "✓ Reached provider in {latency}ms",
@@ -767,8 +768,10 @@
   "settings.ai.error.no_llm_configured": "No AI provider is configured. Open Settings → AI provider and add your own key to use AI features.",
 
   "applications.error.jd_input_required": "job description raw or posting URL is required",
-  "applications.error.jd_fetch_failed": "could not extract job description from %s — paste the description text instead",
-  "applications.error.jd_no_text": "no job description text found at %s — paste the description text instead",
+  "applications.error.jd_fetch_failed": "could not extract job description from %s — paste the description text, or add a scraper key in Settings → Scraper",
+  "applications.error.jd_no_text": "no job description text found at %s — paste the description text, or add a scraper key in Settings → Scraper",
+  "applications.error.jd_scraper_required_static": "Failed to scrape job posting URL. Paste the description text, or add a scraper key in Settings → Scraper.",
+  "dossiers.warning.scraper_recommended": "Dossier will be less detailed without a scraper. Add a scraper key in Settings → Scraper for richer results.",
 
   "settings.scraper.test.hint_cors": " (possible CORS issue — for self-hosted Crawl4AI, ensure ALLOW_ORIGINS includes this app's origin; see the README)",
   "settings.scraper.test.hint_auth": " (check your API key)",

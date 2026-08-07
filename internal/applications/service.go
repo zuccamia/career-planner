@@ -159,7 +159,7 @@ func (s *Service) PrepareJDExtraction(ctx context.Context, input ExtractJobDescr
 		// department, etc.) would be lost on any later re-extraction from raw.
 		raw = enrichRawWithATSMetadata(posting, url, raw)
 	}
-	set := llm.PickPromptSet(extractJobDescriptionPrompts, input.OutputLanguage)
+	set := llm.PickPromptSet(extractJobDescriptionPrompts(), input.OutputLanguage)
 	return JDExtractionContext{
 		Prompt: llm.Prompt{
 			System: set.System,

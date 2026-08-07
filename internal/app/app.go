@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/zuccamia/career-planner/internal/applications"
@@ -39,6 +40,9 @@ func New() App {
 
 	if err := i18n.Load(); err != nil {
 		log.Fatalf("i18n: %v", err)
+	}
+	if err := llm.LoadPrompts(filepath.Join("web", "static", "i18n", "prompts")); err != nil {
+		log.Fatalf("llm prompts: %v", err)
 	}
 
 	llmClient, serverLLM := newLLMClient()

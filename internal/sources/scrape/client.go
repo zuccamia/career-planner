@@ -5,7 +5,7 @@ package scrape
 //
 // The browser BYOK path does NOT use this client — it dispatches directly to
 // the scraper from the frontend so the user's key never touches the server.
-// See web/static/local/js/scrape-client.mjs.
+// See web/static/js/scrape-client.mjs.
 
 import (
 	"context"

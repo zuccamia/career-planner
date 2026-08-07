@@ -27,7 +27,7 @@ func (s *Service) ExtractFromResume(ctx context.Context, markdown, outputLanguag
 // extraction. The Markdown is passed verbatim (fenced in the prompt template
 // as untrusted input).
 func (s *Service) BuildExtractFromResumePrompt(markdown, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(extractOverviewPrompts, outputLanguage)
+	set := llm.PickPromptSet(extractOverviewPrompts(), outputLanguage)
 	trimmed := strings.TrimSpace(markdown)
 	return llm.Prompt{
 		System: set.System,
@@ -129,7 +129,7 @@ func (s *Service) ExtractStructuredResume(ctx context.Context, markdown, outputL
 // prompt. The Markdown is passed verbatim (fenced in the prompt template
 // as untrusted input).
 func (s *Service) BuildExtractStructuredResumePrompt(markdown, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(extractStructuredResumePrompts, outputLanguage)
+	set := llm.PickPromptSet(extractStructuredResumePrompts(), outputLanguage)
 	trimmed := strings.TrimSpace(markdown)
 	return llm.Prompt{
 		System: set.System,

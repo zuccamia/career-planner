@@ -1,0 +1,13 @@
+[
+  "001_init.sql",
+  "002_dossiers_reasoning.sql",
+  "003_merge_dossiers_into_companies.sql",
+  "004_profile.sql",
+  "005_brag_tags_generated_at.sql",
+  "006_rename_linkedin_url.sql",
+  "007_rename_tech_blog_url.sql",
+  "008_drop_engineering_blog_notes.sql",
+  "009_rename_wishlist_add_ghosted.sql",
+  "010_profile_wizard_fields.sql",
+  "011_brag_entry_year.sql"
+]

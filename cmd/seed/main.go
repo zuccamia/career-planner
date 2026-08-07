@@ -10,8 +10,6 @@ import (
 	"math/rand"
 	"os"
 	"time"
-
-	appdb "github.com/zuccamia/career-planner/internal/db"
 )
 
 //go:embed samples/resume.md
@@ -42,7 +40,7 @@ func main() {
 func run(args []string) error {
 	fs := flag.NewFlagSet("seed", flag.ContinueOnError)
 	count := fs.Int("count", 50, "number of applications to seed")
-	dbPath := fs.String("db", "web/static/local/samples/sample.sqlite", "SQLite database path to write; defaults to the checked-in sample dataset")
+	dbPath := fs.String("db", "web/static/samples/sample.sqlite", "SQLite database path to write; defaults to the checked-in sample dataset")
 	// Reset defaults to true so re-running seed produces a reproducible DB
 	// with -count rows. Additive runs (which historically produced a 100-row
 	// sample.sqlite by accident) now require an explicit -append.
@@ -53,7 +51,7 @@ func run(args []string) error {
 	}
 
 	ctx := context.Background()
-	database, err := appdb.Open(ctx, *dbPath)
+	database, err := openDB(ctx, *dbPath)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}

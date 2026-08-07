@@ -37,7 +37,7 @@ func (s *Service) BuildCandidatePrompt(input, outputLanguage string) (llm.Prompt
 	if trimmed == "" {
 		return llm.Prompt{}, fallback, true
 	}
-	set := llm.PickPromptSet(companyCandidatePrompts, outputLanguage)
+	set := llm.PickPromptSet(companyCandidatePrompts(), outputLanguage)
 	return llm.Prompt{
 		System: set.System,
 		User:   fmt.Sprintf(set.User, trimmed),

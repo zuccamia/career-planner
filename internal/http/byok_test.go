@@ -17,8 +17,13 @@ import (
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/i18n/testutil"
 	"github.com/zuccamia/career-planner/internal/profile"
 )
+
+// init loads shared prompt JSON before any test in this package runs — BYOK
+// endpoints invoke BuildXPrompt call chains that hit llm.PromptSet.
+func init() { testutil.MustLoadPrompts() }
 
 // newBYOKMux builds a minimal mux with just the two BYOK routes so tests can
 // exercise r.PathValue("name") the same way the production router does.

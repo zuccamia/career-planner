@@ -1,6 +1,6 @@
 // Package i18n provides a minimal locale-aware string lookup for the server-
 // rendered layout shell. Bundles live at web/static/i18n/{en,vi,...}.json so
-// the browser (see web/static/local/js/i18n.mjs) can consume the same source
+// the browser (see web/static/js/i18n.mjs) can consume the same source
 // of truth via a plain fetch — one bundle format, two readers.
 //
 // Concurrency contract: Load() must complete before any read call. In

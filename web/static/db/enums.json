@@ -1,0 +1,32 @@
+{
+  "application_statuses": [
+    "lead",
+    "applied",
+    "online_assessment",
+    "first_interview",
+    "second_interview",
+    "additional_interview",
+    "offer",
+    "rejected",
+    "ghosted",
+    "withdrawn"
+  ],
+  "communication_channels": [
+    "email",
+    "handshake",
+    "linkedin",
+    "facebook",
+    "phone",
+    "meeting",
+    "text"
+  ],
+  "communication_directions": [
+    "inbound",
+    "outbound",
+    "note"
+  ],
+  "communication_statuses": [
+    "open",
+    "closed"
+  ]
+}

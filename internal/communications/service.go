@@ -13,14 +13,11 @@ import (
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
-// Channels, Directions, Statuses list the supported enum values in display
-// order. Exposed via /api/db/enums.json so the browser matches its dropdowns
-// to the same source.
-var (
-	Channels   = []string{"email", "handshake", "linkedin", "facebook", "phone", "meeting", "text"}
-	Directions = []string{"inbound", "outbound", "note"}
-	Statuses   = []string{"open", "closed"}
-)
+// Directions lists the supported entry directions. Used server-side by
+// entryActorLabel to validate direction tokens when building thread prompts.
+// The browser's copy of this list lives in web/static/db/enums.json —
+// TestDirectionsMatchEnumsJSON guards against drift.
+var Directions = []string{"inbound", "outbound", "note"}
 
 var allowedDirections = sliceToSet(Directions)
 
@@ -86,7 +83,7 @@ func (s *Service) GenerateMessageFromContext(ctx context.Context, detail ThreadD
 // outputLanguage selects the locale-specific prompt template; missing locales
 // fall back to English.
 func (s *Service) BuildSummaryPrompt(detail ThreadDetail, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(summarizePrompts, outputLanguage)
+	set := llm.PickPromptSet(summarizePrompts(), outputLanguage)
 	return llm.Prompt{
 		System: set.System,
 		User:   fmt.Sprintf(set.User, buildThreadContext(detail)),
@@ -106,7 +103,7 @@ func (s *Service) BuildMessagePrompt(detail ThreadDetail, goal, outputLanguage s
 	if goal != "outreach" && goal != "reply" {
 		return llm.Prompt{}, ErrInvalidGoal
 	}
-	set := llm.PickPromptSet(messagePrompts, outputLanguage)
+	set := llm.PickPromptSet(messagePrompts(), outputLanguage)
 	return llm.Prompt{
 		System: set.System,
 		User:   fmt.Sprintf(set.User, goal, buildThreadContext(detail)),
@@ -122,6 +119,11 @@ func (s *Service) FinalizeMessage(out MessageResult) string {
 // LLM prompts. Each entry line stamps the concrete actor ("from Jane Doe to
 // me" etc.) rather than the raw direction token so the LLM can attribute
 // statements without decoding jargon.
+//
+// Channel and Status are sanitized via llm.SanitizeText — a hostile browser
+// bypassing the enum dropdowns could otherwise smuggle prompt-injection
+// content in through those short label fields. Suspicious values collapse
+// to empty rather than reaching the LLM.
 func buildThreadContext(detail ThreadDetail) string {
 	personName := strings.TrimSpace(detail.Thread.Person.Name)
 	if personName == "" {
@@ -129,9 +131,9 @@ func buildThreadContext(detail ThreadDetail) string {
 	}
 	parts := []string{
 		fmt.Sprintf("Person: %s", personName),
-		fmt.Sprintf("Channel: %s", detail.Thread.Channel),
+		fmt.Sprintf("Channel: %s", llm.SanitizeText(detail.Thread.Channel)),
 		fmt.Sprintf("Subject: %s", detail.Thread.Subject),
-		fmt.Sprintf("Status: %s", detail.Thread.Status),
+		fmt.Sprintf("Status: %s", llm.SanitizeText(detail.Thread.Status)),
 		"Entry order: newest first.",
 	}
 	if strings.TrimSpace(detail.Thread.Person.Notes) != "" {

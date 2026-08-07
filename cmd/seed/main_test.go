@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	appdb "github.com/zuccamia/career-planner/internal/db"
 )
 
 // Regression for the "sample.sqlite ended up with 100 applications" bug:
@@ -57,7 +55,7 @@ func TestSeedProfileWritesOverviewSparksResumesAndBrags(t *testing.T) {
 		t.Fatalf("run: %v", err)
 	}
 
-	db, err := appdb.Open(context.Background(), dbPath)
+	db, err := openDB(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -135,7 +133,7 @@ func TestSeedResetsProfileBetweenRuns(t *testing.T) {
 		t.Fatalf("second run: %v", err)
 	}
 
-	db, err := appdb.Open(context.Background(), dbPath)
+	db, err := openDB(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -154,7 +152,7 @@ func TestSeedResetsProfileBetweenRuns(t *testing.T) {
 
 func countApplications(t *testing.T, dbPath string) int {
 	t.Helper()
-	db, err := appdb.Open(context.Background(), dbPath)
+	db, err := openDB(context.Background(), dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

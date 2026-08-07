@@ -1,7 +1,7 @@
 {
-  "app.name": "Career Planner",
+  "app.name": "Sổ nghề nghiệp",
   "app.tagline": "dữ liệu là của bạn",
-  "app.title_suffix": "Career Planner",
+  "app.title_suffix": "Sổ nghề nghiệp",
   "app.loading": "Đang tải…",
   "nav.dashboard": "Tổng quan",
   "nav.profile": "Hồ sơ",
@@ -703,7 +703,8 @@
   "settings.ai.action.test": "Kiểm tra kết nối",
   "settings.ai.action.clear": "Xóa cài đặt",
   "settings.ai.badge.byok": "BYOK · {model}",
-  "settings.ai.badge.setup_needed": "cần thiết lập",
+  "settings.ai.badge.server": "Server · {model}",
+  "settings.ai.badge.setup_needed": "AI: cần thiết lập",
   "settings.ai.error.test_missing_fields": "Cần URL gốc, khóa người dùng, và mô hình để kiểm tra.",
   "settings.ai.test.running": "Đang kiểm tra…",
   "settings.ai.test.success": "✓ Đã kết nối đến nhà cung cấp trong {latency}ms",
@@ -715,8 +716,10 @@
   "settings.ai.error.no_llm_configured": "Không có nhà cung cấp AI nào được cài đặt. Mở Cài đặt → Nhà cung cấp AI và thêm khóa của bạn để dùng các tính năng AI.",
 
   "applications.error.jd_input_required": "cần cung cấp mô tả công việc hoặc URL bài đăng",
-  "applications.error.jd_fetch_failed": "không thể trích xuất mô tả công việc từ %s — hãy dán trực tiếp mô tả công việc",
-  "applications.error.jd_no_text": "không tìm thấy mô tả công việc tại %s — hãy dán trực tiếp mô tả công việc",
+  "applications.error.jd_fetch_failed": "không thể trích xuất mô tả công việc từ %s — hãy dán trực tiếp mô tả công việc, hoặc thêm khóa người dùng trong Cài đặt → Công cụ trích xuất web",
+  "applications.error.jd_no_text": "không tìm thấy mô tả công việc tại %s — hãy dán trực tiếp mô tả công việc, hoặc thêm khóa người dùng trong Cài đặt → Công cụ trích xuất web",
+  "applications.error.jd_scraper_required_static": "Không trích xuất được từ URL bài đăng. Hãy dán trực tiếp mô tả công việc, hoặc thêm khóa người dùng trong Cài đặt → Công cụ trích xuất web.",
+  "dossiers.warning.scraper_recommended": "Hồ sơ công ty sẽ ít chi tiết hơn nếu không có công cụ trích xuất web. Thêm khóa người dùng trong Cài đặt → Công cụ trích xuất web để có kết quả phong phú hơn.",
 
   "settings.scraper.test.hint_cors": " (có thể là vấn đề CORS — với Crawl4AI tự host, đảm bảo ALLOW_ORIGINS bao gồm origin của app này; xem README)",
   "settings.scraper.test.hint_auth": " (kiểm tra khóa người dùng)",

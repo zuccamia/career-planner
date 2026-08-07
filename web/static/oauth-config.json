@@ -1,0 +1,5 @@
+{
+  "_comment": "OAuth config for the static (GH Pages) deploy. The live server ignores this file and reads GOOGLE_OAUTH_CLIENT_ID/SCOPES from env instead. GH Pages workflow substitutes client_id before uploading — see .github/workflows/deploy-gh-pages.yml. client_id is not a secret; it appears in the OAuth redirect URL.",
+  "client_id": "",
+  "scopes": "https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file"
+}

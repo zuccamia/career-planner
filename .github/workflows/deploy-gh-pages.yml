@@ -1,0 +1,98 @@
+name: Deploy to GitHub Pages
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # Tailwind writes web/static/app.css from tailwind.css. cmd/render's
+      # copyTree picks it up verbatim, so the CSS must exist on disk before
+      # the render step runs.
+      - run: npm ci
+      - run: npm run build:css
+
+      # Optional: bake the Google OAuth client_id into the static
+      # oauth-config.json so Drive sync works on this deploy. Leave the
+      # secret unset to ship with a blank client_id — the app degrades to
+      # local-disk-only storage. Reuses GOOGLE_OAUTH_CLIENT_ID (same secret
+      # the Cloud Run deploy uses); one OAuth client covers both deploys
+      # as long as both origins are registered as Authorized JavaScript
+      # origins in Google Cloud Console.
+      - name: Substitute Google OAuth client_id
+        env:
+          CID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+        run: |
+          if [ -z "$CID" ]; then
+            echo "GOOGLE_OAUTH_CLIENT_ID not set — Drive sync will be disabled on this deploy"
+            exit 0
+          fi
+          python3 -c "
+          import json, os
+          p = 'web/static/oauth-config.json'
+          d = json.load(open(p))
+          d['client_id'] = os.environ['CID']
+          json.dump(d, open(p, 'w'), indent=2)
+          "
+
+      - run: go run ./cmd/render -out dist
+
+      # Fail loud if the meta tag ever regresses. Any dumped page carrying
+      # content="false" would silently make GH Pages think it's the live
+      # server and misroute BYOK requests.
+      - name: Verify static-host meta tag
+        run: |
+          set -e
+          if grep -rql 'name="static-host" content="false"' dist/; then
+            echo "found dist/**/*.html with static-host=false — rendering regression" >&2
+            grep -rl 'name="static-host" content="false"' dist/ | head >&2
+            exit 1
+          fi
+          if ! grep -rql 'name="static-host" content="true"' dist/en/dashboard.html; then
+            echo "dist/en/dashboard.html missing static-host=true meta tag" >&2
+            exit 1
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Show published URL
+        run: echo "Published to ${{ steps.deployment.outputs.page_url }}"

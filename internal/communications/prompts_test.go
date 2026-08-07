@@ -7,9 +7,11 @@ import (
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
+func init() { testutil.MustLoadPrompts() }
+
 func TestPromptsCoverManifest(t *testing.T) {
-	assertCoversManifest(t, "summarizePrompts", summarizePrompts)
-	assertCoversManifest(t, "messagePrompts", messagePrompts)
+	assertCoversManifest(t, "summarizePrompts", summarizePrompts())
+	assertCoversManifest(t, "messagePrompts", messagePrompts())
 }
 
 func assertCoversManifest(t *testing.T, name string, sets llm.PromptSets) {

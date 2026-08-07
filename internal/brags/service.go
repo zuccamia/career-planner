@@ -26,7 +26,7 @@ func (s *Service) GenerateTags(ctx context.Context, body, outputLanguage string)
 
 // BuildGenerateTagsPrompt assembles the prompt for generating brag tags.
 func (s *Service) BuildGenerateTagsPrompt(body, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(generateTagsPrompts, outputLanguage)
+	set := llm.PickPromptSet(generateTagsPrompts(), outputLanguage)
 	trimmed := strings.TrimSpace(body)
 	return llm.Prompt{
 		System: set.System,
@@ -79,7 +79,7 @@ func (s *Service) ExtractFromResume(ctx context.Context, markdown, outputLanguag
 // extraction. The Markdown is passed verbatim (fenced in the prompt template
 // as untrusted input).
 func (s *Service) BuildExtractFromResumePrompt(markdown, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(extractFromResumePrompts, outputLanguage)
+	set := llm.PickPromptSet(extractFromResumePrompts(), outputLanguage)
 	trimmed := strings.TrimSpace(markdown)
 	return llm.Prompt{
 		System: set.System,

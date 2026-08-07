@@ -33,7 +33,7 @@ func NewService(client llm.Client) *Service {
 	return &Service{client: client}
 }
 
-// SkillLevels mirrors web/static/local/js/entities/profile-overview.mjs
+// SkillLevels mirrors web/static/js/entities/profile-overview.mjs
 // SKILL_LEVELS. Kept here so FinalizeExtracted can drop unknown values.
 var SkillLevels = map[string]struct{}{
 	"beginner":     {},
