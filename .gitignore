@@ -1,4 +1,9 @@
 bin/
+# Stray Go build output — `go build ./cmd/seed` at repo root without -o
+# produces an executable named `seed`. Other cmd/ names (web, render, dev)
+# collide with real source directories so we don't add them here; discipline
+# via `-o bin/<x>` is the fix for those.
+/seed
 .env
 .DS_Store
 .idea/
@@ -10,7 +15,7 @@ node_modules/
 *.db
 *.sqlite
 *.sqlite3
-!web/static/local/samples/*.sqlite
+!web/static/samples/*.sqlite
 test-results/
 playwright-report/
 .playwright/

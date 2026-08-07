@@ -1,10 +1,14 @@
 # Career Planner
 
+[![CI](https://github.com/zuccamia/career-planner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/zuccamia/career-planner/actions/workflows/ci.yml)
+[![GH Pages](https://github.com/zuccamia/career-planner/actions/workflows/deploy-gh-pages.yml/badge.svg?branch=main)](https://github.com/zuccamia/career-planner/actions/workflows/deploy-gh-pages.yml)
+[![Cloud Run](https://github.com/zuccamia/career-planner/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/zuccamia/career-planner/actions/workflows/deploy.yml)
+
 Privacy-first job-search tracker with a built-in AI assistant. Your data lives
 in your browser (SQLite-WASM on OPFS) and backs up to a local folder — or your
 own Google Drive.
 
-**Try it:** https://career-planner-ecuctbkvkq-uc.a.run.app
+**Try it:** https://zuccamia.github.io/career-planner/ — public, bring your own LLM key.
 
 ## What it's for
 
@@ -43,11 +47,20 @@ Sankey of stage transitions, 30-day activity chart.
 
 ## The AI assistant
 
-Bring your own key against any OpenAI-compatible endpoint (OpenAI, Groq,
-Together, Ollama Cloud, MiniMax, vLLM, LM Studio…). Configure in Settings →
-AI provider; stored in the browser's IndexedDB and called directly from the
-browser. Self-hosting? Set `LLM_*` env vars so the key persists across
+The demo runs entirely in your browser — no server, no shared keys. Bring
+your own key against any OpenAI-compatible endpoint (OpenAI, Groq, Together,
+Ollama Cloud, MiniMax, vLLM, LM Studio…). Configure in Settings → AI
+provider; stored in the browser's IndexedDB and called directly from the
+browser. Self-hosting? Set `LLM_*` env vars so a shared key persists across
 browser wipes.
+
+## Web scraping (optional)
+
+Company research and job-description extraction get better when the assistant
+can fetch pages directly. Point Settings → Web scraper at your own Firecrawl
+(hosted) or Crawl4AI (self-hosted) instance; the key stays in your browser
+and requests go straight to the scraper. Skip it and the assistant works
+from what you paste in. Self-hosting? Set `SCRAPER_*` env vars.
 
 ## Run it locally
 
@@ -72,9 +85,12 @@ backends, and deploy config.
 This app stands on:
 
 - [SQLite](https://sqlite.org/) via [`@sqlite.org/sqlite-wasm`](https://github.com/sqlite/sqlite-wasm) — Public Domain
-- [`modernc.org/sqlite`](https://gitlab.com/cznic/sqlite) (pure-Go SQLite driver for server-side use) — BSD-3-Clause
+- [`modernc.org/sqlite`](https://gitlab.com/cznic/sqlite) (pure-Go SQLite driver used by `cmd/seed` to build the demo dataset) — BSD-3-Clause
 - [D3](https://d3js.org/) and [`d3-sankey`](https://github.com/d3/d3-sankey) — ISC
 - [Typst.ts](https://github.com/Myriad-Dreamin/typst.ts) (in-browser Typst → PDF for résumés) — Apache-2.0
+- [`@llamaindex/liteparse-wasm`](https://www.npmjs.com/package/@llamaindex/liteparse-wasm) (in-browser PDF → Markdown for résumé import) — MIT
+- [Mammoth.js](https://github.com/mwilliamson/mammoth.js) (in-browser DOCX → HTML for résumé import) — BSD-2-Clause
+- [Turndown](https://github.com/mixmark-io/turndown) (HTML → Markdown pass on DOCX résumés) — MIT
 - [Tailwind CSS](https://tailwindcss.com/) — MIT
 - [Playwright](https://playwright.dev/) — Apache-2.0
 - [`golang.org/x/time`](https://pkg.go.dev/golang.org/x/time) — BSD-3-Clause
