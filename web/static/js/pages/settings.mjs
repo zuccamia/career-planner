@@ -449,7 +449,7 @@ const refreshByokSearchStatus = async () => {
   const active = !!(cfg && cfg.enabled && cfg.provider && cfg.apiKey);
   if (active) {
     status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: t('settings.search.badge.byok', { provider: cfg.provider }) });
-  } else if (server && server.available) {
+  } else if (server && server.search_available) {
     status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'link', label: t('settings.search.badge.server', { provider: server.provider || '' }) });
   } else {
     status.innerHTML = '';

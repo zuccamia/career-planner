@@ -173,6 +173,7 @@ jobs:
         # can still point SEARCH_BASE_URL at an external instance.
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          HAS_BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY != '' }}
         if: ${{ env.SEARCH_BACKEND == 'searxng' }}
         run: |
           set -euo pipefail
@@ -182,7 +183,14 @@ jobs:
           docker push "$IMAGE"
 
           # IAM-gated (only cp-runtime can invoke); the main service attaches
-          # the ID token via metadata. Brave key injected at container boot.
+          # the ID token via metadata. Brave key is optional — when unset,
+          # remove any prior binding so SearXNG boots without it (brave
+          # engine fails but others keep working).
+          if [ "$HAS_BRAVE_API_KEY" = "true" ]; then
+            SEARCH_SET_SECRETS_ARG=(--set-secrets="BRAVE_API_KEY=cp-brave-api-key:latest")
+          else
+            SEARCH_SET_SECRETS_ARG=(--remove-secrets="BRAVE_API_KEY")
+          fi
           gcloud run deploy "$SEARCH_SERVICE" \
             --image "$IMAGE" \
             --project "$PROJECT_ID" \
@@ -197,7 +205,7 @@ jobs:
             --min-instances 0 \
             --max-instances 2 \
             --service-account "cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
-            --set-secrets="BRAVE_API_KEY=cp-brave-api-key:latest"
+            "${SEARCH_SET_SECRETS_ARG[@]}"
 
           gcloud run services add-iam-policy-binding "$SEARCH_SERVICE" \
             --project "$PROJECT_ID" \

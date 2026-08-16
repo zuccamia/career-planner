@@ -7,29 +7,36 @@ user's BYOK key stored in the browser.
 
 ## Deployment shapes
 
-| Shape | Meaning |
-|---|---|
-| **A. Hosted full** | Operator self-hosts all three: LLM, Crawl4AI, SearXNG. Server env has `LLM_*`, `SCRAPER_*`, `SEARCH_*`. Users can leave BYOK empty. |
-| **B. Hosted partial** | Operator self-hosts a subset. Users BYOK the rest. Any combination of {LLM, scraper, search} may be server-side; the remainder is browser-side. |
-| **C. Static** | Pre-rendered HTML (GH Pages). No `/api/*`. All three capabilities must be BYOK. |
+| Shape | LLM | Scraper | Search | Notes |
+|---|:-:|:-:|:-:|---|
+| **A. Hosted full** | 🖥️ | 🖥️ | 🖥️ | Operator self-hosts everything. Users can leave BYOK empty. |
+| **B. Hosted partial** | 🖥️ / 🌐 | 🖥️ / 🌐 | 🖥️ / 🌐 | Any subset server-side; the rest is BYOK. |
+| **C. Static (GH Pages)** | 🌐 | 🌐 | 🌐 | No `/api/*`. Every capability must be BYOK. |
+
+🖥️ = server-side (env-driven) · 🌐 = browser BYOK
 
 ## BYOK toggles (per user, browser-side)
 
 | Toggle | Storage | Vendors |
 |---|---|---|
-| BYOK LLM | `storage/byok.mjs` | any OpenAI-compatible endpoint |
-| BYOK scraper | `storage/scraper.mjs` | Firecrawl, Crawl4AI |
-| BYOK search | `storage/search.mjs` | Tavily, Brave |
+| BYOK LLM | `storage/byok-llm.mjs` | any OpenAI-compatible endpoint |
+| BYOK scraper | `storage/byok-scraper.mjs` | Firecrawl, Crawl4AI |
+| BYOK search | `storage/byok-search.mjs` | Tavily, Brave |
 
 ## Which capability, for which flow
 
 | Flow | LLM | Scraper | Search |
-|---|---|---|---|
-| Guess company | ✓ | | |
-| Build dossier | ✓ | ✓ | |
-| Extract JD | ✓ | ✓ | |
-| Brag tags, résumé, summary, message | ✓ | | |
-| Discover | ✓ | ✓ (Ashby + generic hosts only) | ✓ |
+|---|:-:|:-:|:-:|
+| Guess company | ✅ | ❌ | ❌ |
+| Build dossier | ✅ | ✅ | ❌ |
+| Extract JD | ✅ | ✅ | ❌ |
+| Brag tags, résumé, summary, message | ✅ | ❌ | ❌ |
+| Discover | ✅ | 🌐 for Ashby + unknown hosts¹ | ✅ |
+
+¹ Greenhouse and Lever expose CORS-open JSON APIs, so the browser hits them
+directly. Ashby is the only known-structured ATS whose posting pages aren't
+CORS-friendly (HTML page, no CORS headers) — a BYOK scraper is needed to
+read them, same story for unknown hosts.
 
 ## Routing rule
 
@@ -42,10 +49,11 @@ Concretely:
 - LLM: browser LLM if configured; else server route (via
   `/api/{domain}/{action}`) if `LLM_*` set. Static host has no server route.
 - Scraper: browser scraper if configured; else server scraper via
-  `/api/dossiers/enrich` or `/api/applications/jd-enrich`; else the flow
+  `/api/dossiers/scrape` or `/api/applications/scrape`; else the flow
   degrades to whatever text the user pasted.
 - Search: browser search if configured; else server SearXNG (via
-  `/api/discover/run`).
+  `/api/discover/run` on server-LLM deploys, or `/api/discover/search`
+  on BYOK-LLM + server-search deploys).
 
 When BYOK LLM is active on a deploy that also has a server LLM, the browser
 still uses BYOK LLM: prompt assembly and parsing move client-side, saving
@@ -64,7 +72,7 @@ Server (`internal/`)
 
 - `/api/{domain}/{action}`: full server-side flow endpoints, used when no
   BYOK LLM.
-- `/api/dossiers/enrich` and `/api/applications/jd-enrich`: return scraped
+- `/api/dossiers/scrape` and `/api/applications/scrape`: return scraped
   enrichment only, so BYOK-LLM users can borrow the server scraper without
   also borrowing the LLM.
 

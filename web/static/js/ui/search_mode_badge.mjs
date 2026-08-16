@@ -20,7 +20,7 @@ export const refreshSearchModeBadge = async () => {
     if (byokActive) {
       wrap.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'search', label: t('settings.search.badge.byok', { provider: cfg.provider }) });
       wrap.classList.remove('hidden');
-    } else if (server.available) {
+    } else if (server.search_available) {
       wrap.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'search', label: t('settings.search.badge.server', { provider: server.provider }) });
       wrap.classList.remove('hidden');
     } else {

@@ -10,7 +10,6 @@ package http
 // consuming any browser-precomputed inputs and returning ranked recs.
 
 import (
-	"context"
 	"log"
 	"net/http"
 
@@ -18,17 +17,17 @@ import (
 )
 
 func (s *Server) rpcDiscoverServerStatus(w http.ResponseWriter, r *http.Request) {
+	searchOK := s.serverSearchAvailable(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{
-		"available": s.serverDiscoverAvailable(r.Context()),
-		"provider":   s.serverSearchProvider,
+		// available is the fully-server case (both server LLM and server search).
+		// The browser combines these piece-wise with BYOK state to decide
+		// whether to enable Discover — a BYOK LLM + server search deploy still
+		// works via discoverOnServer with browser-driven LLM stages.
+		"available":         s.serverLLMAvailable && searchOK,
+		"llm_available":     s.serverLLMAvailable,
+		"search_available":  searchOK,
+		"provider":          s.serverSearchProvider,
 	})
-}
-
-// serverDiscoverAvailable reports whether the full server-side Discover
-// pipeline is currently usable: server LLM configured AND the search
-// subsystem is available (configured + reachable).
-func (s *Server) serverDiscoverAvailable(ctx context.Context) bool {
-	return s.serverLLMAvailable && s.serverSearchAvailable(ctx)
 }
 
 func (s *Server) rpcDiscoverRun(w http.ResponseWriter, r *http.Request) {

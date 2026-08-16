@@ -33,6 +33,11 @@ know about the company, saved to a per-company folder on disk or in Drive.
 **"Where does my pipeline actually stand?"**
 Sankey of stage transitions, 30-day activity chart.
 
+**"Find me a role I'd want at any of the companies I care about."**
+Dashboard → Discover fans your saved companies out across shared-host ATS
+platforms, ranks the top 10 fresh postings, and links them straight into
+your applications list.
+
 ## Data ownership
 
 - **Your browser owns the database** — OPFS-backed SQLite, one per browser
@@ -61,6 +66,13 @@ can fetch pages directly. Point Settings → Web scraper at your own Firecrawl
 (hosted) or Crawl4AI (self-hosted) instance; the key stays in your browser
 and requests go straight to the scraper. Skip it and the assistant works
 from what you paste in. Self-hosting? Set `SCRAPER_*` env vars.
+
+## Job discovery (optional)
+
+Dashboard → Discover needs a web-search provider to find fresh postings
+across shared-host ATS platforms. Point Settings → Web search at your own
+Brave / Tavily key (BYOK, browser-direct) or self-host SearXNG. Skip it and
+the button is hidden. Self-hosting? Set `SEARCH_*` env vars.
 
 ## Run it locally
 

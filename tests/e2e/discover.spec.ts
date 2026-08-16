@@ -43,7 +43,12 @@ const stubDiscoverEndpoints = async (
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ available, backend: available ? 'searxng' : '' }),
+      body: JSON.stringify({
+        available,
+        llm_available: available,
+        search_available: available,
+        provider: available ? 'searxng' : '',
+      }),
     });
   });
   await page.route('**/api/discover/run', async (route) => {
@@ -139,7 +144,11 @@ test.describe('discover', () => {
     // Run 2's exclude_urls (not every URL shown).
     const bodies: any[] = [];
     await page.route('**/api/discover/server-status', async (route) => {
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: true, backend: 'searxng' }) });
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ available: true, llm_available: true, search_available: true, provider: 'searxng' }),
+      });
     });
     await page.route('**/api/discover/run', async (route) => {
       const payload = JSON.parse(route.request().postData() || '{}');

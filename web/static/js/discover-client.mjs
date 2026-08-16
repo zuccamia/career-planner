@@ -127,7 +127,7 @@ export const discoverInBrowser = async (req, { onStep = noopStep } = {}) => {
   const cfg = await getByokLLMConfig();
   if (!cfg) throw new Error(t('discover.error.llm_missing'));
   const byokSearchActive = await isByokSearchActive();
-  if (!byokSearchActive && (isStaticHost() || !(await getServerDiscoverStatus()).available)) {
+  if (!byokSearchActive && (isStaticHost() || !(await getServerDiscoverStatus()).search_available)) {
     throw new Error(t('discover.error.search_missing'));
   }
 
