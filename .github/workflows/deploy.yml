@@ -17,6 +17,7 @@ env:
   SERVICE: career-planner
   SCRAPER_SERVICE: scraper-demo
   SCRAPER_IMAGE: unclecode/crawl4ai:latest
+  SEARCH_SERVICE: search-demo
 
 jobs:
   deploy:
@@ -27,6 +28,7 @@ jobs:
       id-token: write
     env:
       SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND }}
+      SEARCH_BACKEND: ${{ secrets.SEARCH_BACKEND }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,6 +69,9 @@ jobs:
           SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND }}
           SCRAPER_BASE_URL: ${{ secrets.SCRAPER_BASE_URL }}
           SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+          SEARCH_BACKEND: ${{ secrets.SEARCH_BACKEND }}
+          SEARCH_BASE_URL: ${{ secrets.SEARCH_BASE_URL }}
+          BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
           BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
         run: |
           set -euo pipefail
@@ -93,6 +98,9 @@ jobs:
           upsert_secret cp-scraper-backend            "$SCRAPER_BACKEND"
           upsert_secret cp-scraper-base-url           "$SCRAPER_BASE_URL"
           upsert_secret cp-scraper-api-key            "$SCRAPER_API_KEY"
+          upsert_secret cp-search-backend             "$SEARCH_BACKEND"
+          upsert_secret cp-search-base-url            "$SEARCH_BASE_URL"
+          upsert_secret cp-brave-api-key              "$BRAVE_API_KEY"
           upsert_secret cp-basic-auth-password        "$BASIC_AUTH_PASSWORD"
 
       - name: Deploy Crawl4AI scraper to Cloud Run (optional)
@@ -160,6 +168,55 @@ jobs:
               --project="$PROJECT_ID" --data-file=-
           fi
 
+      - name: Deploy SearXNG to Cloud Run (optional)
+        # Runs only when SEARCH_BACKEND=searxng. Otherwise the main service
+        # can still point SEARCH_BASE_URL at an external instance.
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        if: ${{ env.SEARCH_BACKEND == 'searxng' }}
+        run: |
+          set -euo pipefail
+
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/searxng:${{ github.event.workflow_run.head_sha || github.sha }}"
+          docker build -t "$IMAGE" deploy/searxng
+          docker push "$IMAGE"
+
+          # IAM-gated (only cp-runtime can invoke); the main service attaches
+          # the ID token via metadata. Brave key injected at container boot.
+          gcloud run deploy "$SEARCH_SERVICE" \
+            --image "$IMAGE" \
+            --project "$PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --platform managed \
+            --no-allow-unauthenticated \
+            --port 8080 \
+            --cpu 1 \
+            --cpu-boost \
+            --memory 512Mi \
+            --concurrency 8 \
+            --min-instances 0 \
+            --max-instances 2 \
+            --service-account "cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --set-secrets="BRAVE_API_KEY=cp-brave-api-key:latest"
+
+          gcloud run services add-iam-policy-binding "$SEARCH_SERVICE" \
+            --project "$PROJECT_ID" \
+            --region "$GCP_REGION" \
+            --member="serviceAccount:cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --role=roles/run.invoker
+
+          # Auto-fill cp-search-base-url unless the operator pinned an
+          # external instance in GitHub Secrets.
+          if [ -z "${{ secrets.SEARCH_BASE_URL }}" ]; then
+            SEARCH_URL=$(gcloud run services describe "$SEARCH_SERVICE" \
+              --project "$PROJECT_ID" --region "$GCP_REGION" --format='value(status.url)')
+            if ! gcloud secrets describe cp-search-base-url --project="$PROJECT_ID" >/dev/null 2>&1; then
+              gcloud secrets create cp-search-base-url --project="$PROJECT_ID" --replication-policy=automatic
+            fi
+            printf '%s' "$SEARCH_URL" | gcloud secrets versions add cp-search-base-url \
+              --project="$PROJECT_ID" --data-file=-
+          fi
+
       - name: Deploy to Cloud Run
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -172,12 +229,12 @@ jobs:
           HAS_SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND != '' }}
           HAS_SCRAPER_BASE_URL: ${{ secrets.SCRAPER_BASE_URL != '' }}
           HAS_SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY != '' }}
+          HAS_SEARCH_BACKEND: ${{ secrets.SEARCH_BACKEND != '' }}
+          HAS_SEARCH_BASE_URL: ${{ secrets.SEARCH_BASE_URL != '' }}
           HAS_BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD != '' }}
-          # If we auto-populated cp-scraper-base-url from the scraper-demo
-          # deployment above, also bind that env var so the main service can
-          # reach it. Otherwise SCRAPER_BASE_URL is only bound when GitHub
-          # secrets provided a value.
+          # Bind these when a sidecar deploy above auto-populated the URL.
           AUTO_POPULATED_SCRAPER_URL: ${{ secrets.SCRAPER_BACKEND == 'crawl4ai' && secrets.SCRAPER_BASE_URL == '' }}
+          AUTO_POPULATED_SEARCH_URL: ${{ secrets.SEARCH_BACKEND == 'searxng' && secrets.SEARCH_BASE_URL == '' }}
         run: |
           set -euo pipefail
 
@@ -199,6 +256,8 @@ jobs:
           [ "$HAS_SCRAPER_BACKEND" = "true" ]                                    && append_secret "SCRAPER_BACKEND=cp-scraper-backend:latest"
           { [ "$HAS_SCRAPER_BASE_URL" = "true" ] || [ "$AUTO_POPULATED_SCRAPER_URL" = "true" ]; } && append_secret "SCRAPER_BASE_URL=cp-scraper-base-url:latest"
           [ "$HAS_SCRAPER_API_KEY" = "true" ]                                    && append_secret "SCRAPER_API_KEY=cp-scraper-api-key:latest"
+          [ "$HAS_SEARCH_BACKEND" = "true" ]                                     && append_secret "SEARCH_BACKEND=cp-search-backend:latest"
+          { [ "$HAS_SEARCH_BASE_URL" = "true" ] || [ "$AUTO_POPULATED_SEARCH_URL" = "true" ]; } && append_secret "SEARCH_BASE_URL=cp-search-base-url:latest"
           [ "$HAS_BASIC_AUTH_PASSWORD" = "true" ] && append_secret "BASIC_AUTH_PASSWORD=cp-basic-auth-password:latest"
 
           SET_SECRETS_ARG=()

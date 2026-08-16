@@ -142,11 +142,28 @@ test.describe('local people page', () => {
       .click();
     await expect(page.locator('#toast')).toContainText('Thread open');
 
-    // Delete thread
-    page.once('dialog', (dialog) => dialog.accept());
+    // Edit thread — subject + channel. Pre-filled values must round-trip.
     await page
       .locator('#thread-list li', { hasText: 'Intro chat' })
-      .getByRole('button', { name: /^Delete thread Intro chat$/ })
+      .getByRole('button', { name: /^Edit thread Intro chat$/ })
+      .click();
+    const editForm = page.locator('#edit-thread-form');
+    await expect(editForm).toBeVisible();
+    await expect(editForm.getByLabel('Subject')).toHaveValue('Intro chat');
+    await expect(editForm.getByLabel('Channel')).toHaveValue('email');
+    await editForm.getByLabel('Subject').fill('Follow-up chat');
+    await editForm.getByLabel('Channel').selectOption('linkedin');
+    await editForm.getByRole('button', { name: 'Save thread edit' }).click();
+    await expect(page.locator('#toast')).toContainText('Thread updated');
+    await expect(page.locator('#thread-list li', { hasText: 'Follow-up chat' })).toBeVisible();
+    // Original subject is gone.
+    await expect(page.locator('#thread-list li', { hasText: 'Intro chat' })).toHaveCount(0);
+
+    // Delete thread (renamed to 'Follow-up chat' above)
+    page.once('dialog', (dialog) => dialog.accept());
+    await page
+      .locator('#thread-list li', { hasText: 'Follow-up chat' })
+      .getByRole('button', { name: /^Delete thread Follow-up chat$/ })
       .click();
     await expect(page.locator('#toast')).toContainText('Thread deleted');
     await expect(page.getByText('No threads yet.')).toBeVisible();

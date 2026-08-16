@@ -12,37 +12,29 @@ import (
 // résumé and returns candidate overview fields for the browser to review.
 // DB writes are the browser's job — this service only sanitizes.
 func (s *Service) ExtractFromResume(ctx context.Context, markdown, outputLanguage string) (ExtractedOverview, error) {
-	prompt := s.BuildExtractFromResumePrompt(markdown, outputLanguage)
 	if s.client == nil {
 		return ExtractedOverview{}, fmt.Errorf("llm client is not configured")
+	}
+	set := llm.PickPromptSet(extractOverviewPrompts(), outputLanguage)
+	prompt := llm.Prompt{
+		System: set.System,
+		User:   fmt.Sprintf(set.User, strings.TrimSpace(markdown)),
 	}
 	var out ExtractedOverview
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return ExtractedOverview{}, err
 	}
-	return s.FinalizeExtracted(out), nil
+	return finalizeExtracted(out), nil
 }
 
-// BuildExtractFromResumePrompt assembles the prompt for résumé-to-overview
-// extraction. The Markdown is passed verbatim (fenced in the prompt template
-// as untrusted input).
-func (s *Service) BuildExtractFromResumePrompt(markdown, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(extractOverviewPrompts(), outputLanguage)
-	trimmed := strings.TrimSpace(markdown)
-	return llm.Prompt{
-		System: set.System,
-		User:   fmt.Sprintf(set.User, trimmed),
-	}
-}
-
-// FinalizeExtracted normalizes decoded overview extraction output: trims all
+// finalizeExtracted normalizes decoded overview extraction output: trims all
 // string fields, drops suspicious text, dedupes skills and tools case-
 // insensitively, and clamps skill fields to the allowed level enum.
-func (s *Service) FinalizeExtracted(out ExtractedOverview) ExtractedOverview {
+func finalizeExtracted(out ExtractedOverview) ExtractedOverview {
 	name := cleanScalar(out.Name)
 	headline := cleanScalar(out.Headline)
 	summary := cleanScalar(out.Summary)
-	environment := cleanScalar(out.Environment)
+	workplaceType := cleanScalar(out.WorkplaceType)
 
 	skills := make([]Skill, 0, len(out.Skills))
 	seenSkill := map[string]struct{}{}
@@ -86,12 +78,12 @@ func (s *Service) FinalizeExtracted(out ExtractedOverview) ExtractedOverview {
 	}
 
 	return ExtractedOverview{
-		Name:        name,
-		Headline:    headline,
-		Summary:     summary,
-		Environment: environment,
-		Skills:      skills,
-		Tools:       tools,
+		Name:          name,
+		Headline:      headline,
+		Summary:       summary,
+		WorkplaceType: workplaceType,
+		Skills:        skills,
+		Tools:         tools,
 	}
 }
 
@@ -114,33 +106,25 @@ func cleanScalar(s string) string {
 // hand to a Typst renderer. Nothing hits the database — the caller decides
 // whether to save the generated .typ source.
 func (s *Service) ExtractStructuredResume(ctx context.Context, markdown, outputLanguage string) (ResumeStructured, error) {
-	prompt := s.BuildExtractStructuredResumePrompt(markdown, outputLanguage)
 	if s.client == nil {
 		return ResumeStructured{}, fmt.Errorf("llm client is not configured")
+	}
+	set := llm.PickPromptSet(extractStructuredResumePrompts(), outputLanguage)
+	prompt := llm.Prompt{
+		System: set.System,
+		User:   fmt.Sprintf(set.User, strings.TrimSpace(markdown)),
 	}
 	var out ResumeStructured
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return ResumeStructured{}, err
 	}
-	return s.FinalizeStructuredResume(out), nil
+	return finalizeStructuredResume(out), nil
 }
 
-// BuildExtractStructuredResumePrompt assembles the résumé-to-structured
-// prompt. The Markdown is passed verbatim (fenced in the prompt template
-// as untrusted input).
-func (s *Service) BuildExtractStructuredResumePrompt(markdown, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(extractStructuredResumePrompts(), outputLanguage)
-	trimmed := strings.TrimSpace(markdown)
-	return llm.Prompt{
-		System: set.System,
-		User:   fmt.Sprintf(set.User, trimmed),
-	}
-}
-
-// FinalizeStructuredResume trims and sanitises the LLM output. Suspicious
+// finalizeStructuredResume trims and sanitises the LLM output. Suspicious
 // text (prompt-injection artifacts) is dropped rather than fixed; empty
 // slices stay omitted so downstream renderers can skip whole sections.
-func (s *Service) FinalizeStructuredResume(out ResumeStructured) ResumeStructured {
+func finalizeStructuredResume(out ResumeStructured) ResumeStructured {
 	out.Contact = finalizeContact(out.Contact)
 	out.Summary = cleanScalar(out.Summary)
 

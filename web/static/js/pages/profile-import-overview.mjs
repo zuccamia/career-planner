@@ -97,7 +97,7 @@ const overviewFieldRow = ({ key, label, checked, currentValue, control }) => `
 const renderOverviewReview = (extracted, current, onExit) => {
   const el = document.getElementById('ri-overview-review');
   if (!el) return;
-  const anyField = extracted.name || extracted.headline || extracted.summary || extracted.environment
+  const anyField = extracted.name || extracted.headline || extracted.summary || extracted.workplace_type
     || (extracted.skills && extracted.skills.length) || (extracted.tools && extracted.tools.length);
   if (!anyField) {
     el.innerHTML = emptyState({ message: t('profile_import.overview.empty') });
@@ -108,7 +108,7 @@ const renderOverviewReview = (extracted, current, onExit) => {
     name: extracted.name || '',
     headline: extracted.headline || '',
     summary: extracted.summary || '',
-    environment: extracted.environment || '',
+    workplace_type: extracted.workplace_type || '',
     skills: [...(extracted.skills || [])],
     tools: [...(extracted.tools || [])],
   };
@@ -148,7 +148,7 @@ const renderOverviewReview = (extracted, current, onExit) => {
       ${inputRow('name', 'profile.field.name.label', overviewState.name, current?.name || '')}
       ${inputRow('headline', 'profile.field.headline.label', overviewState.headline, current?.headline || '')}
       ${textareaRow('summary', 'profile.field.summary.label', overviewState.summary, current?.summary || '')}
-      ${inputRow('environment', 'profile.field.environment.label', overviewState.environment, current?.environment || '')}
+      ${inputRow('workplace_type', 'profile.field.workplace_type.label', overviewState.workplace_type, current?.workplace_type || '')}
       ${skillsRow}
       ${toolsRow}
     </div>
@@ -170,7 +170,7 @@ const readOverviewEdits = () => {
   if (checked('name')) payload.name = val('name').trim();
   if (checked('headline')) payload.headline = val('headline').trim();
   if (checked('summary')) payload.summary = val('summary').trim();
-  if (checked('environment')) payload.environment = val('environment').trim();
+  if (checked('workplace_type')) payload.workplace_type = val('workplace_type').trim();
   if (checked('skills')) {
     payload.skills = mergeUnique(
       currentOverview?.skills, overviewState.skills,

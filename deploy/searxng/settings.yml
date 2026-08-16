@@ -1,0 +1,43 @@
+# SearXNG overrides for the discover pipeline. Placeholders __SECRET_KEY__
+# and __BRAVE_API_KEY__ are substituted at build / boot — never commit real
+# values here.
+use_default_settings:
+  engines:
+    remove:
+      - ahmia
+      - torch
+      - wikidata
+      - wikipedia
+
+engines:
+  - name: duckduckgo
+    disabled: true
+  - name: startpage
+    disabled: true
+  - name: qwant
+    disabled: true
+  - name: brave
+    disabled: true
+  - name: mojeek
+    disabled: true
+  - name: bing
+    disabled: false
+  - name: google cse
+    engine: google_cse
+    disabled: false
+  - name: brave-search-api
+    engine: braveapi
+    disabled: false
+    api_key: "__BRAVE_API_KEY__"
+
+server:
+  # secret_key signs CSRF tokens only; API access is IAM-gated.
+  secret_key: "__SECRET_KEY__"
+  limiter: false
+  public_instance: false
+  image_proxy: true
+
+search:
+  formats:
+    - html
+    - json

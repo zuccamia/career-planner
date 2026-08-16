@@ -12,13 +12,18 @@ import (
 )
 
 type fakeClient struct {
-	payload string
-	err     error
+	payload    string
+	err        error
+	lastPrompt llm.Prompt
 }
 
-func (f *fakeClient) GenerateJSON(_ context.Context, _ llm.Prompt, out any) error {
+func (f *fakeClient) GenerateJSON(_ context.Context, p llm.Prompt, out any) error {
+	f.lastPrompt = p
 	if f.err != nil {
 		return f.err
+	}
+	if f.payload == "" {
+		f.payload = "{}"
 	}
 	return json.Unmarshal([]byte(f.payload), out)
 }
@@ -40,7 +45,7 @@ func TestBuildTextSanitizesAndReturnsDossier(t *testing.T) {
 		"reasoning": "  ok  "
 	}`}}
 
-	got, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"}, "", WebsiteEnrichment{})
+	got, err := svc.Build(context.Background(), companies.Company{OfficialName: "Acme"}, "", Pages{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -69,7 +74,7 @@ func TestBuildTextSanitizesAndReturnsDossier(t *testing.T) {
 
 func TestBuildTextDropsUnparseableCareersURL(t *testing.T) {
 	svc := &Service{client: &fakeClient{payload: `{"careers_url": "not a url"}`}}
-	got, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"}, "", WebsiteEnrichment{})
+	got, err := svc.Build(context.Background(), companies.Company{OfficialName: "Acme"}, "", Pages{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -80,7 +85,7 @@ func TestBuildTextDropsUnparseableCareersURL(t *testing.T) {
 
 func TestBuildTextErrorsWithoutClient(t *testing.T) {
 	svc := &Service{}
-	_, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"}, "", WebsiteEnrichment{})
+	_, err := svc.Build(context.Background(), companies.Company{OfficialName: "Acme"}, "", Pages{})
 	if err == nil {
 		t.Fatal("expected error when llm client is nil")
 	}
@@ -89,81 +94,97 @@ func TestBuildTextErrorsWithoutClient(t *testing.T) {
 func TestBuildTextPropagatesClientError(t *testing.T) {
 	boom := errors.New("boom")
 	svc := &Service{client: &fakeClient{err: boom}}
-	_, err := svc.BuildText(context.Background(), companies.Company{OfficialName: "Acme"}, "", WebsiteEnrichment{})
+	_, err := svc.Build(context.Background(), companies.Company{OfficialName: "Acme"}, "", Pages{})
 	if err == nil || !errors.Is(err, boom) {
 		t.Fatalf("expected wrapped boom, got %v", err)
 	}
 }
 
 func TestBuildDossierPromptEmbedsWebsiteContent(t *testing.T) {
-	svc := &Service{}
-	prompt := svc.BuildDossierPrompt(
+	client := &fakeClient{payload: "{}"}
+	svc := &Service{client: client}
+	if _, err := svc.Build(
+		context.Background(),
 		companies.Company{OfficialName: "Acme", Website: "https://acme.example"},
 		"",
-		WebsiteEnrichment{Website: "This company sells widgets."},
-	)
-	if !strings.Contains(prompt.User, "BEGIN_UNTRUSTED_WEBSITE_CONTENT") {
-		t.Fatalf("expected website content block, got: %s", prompt.User)
+		Pages{Website: "This company sells widgets."},
+	); err != nil {
+		t.Fatalf("Build: %v", err)
 	}
-	if !strings.Contains(prompt.User, "This company sells widgets.") {
-		t.Fatalf("expected website content, got: %s", prompt.User)
+	if !strings.Contains(client.lastPrompt.User, "BEGIN_UNTRUSTED_WEBSITE_CONTENT") {
+		t.Fatalf("expected website content block, got: %s", client.lastPrompt.User)
+	}
+	if !strings.Contains(client.lastPrompt.User, "This company sells widgets.") {
+		t.Fatalf("expected website content, got: %s", client.lastPrompt.User)
 	}
 }
 
 func TestBuildDossierPromptEmbedsAllThreeBlocksIndependently(t *testing.T) {
-	svc := &Service{}
-	prompt := svc.BuildDossierPrompt(
+	client := &fakeClient{payload: "{}"}
+	svc := &Service{client: client}
+	if _, err := svc.Build(
+		context.Background(),
 		companies.Company{OfficialName: "Acme"},
 		"",
-		WebsiteEnrichment{
+		Pages{
 			Website: "Home page markdown.",
 			Blog:    "Blog markdown.",
 			Careers: "Careers markdown.",
 		},
-	)
+	); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
 	for _, marker := range []string{
 		"BEGIN_UNTRUSTED_WEBSITE_CONTENT", "Home page markdown.",
 		"BEGIN_UNTRUSTED_BLOG_CONTENT", "Blog markdown.",
 		"BEGIN_UNTRUSTED_CAREERS_CONTENT", "Careers markdown.",
 	} {
-		if !strings.Contains(prompt.User, marker) {
+		if !strings.Contains(client.lastPrompt.User, marker) {
 			t.Fatalf("missing marker %q in prompt", marker)
 		}
 	}
 }
 
 func TestBuildDossierPromptSkipsMissingBlocks(t *testing.T) {
-	svc := &Service{}
-	prompt := svc.BuildDossierPrompt(
+	client := &fakeClient{payload: "{}"}
+	svc := &Service{client: client}
+	if _, err := svc.Build(
+		context.Background(),
 		companies.Company{OfficialName: "Acme"},
 		"",
-		WebsiteEnrichment{Blog: "Blog only."},
-	)
-	if strings.Contains(prompt.User, "BEGIN_UNTRUSTED_WEBSITE_CONTENT") {
+		Pages{Blog: "Blog only."},
+	); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if strings.Contains(client.lastPrompt.User, "BEGIN_UNTRUSTED_WEBSITE_CONTENT") {
 		t.Fatalf("expected no website block when empty")
 	}
-	if strings.Contains(prompt.User, "BEGIN_UNTRUSTED_CAREERS_CONTENT") {
+	if strings.Contains(client.lastPrompt.User, "BEGIN_UNTRUSTED_CAREERS_CONTENT") {
 		t.Fatalf("expected no careers block when empty")
 	}
-	if !strings.Contains(prompt.User, "BEGIN_UNTRUSTED_BLOG_CONTENT") {
-		t.Fatalf("expected blog block, got: %s", prompt.User)
+	if !strings.Contains(client.lastPrompt.User, "BEGIN_UNTRUSTED_BLOG_CONTENT") {
+		t.Fatalf("expected blog block, got: %s", client.lastPrompt.User)
 	}
 }
 
 func TestBuildDossierPromptTruncatesLargeContent(t *testing.T) {
-	svc := &Service{}
+	client := &fakeClient{payload: "{}"}
+	svc := &Service{client: client}
 	huge := strings.Repeat("x", ScrapedContentMaxBytes+5000)
-	prompt := svc.BuildDossierPrompt(
+	if _, err := svc.Build(
+		context.Background(),
 		companies.Company{OfficialName: "Acme"},
 		"",
-		WebsiteEnrichment{Website: huge},
-	)
-	begin := strings.Index(prompt.User, "BEGIN_UNTRUSTED_WEBSITE_CONTENT\n")
-	end := strings.Index(prompt.User, "\nEND_UNTRUSTED_WEBSITE_CONTENT")
-	if begin < 0 || end < 0 {
-		t.Fatalf("expected website content block, got: %s", prompt.User)
+		Pages{Website: huge},
+	); err != nil {
+		t.Fatalf("Build: %v", err)
 	}
-	body := prompt.User[begin+len("BEGIN_UNTRUSTED_WEBSITE_CONTENT\n") : end]
+	begin := strings.Index(client.lastPrompt.User, "BEGIN_UNTRUSTED_WEBSITE_CONTENT\n")
+	end := strings.Index(client.lastPrompt.User, "\nEND_UNTRUSTED_WEBSITE_CONTENT")
+	if begin < 0 || end < 0 {
+		t.Fatalf("expected website content block, got: %s", client.lastPrompt.User)
+	}
+	body := client.lastPrompt.User[begin+len("BEGIN_UNTRUSTED_WEBSITE_CONTENT\n") : end]
 	if len(body) != ScrapedContentMaxBytes {
 		t.Fatalf("website content not truncated to %d, got len=%d", ScrapedContentMaxBytes, len(body))
 	}

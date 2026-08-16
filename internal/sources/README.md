@@ -13,10 +13,12 @@ External connectors behind small interfaces.
   `generic` HTML/JSON-LD fallback for when no ATS-specific provider matches.
   `scrape_fallback` wraps a `scrape.Client` and replaces `generic` as the
   registry fallback when a scraper is configured — better on JS-rendered
-  careers pages. `discover.go` exposes `DiscoverATSURL`, which calls
-  `scrape.Map` and filters URLs against known ATS host patterns
-  (Greenhouse/Lever/Ashby/Workday/SmartRecruiters/careers.*) — used by the
-  dossier builder to auto-fill `ats_url` when only a company website is known.
+  careers pages. `lookup.go` exposes `LookupATSURL`, which calls
+  `scrape.Map` and filters URLs against host patterns from
+  `web/static/data/ats-providers.json` (Greenhouse, Lever, Ashby, Workday,
+  SmartRecruiters, Workable, Google Careers, Microsoft Careers, Eightfold,
+  and a `careers.*` "internal" fallback) — used by the dossier builder to
+  auto-fill `ats_url` when only a company website is known.
   Planned: Workday first-class provider.
 
 Planned connectors: Hacker News, Reddit, profile/web search.

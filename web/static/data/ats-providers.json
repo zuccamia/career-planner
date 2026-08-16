@@ -1,0 +1,75 @@
+[
+  {
+    "provider": "greenhouse",
+    "search_hosts": ["boards.greenhouse.io", "job-boards.greenhouse.io"],
+    "host_pattern": "^(job-)?boards\\.greenhouse\\.io$|\\.greenhouse\\.io$",
+    "slug_in_path": true
+  },
+  {
+    "provider": "lever",
+    "search_hosts": ["jobs.lever.co"],
+    "host_pattern": "^jobs\\.lever\\.co$",
+    "slug_in_path": true
+  },
+  {
+    "provider": "ashby",
+    "search_hosts": ["jobs.ashbyhq.com"],
+    "host_pattern": "\\.ashbyhq\\.com$|^jobs\\.ashbyhq\\.com$",
+    "slug_in_path": true
+  },
+  {
+    "provider": "workday",
+    "search_hosts": [],
+    "host_pattern": "\\.myworkdayjobs\\.com$",
+    "slug_in_path": false
+  },
+  {
+    "provider": "smartrecruiters",
+    "search_hosts": ["jobs.smartrecruiters.com"],
+    "host_pattern": "^jobs\\.smartrecruiters\\.com$",
+    "slug_in_path": true
+  },
+  {
+    "provider": "workable",
+    "search_hosts": ["apply.workable.com"],
+    "host_pattern": "^apply\\.workable\\.com$",
+    "slug_in_path": true
+  },
+  {
+    "provider": "google-careers",
+    "search_hosts": ["www.google.com/about/careers/applications/jobs"],
+    "host_pattern": "^www\\.google\\.com$",
+    "slug_in_path": false,
+    "dead_markers": ["results/undefined"]
+  },
+  {
+    "provider": "microsoft-careers",
+    "search_hosts": ["jobs.careers.microsoft.com"],
+    "host_pattern": "^jobs\\.careers\\.microsoft\\.com$",
+    "slug_in_path": false
+  },
+  {
+    "provider": "eightfold",
+    "search_hosts": ["eightfold.ai"],
+    "host_pattern": "\\.eightfold\\.ai$",
+    "slug_in_path": false
+  },
+  {
+    "provider": "startup-jobs",
+    "search_hosts": ["startup.jobs"],
+    "host_pattern": "^startup\\.jobs$",
+    "slug_in_path": false
+  },
+  {
+    "provider": "jobright",
+    "search_hosts": ["jobright.ai"],
+    "host_pattern": "^jobright\\.ai$|\\.jobright\\.ai$",
+    "slug_in_path": false
+  },
+  {
+    "provider": "internal",
+    "search_hosts": [],
+    "host_pattern": "^careers\\.",
+    "slug_in_path": false
+  }
+]

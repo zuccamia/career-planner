@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/zuccamia/career-planner/internal/util"
 )
 
 const ashbyPageBase = "https://jobs.ashbyhq.com"
@@ -53,24 +55,11 @@ func (a *Ashby) Fetch(ctx context.Context, rawURL string) (Posting, error) {
 	}
 	req.Header.Set("User-Agent", "career-planner/1.0")
 
-	client := a.client
-	if client == nil {
-		client = safeClient()
-	}
-	resp, err := client.Do(req)
+	// 1 MiB is enough for the JSON-LD-carrying page HTML we care about;
+	// larger tenant sites truncate here (deep footer copy isn't parsed).
+	body, err := fetchPostingBody(a.client, req, "ashby", 1<<20)
 	if err != nil {
-		return Posting{}, fmt.Errorf("request ashby page: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return Posting{}, fmt.Errorf("ashby posting not found: %s", rawURL)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Posting{}, fmt.Errorf("unexpected status %d from ashby page", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return Posting{}, fmt.Errorf("read ashby page: %w", err)
+		return Posting{}, err
 	}
 
 	jp, ok := findJobPostingJSONLD(string(body))
@@ -91,6 +80,11 @@ func (a *Ashby) Fetch(ctx context.Context, rawURL string) (Posting, error) {
 		Compensation:    formatSalary(jp.BaseSalary),
 		ApplyURL:        rawURL,
 		DescriptionText: description,
+		EmploymentType:  strings.TrimSpace(jp.EmploymentType),
+		PostedAt: util.ParseTimestamp(
+			[]string{time.RFC3339Nano, time.RFC3339, "2006-01-02"},
+			jp.DatePosted,
+		),
 	}, nil
 }
 
@@ -111,24 +105,28 @@ func parseAshbyURL(rawURL string) (org, id string, ok bool) {
 	return parts[0], parts[1], true
 }
 
+// schemaSalary mirrors the schema.org MonetaryAmount subset we care about.
+type schemaSalary struct {
+	Currency string `json:"currency"`
+	Value    struct {
+		MinValue float64 `json:"minValue"`
+		MaxValue float64 `json:"maxValue"`
+		UnitText string  `json:"unitText"`
+	} `json:"value"`
+}
+
 // schemaJobPosting mirrors the schema.org JobPosting subset we care about.
 type schemaJobPosting struct {
 	Type               string `json:"@type"`
 	Title              string `json:"title"`
 	Description        string `json:"description"`
 	EmploymentType     string `json:"employmentType"`
+	DatePosted         string `json:"datePosted"`
 	HiringOrganization struct {
 		Name string `json:"name"`
 	} `json:"hiringOrganization"`
 	JobLocation json.RawMessage `json:"jobLocation"`
-	BaseSalary  struct {
-		Currency string `json:"currency"`
-		Value    struct {
-			MinValue float64 `json:"minValue"`
-			MaxValue float64 `json:"maxValue"`
-			UnitText string  `json:"unitText"`
-		} `json:"value"`
-	} `json:"baseSalary"`
+	BaseSalary  schemaSalary    `json:"baseSalary"`
 }
 
 // findJobPostingJSONLD scans HTML for <script type="application/ld+json"> blocks

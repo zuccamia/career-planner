@@ -1,10 +1,7 @@
-// Ports internal/applications/service.go FinalizeJDExtraction +
-// extraction.go sanitizeJobDescriptionStructured + splitCompensation +
-// overlayATSPosting. The wire input carries `raw` (model output), the
-// original `input`, and `enriched_raw` + `posting` returned from
-// /prompts/extract-job-description so FinalizeJDExtraction can reuse them
-// without a second fetch — same contract as rpcBYOKParse in
-// internal/http/byok.go.
+// JS port of internal/applications/extraction.go + service.go's ExtractJD
+// finalization for the BYOK-LLM path. Runs entirely client-side. The parse
+// input carries the LLM raw text plus the caller-supplied enriched_raw +
+// posting so overlayATSPosting can enrich the finalized structured JD.
 
 import { decodeJSONResponse } from '../decode.mjs';
 import { sanitizeText } from '../safety.mjs';
@@ -61,22 +58,22 @@ const normalizeSeason = (v) => {
 // inferRoleLevel walks a combined lower-cased text corpus for heuristic
 // matches. Kept in Go-order so the first match wins.
 const inferRoleLevel = (...parts) => {
-  const c = parts.join(' ').toLowerCase();
-  if (c.includes('internship') || c.includes(' intern ') || c.startsWith('intern ') || c.endsWith(' intern')) return 'intern';
-  if (c.includes('new grad') || c.includes('new-grad') || c.includes('new_grad') || c.includes('fresh graduate') || c.includes('fresh-grad') || c.includes('recent graduate') || c.includes('entry level') || c.includes('entry-level') || c.includes('graduate')) return 'new_grad';
-  if (c.includes('junior')) return 'junior';
-  if (c.includes('mid level') || c.includes('mid-level') || c.includes('mid_level')) return 'mid';
-  if (c.includes('senior')) return 'senior';
-  if (c.includes('staff')) return 'staff';
-  if (c.includes('principal')) return 'principal';
+  const combined = parts.join(' ').toLowerCase();
+  if (combined.includes('internship') || combined.includes(' intern ') || combined.startsWith('intern ') || combined.endsWith(' intern')) return 'intern';
+  if (combined.includes('new grad') || combined.includes('new-grad') || combined.includes('new_grad') || combined.includes('fresh graduate') || combined.includes('fresh-grad') || combined.includes('recent graduate') || combined.includes('entry level') || combined.includes('entry-level') || combined.includes('graduate')) return 'new_grad';
+  if (combined.includes('junior')) return 'junior';
+  if (combined.includes('mid level') || combined.includes('mid-level') || combined.includes('mid_level')) return 'mid';
+  if (combined.includes('senior')) return 'senior';
+  if (combined.includes('staff')) return 'staff';
+  if (combined.includes('principal')) return 'principal';
   return '';
 };
 
 const inferEmploymentType = (...parts) => {
-  const c = parts.join(' ').toLowerCase();
-  if (c.includes('full-time') || c.includes('full time') || c.includes('full_time')) return 'full_time';
-  if (c.includes('part-time') || c.includes('part time') || c.includes('part_time')) return 'part_time';
-  if (c.includes('contractor') || c.includes('contract')) return 'contract';
+  const combined = parts.join(' ').toLowerCase();
+  if (combined.includes('full-time') || combined.includes('full time') || combined.includes('full_time')) return 'full_time';
+  if (combined.includes('part-time') || combined.includes('part time') || combined.includes('part_time')) return 'part_time';
+  if (combined.includes('contractor') || combined.includes('contract')) return 'contract';
   return '';
 };
 
@@ -233,39 +230,69 @@ const overlayATSPosting = (structured, posting = {}) => {
     if (!structured.salary.currency) structured.salary.currency = currency;
     if (!structured.salary.amount)   structured.salary.amount   = amount;
   }
+  // EmploymentType from ATS only overrides when the LLM left it blank AND
+  // the ATS value maps cleanly to our enum. Unmapped values (e.g. Ashby's
+  // INTERN, which we track as role_level instead) leave the LLM's inference
+  // intact. Mirrors Go's overlayATSPosting.
+  if (!structured.employment_type) {
+    const et = normalizeEmploymentType(posting.employment_type ?? posting.employmentType ?? '');
+    if (et) structured.employment_type = et;
+  }
   return structured;
 };
 
-export const finalizeJDExtraction = (out, input = {}, prep = {}) => {
-  const structured = sanitizeJobDescriptionStructured(out, {
+// parse decodes the LLM raw response and finalizes it into the structured JD
+// the caller consumes: sanitize + overlay ATS-authoritative fields.
+export const parse = (raw, { input = {}, enriched_raw, posting } = {}) => {
+  const decoded = decodeJSONResponse(raw);
+  const structured = sanitizeJobDescriptionStructured(decoded, {
     companyName:       input.company_name,
     roleTitle:         input.role_title,
-    jobDescriptionRaw: prep.enriched_raw,
+    jobDescriptionRaw: enriched_raw,
   });
-  return overlayATSPosting(structured, prep.posting);
+  return overlayATSPosting(structured, posting);
 };
 
-// parse mirrors rpcBYOKParse's "extract-job-description" case: body carries
-// raw + input + enriched_raw + posting; response is the finalized structured
-// JD.
-export const parse = (raw, { input, enriched_raw, posting } = {}) => {
-  const decoded = decodeJSONResponse(raw);
-  return finalizeJDExtraction(decoded, input, { enriched_raw, posting });
+// buildATSHintsBlock renders ATS-returned fields into a "known facts" block
+// the LLM is told to trust verbatim. Returns "" when the ATS gave us nothing.
+// Mirrors Go's buildATSHintsBlock — same header text + field order.
+const buildATSHintsBlock = (posting = {}) => {
+  const pairs = [
+    ['Role title',     posting.title],
+    ['Company',        posting.company],
+    ['Location',       posting.location],
+    ['Department',     posting.department],
+    ['Team',           posting.team],
+    ['Compensation',   posting.compensation],
+    ['Employment type', posting.employment_type],
+  ];
+  const lines = [];
+  for (const [label, value] of pairs) {
+    const v = (value ?? '').trim();
+    if (v) lines.push(`- ${label}: ${v}`);
+  }
+  if (lines.length === 0) return '';
+  const provider = (posting.provider ?? '').trim();
+  const header = provider && provider !== 'generic'
+    ? `ATS-verified facts (source: ${provider})`
+    : 'ATS-verified facts';
+  return `\n${header} (use verbatim, do not infer):\n${lines.join('\n')}\n`;
 };
 
-// build assembles the JD extraction prompt browser-side. Requires the
-// caller to have already resolved raw text (from a paste or a browser-side
-// scrape). The ATS-hints template slot is passed empty because the browser
-// has no server-side ATS registry to produce structured Posting facts.
+// build assembles the JD extraction prompt client-side. Requires the caller
+// to have already resolved raw text (from a paste or a browser-side scrape).
+// input.posting (when supplied — e.g. from /api/applications/scrape) feeds
+// the ATS-hints block so the LLM sees ATS-authoritative fields verbatim.
 export const build = async (input, locale) => {
   const raw = (input?.job_description_raw ?? '').trim();
   if (!raw) throw new Error('job description is required');
+  const posting = input?.posting || {};
   const prompt = await buildFormatted('extract-job-description', locale,
     input?.company_name ?? '',
     input?.role_title ?? '',
     input?.job_posting_url ?? '',
-    '',
+    buildATSHintsBlock(posting),
     raw,
   );
-  return { ...prompt, enriched_raw: raw, posting: {} };
+  return { ...prompt, enriched_raw: raw, posting };
 };

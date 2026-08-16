@@ -47,7 +47,7 @@ export const finalizeExtracted = (out) => {
     name:        cleanScalar(out?.name),
     headline:    cleanScalar(out?.headline),
     summary:     cleanScalar(out?.summary),
-    environment: cleanScalar(out?.environment),
+    workplace_type: cleanScalar(out?.workplace_type),
     skills,
     tools,
   };

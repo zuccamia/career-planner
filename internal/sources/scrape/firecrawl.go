@@ -18,7 +18,7 @@ type firecrawlClient struct {
 	*httpBase
 }
 
-func (c *firecrawlClient) Backend() string { return BackendFirecrawl }
+func (c *firecrawlClient) Provider() string { return ProviderFirecrawl }
 
 type firecrawlScrapeReq struct {
 	URL             string   `json:"url"`
@@ -60,7 +60,7 @@ func (c *firecrawlClient) Scrape(ctx context.Context, url string, opts ScrapeOpt
 		Markdown:  resp.Data.Markdown,
 		HTML:      resp.Data.HTML,
 		Metadata:  resp.Data.Metadata,
-		Backend:   BackendFirecrawl,
+		Provider: ProviderFirecrawl,
 		FetchedAt: time.Now().UTC(),
 	}, nil
 }
@@ -87,7 +87,7 @@ func (c *firecrawlClient) Map(ctx context.Context, url string, opts ScrapeOption
 	return &MapResult{
 		Domain:    url,
 		URLs:      resp.Links,
-		Backend:   BackendFirecrawl,
+		Provider: ProviderFirecrawl,
 		FetchedAt: time.Now().UTC(),
 	}, nil
 }
@@ -105,12 +105,10 @@ func (b *httpBase) postJSON(ctx context.Context, path string, requestBody any, o
 	if b.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+b.apiKey)
 	}
-	// Cloud Run IAM auth uses X-Serverless-Authorization so it doesn't
-	// collide with the app-level Authorization above. Off-GCP or transient
-	// metadata failures fall through — the request continues without the
-	// header, which is what we want for public / self-hosted scrapers.
+	// Cloud Run IAM header; off-GCP the fetch errors and we send the request
+	// without it, which is right for public / self-hosted scrapers.
 	if b.idToken != nil {
-		if tok, err := b.idToken.get(ctx); err == nil {
+		if tok, err := b.idToken.Get(ctx); err == nil {
 			req.Header.Set("X-Serverless-Authorization", "Bearer "+tok)
 		}
 	}

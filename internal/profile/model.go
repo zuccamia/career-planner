@@ -17,7 +17,7 @@ type ExtractedOverview struct {
 	Name        string   `json:"name,omitempty"`
 	Headline    string   `json:"headline,omitempty"`
 	Summary     string   `json:"summary,omitempty"`
-	Environment string   `json:"environment,omitempty"`
+	WorkplaceType string `json:"workplace_type,omitempty"`
 	Skills      []Skill  `json:"skills,omitempty"`
 	Tools       []string `json:"tools,omitempty"`
 }
@@ -34,7 +34,7 @@ func NewService(client llm.Client) *Service {
 }
 
 // SkillLevels mirrors web/static/js/entities/profile-overview.mjs
-// SKILL_LEVELS. Kept here so FinalizeExtracted can drop unknown values.
+// SKILL_LEVELS. Kept here so finalizeExtracted can drop unknown values.
 var SkillLevels = map[string]struct{}{
 	"beginner":     {},
 	"intermediate": {},

@@ -16,17 +16,35 @@ import {
 } from '../storage/current-snapshot.mjs';
 import { refreshCurrentSnapshotBadge } from '../ui/current_snapshot.mjs';
 import { refreshAiModeBadge } from '../ui/ai_mode_badge.mjs';
-import { refreshScraperModeBadge, invalidateScraperServerStatus } from '../ui/scraper_mode_badge.mjs';
+import { refreshScraperModeBadge } from '../ui/scraper_mode_badge.mjs';
+import { refreshSearchModeBadge } from '../ui/search_mode_badge.mjs';
+import { refreshStorageModeBadge } from '../ui/storage_mode_badge.mjs';
 import { idbWipe } from '../storage/idb.mjs';
-import { getByokConfig, saveByokConfig, clearByokConfig } from '../storage/byok.mjs';
-import { getScraperConfig, saveScraperConfig, clearScraperConfig } from '../storage/scraper.mjs';
+import {
+  getByokLLMConfig, saveByokLLMConfig, clearByokLLMConfig,
+  DEFAULT_BASE_URL as DEFAULT_LLM_BASE_URL, DEFAULT_MODEL as DEFAULT_LLM_MODEL,
+} from '../storage/byok-llm.mjs';
+import {
+  getByokScraperConfig, saveByokScraperConfig, clearByokScraperConfig,
+  PROVIDERS as SCRAPER_PROVIDERS, PROVIDER_KEYS as SCRAPER_PROVIDER_KEYS,
+  DEFAULT_PROVIDER as DEFAULT_SCRAPER_PROVIDER,
+} from '../storage/byok-scraper.mjs';
+import {
+  getByokSearchConfig, saveByokSearchConfig, clearByokSearchConfig,
+  PROVIDER_KEYS as SEARCH_PROVIDER_KEYS, DEFAULT_PROVIDER as DEFAULT_SEARCH_PROVIDER,
+  DEFAULT_MAX_RESULTS as DEFAULT_SEARCH_MAX,
+} from '../storage/byok-search.mjs';
 import { testConnection, getServerLLMStatus } from '../llm-client.mjs';
 import { testConnection as testScraperConnection, getServerScraperStatus } from '../scrape-client.mjs';
+import { testConnection as testSearchConnection } from '../search-client.mjs';
+import { getServerDiscoverStatus } from '../discover-client.mjs';
 import { escapeHtml } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
 import { button, badge, emptyState, helpText, inlineError, setInlineError, pageHeader } from '../ui/components.mjs';
-import { icon } from '../ui/icons.mjs';
+import {
+  byokSectionHeader, byokProviderRow, byokBaseURLRow, byokAPIKeyRow, byokActionsRow, wireByokPanel,
+} from '../ui/byok_panel.mjs';
 import { SUPPORTED, currentLocale, setLocale, localeDisplayName, t } from '../i18n.mjs';
 
 const kb = (n) => `${(n/1024).toFixed(1)} KB`;
@@ -116,80 +134,44 @@ const render = (root) => {
       </section>
 
       <section id="ai-provider" class="${CLS.card}">
-        <header class="space-y-1">
-          <div class="${CLS.inlineRow}">
-            <p class="${CLS.eyebrow}">${t('settings.ai.eyebrow')}</p>
-            <span id="byok-status"></span>
-          </div>
-          ${helpText(t('settings.ai.help'))}
-        </header>
-        ${inlineError({ id: 'byok-error' })}
-        <div id="byok-fields" class="space-y-3">
-          <label class="block ${CLS.bodyText}">
-            ${t('settings.ai.field.base_url.label')}
-            <input id="byok-base-url" type="url" placeholder="https://api.openai.com/v1" class="${CLS.input} mt-1">
-          </label>
+        ${byokSectionHeader({ domPrefix: 'llm', i18nPrefix: 'settings.ai' })}
+        <div id="llm-fields" class="space-y-3">
+          ${byokBaseURLRow({ domPrefix: 'llm', i18nPrefix: 'settings.ai', placeholder: DEFAULT_LLM_BASE_URL })}
           <label class="block ${CLS.bodyText}">
             ${t('settings.ai.field.model.label')}
-            <input id="byok-model" type="text" placeholder="gpt-4o-mini" class="${CLS.input} mt-1">
+            <input id="llm-model" type="text" placeholder="${DEFAULT_LLM_MODEL}" class="${CLS.input} mt-1">
           </label>
-          <label class="block ${CLS.bodyText}">
-            ${t('settings.ai.field.api_key.label')}
-            <span class="ml-1 ${CLS.helpText}">${t('settings.ai.field.api_key.note')}</span>
-            <div class="mt-1 ${CLS.inlineRow}">
-              <input id="byok-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…" class="${CLS.input} flex-1">
-              ${button({ id: 'btn-byok-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: t('settings.ai.field.api_key.show') })}
-            </div>
-          </label>
+          ${byokAPIKeyRow({ domPrefix: 'llm', i18nPrefix: 'settings.ai', placeholder: 'sk-…', hasNote: true })}
           <label class="${CLS.inlineRow} text-sm text-ink-soft">
-            <input id="byok-clear-on-signout" type="checkbox" class="h-4 w-4">
+            <input id="llm-clear-on-signout" type="checkbox" class="h-4 w-4">
             <span>${t('settings.ai.field.clear_with_drive.label')}</span>
           </label>
-          <div class="${CLS.formRow}">
-            ${button({ id: 'btn-byok-save', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('settings.ai.action.save'), disabled: true })}
-            ${button({ id: 'btn-byok-test', variant: 'secondaryCompact', icon: 'link', label: t('settings.ai.action.test') })}
-            ${button({ id: 'btn-byok-clear', variant: 'dangerCompact', icon: 'trash', label: t('settings.ai.action.clear') })}
-            <span id="byok-test-result" class="${CLS.bodyText}"></span>
-          </div>
+          ${byokActionsRow({ domPrefix: 'llm', i18nPrefix: 'settings.ai' })}
         </div>
       </section>
 
       <section id="scraper-provider" class="${CLS.card}">
-        <header class="space-y-1">
-          <div class="${CLS.inlineRow}">
-            <p class="${CLS.eyebrow}">${t('settings.scraper.eyebrow')}</p>
-            <span id="scraper-status"></span>
-          </div>
-          ${helpText(t('settings.scraper.help'))}
-        </header>
-        ${inlineError({ id: 'scraper-error' })}
+        ${byokSectionHeader({ domPrefix: 'scraper', i18nPrefix: 'settings.scraper' })}
         <div id="scraper-fields" class="space-y-3">
-          <label class="block ${CLS.bodyText}">
-            ${t('settings.scraper.field.backend.label')}
-            <select id="scraper-backend" class="${CLS.input} mt-1">
-              <option value="firecrawl">${t('settings.scraper.field.backend.firecrawl')}</option>
-              <option value="crawl4ai">${t('settings.scraper.field.backend.crawl4ai')}</option>
-            </select>
-          </label>
-          <label class="block ${CLS.bodyText}">
-            ${t('settings.scraper.field.base_url.label')}
-            <input id="scraper-base-url" type="url" placeholder="https://api.firecrawl.dev" class="${CLS.input} mt-1">
-          </label>
-          <label class="block ${CLS.bodyText}">
-            ${t('settings.scraper.field.api_key.label')}
-            <span class="ml-1 ${CLS.helpText}">${t('settings.scraper.field.api_key.note')}</span>
-            <div class="mt-1 ${CLS.inlineRow}">
-              <input id="scraper-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="fc-…" class="${CLS.input} flex-1">
-              ${button({ id: 'btn-scraper-reveal', variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: t('settings.scraper.field.api_key.show') })}
-            </div>
-          </label>
-          <div class="${CLS.formRow}">
-            ${button({ id: 'btn-scraper-save', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('settings.scraper.action.save'), disabled: true })}
-            ${button({ id: 'btn-scraper-test', variant: 'secondaryCompact', icon: 'link', label: t('settings.scraper.action.test') })}
-            ${button({ id: 'btn-scraper-clear', variant: 'dangerCompact', icon: 'trash', label: t('settings.scraper.action.clear') })}
-            <span id="scraper-test-result" class="${CLS.bodyText}"></span>
-          </div>
+          ${byokProviderRow({ domPrefix: 'scraper', i18nPrefix: 'settings.scraper', options: SCRAPER_PROVIDER_KEYS })}
+          ${byokBaseURLRow({ domPrefix: 'scraper', i18nPrefix: 'settings.scraper', placeholder: SCRAPER_PROVIDERS[DEFAULT_SCRAPER_PROVIDER].defaultBaseUrl })}
+          ${byokAPIKeyRow({ domPrefix: 'scraper', i18nPrefix: 'settings.scraper', placeholder: 'fc-…', hasNote: true })}
+          ${byokActionsRow({ domPrefix: 'scraper', i18nPrefix: 'settings.scraper' })}
           ${helpText(t('settings.scraper.capabilities'))}
+        </div>
+      </section>
+
+      <section id="search-provider" class="${CLS.card}">
+        ${byokSectionHeader({ domPrefix: 'search', i18nPrefix: 'settings.search' })}
+        <div id="search-fields" class="space-y-3">
+          ${byokProviderRow({ domPrefix: 'search', i18nPrefix: 'settings.search', options: SEARCH_PROVIDER_KEYS })}
+          ${byokAPIKeyRow({ domPrefix: 'search', i18nPrefix: 'settings.search', placeholder: t('settings.search.field.api_key.placeholder') })}
+          <label class="block ${CLS.bodyText}">
+            ${t('settings.search.field.max_results.label')}
+            <input id="search-max-results" type="number" min="1" max="50" value="${DEFAULT_SEARCH_MAX}" class="${CLS.inputCompact} mt-1">
+            <span class="ml-1 ${CLS.helpText}">${t('settings.search.field.max_results.help')}</span>
+          </label>
+          ${byokActionsRow({ domPrefix: 'search', i18nPrefix: 'settings.search' })}
         </div>
       </section>
 
@@ -244,7 +226,6 @@ const refreshLocalDisk = () => {
     status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: localDisk.dirHandle.name });
     forget.disabled = false;
     list.disabled = false;
-    connect.setAttribute('aria-label', t('settings.local_disk.action.connect'));
   } else {
     status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'linkSlash', label: t('settings.local_disk.badge.not_connected') });
     forget.disabled = true;
@@ -277,45 +258,21 @@ const refreshDrive = () => {
   }
 };
 
-const refreshByokStatus = async () => {
-  const status = document.getElementById('byok-status');
-  const [cfg, serverLLM] = await Promise.all([getByokConfig(), getServerLLMStatus()]);
+const refreshByokLLMStatus = async () => {
+  const status = document.getElementById('llm-status');
+  if (!status) return;
+  const [cfg, serverLLM] = await Promise.all([getByokLLMConfig(), getServerLLMStatus()]);
   const byokActive = !!(cfg && cfg.enabled && cfg.baseUrl && cfg.apiKey && cfg.model);
   if (byokActive) {
     status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: t('settings.ai.badge.byok', { model: cfg.model }) });
-  } else if (!serverLLM.available) {
-    status.innerHTML = badge({ color: 'amber', size: 'xs', icon: 'sparkles', label: t('settings.ai.badge.setup_needed') });
+  } else if (serverLLM.available) {
+    status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'link', label: t('settings.ai.badge.server', { model: serverLLM.model || '' }) });
   } else {
-    status.innerHTML = '';
+    status.innerHTML = badge({ color: 'amber', size: 'xs', icon: 'sparkles', label: t('settings.ai.badge.setup_needed') });
   }
   // Sidebar badge tracks the same state — refresh it so saves/clears here
   // are reflected immediately without a page reload.
   refreshAiModeBadge();
-};
-
-// readByokForm collects the form values into the persisted shape. Does not
-// validate — callers (test / save) surface field-level errors themselves.
-// enabled is implicitly true: the only way to persist a config through this
-// form is BYOK-on. "Clear key" is the escape hatch back to the server-side LLM.
-const readByokForm = () => ({
-  enabled: true,
-  baseUrl: document.getElementById('byok-base-url').value,
-  model: document.getElementById('byok-model').value,
-  apiKey: document.getElementById('byok-api-key').value,
-  clearOnSignOut: document.getElementById('byok-clear-on-signout').checked,
-});
-
-const refreshOnlineBanner = () => {
-  const el = document.getElementById('online-banner');
-  if (!el) return;
-  if (navigator.onLine) {
-    el.classList.add('hidden');
-  } else {
-    el.classList.remove('hidden');
-    el.textContent = googleDrive.isReady()
-      ? t('settings.drive.offline.disabled')
-      : t('settings.drive.offline.no_backend');
-  }
 };
 
 // ---------- handlers ----------
@@ -381,199 +338,158 @@ const deleteSnapshot = (backend, listEl) => async (id, displayName) => {
   }
 };
 
-const wireByok = async () => {
-  const cfg = await getByokConfig();
-  const baseUrl = document.getElementById('byok-base-url');
-  const model = document.getElementById('byok-model');
-  const apiKey = document.getElementById('byok-api-key');
-  const clearOnSignout = document.getElementById('byok-clear-on-signout');
-  const result = document.getElementById('byok-test-result');
-  const saveBtn = document.getElementById('btn-byok-save');
-
-  baseUrl.value = cfg?.baseUrl || 'https://api.openai.com/v1';
-  model.value = cfg?.model || 'gpt-4o-mini';
-  apiKey.value = cfg?.apiKey || '';
-  clearOnSignout.checked = !!cfg?.clearOnSignOut;
-
-  // Test-before-save gate: Save is disabled until Test connection succeeds
-  // for the current field values. Any edit to baseUrl/model/apiKey clears
-  // the "tested" state so users can't save credentials we haven't verified.
-  // Seeded from persisted cfg on load — a config that was saved previously
-  // must have passed the gate at some point, so we trust it across reloads.
-  const fingerprint = (b, m, k) => `${b}|${m}|${k}`;
-  let lastTestedFingerprint = cfg ? fingerprint(cfg.baseUrl, cfg.model, cfg.apiKey) : null;
-  const currentFingerprint = () => fingerprint(baseUrl.value.trim(), model.value.trim(), apiKey.value.trim());
-  const syncSaveEnabled = () => {
-    saveBtn.disabled = !lastTestedFingerprint || lastTestedFingerprint !== currentFingerprint();
-  };
-  syncSaveEnabled();
-  [baseUrl, model, apiKey].forEach(el => el.addEventListener('input', syncSaveEnabled));
-
-  const revealBtn = document.getElementById('btn-byok-reveal');
-  revealBtn.addEventListener('click', () => {
-    const revealed = apiKey.type === 'password';
-    apiKey.type = revealed ? 'text' : 'password';
-    revealBtn.innerHTML = icon(revealed ? 'eyeSlash' : 'eye');
-    revealBtn.setAttribute('aria-label', revealed ? t('settings.ai.field.api_key.hide') : t('settings.ai.field.api_key.show'));
-  });
-
-  document.getElementById('btn-byok-test').addEventListener('click', async () => {
-    setInlineError('byok-error', '');
-    result.textContent = t('settings.ai.test.running');
-    const form = readByokForm();
-    if (!form.baseUrl || !form.apiKey || !form.model) {
-      result.textContent = '';
-      setInlineError('byok-error', t('settings.ai.error.test_missing_fields'));
-      return;
-    }
-    const res = await testConnection({ baseUrl: form.baseUrl, apiKey: form.apiKey, model: form.model });
-    if (res.ok) {
-      result.textContent = t('settings.ai.test.success', { latency: res.latencyMs, count: res.modelsCount });
-      lastTestedFingerprint = currentFingerprint();
-      syncSaveEnabled();
-    } else {
-      result.textContent = '';
-      setInlineError('byok-error', t('settings.ai.test.failure', { latency: res.latencyMs ?? '—', err: res.error }));
-    }
-  });
-
-  document.getElementById('btn-byok-save').addEventListener('click', async () => {
-    setInlineError('byok-error', '');
-    const form = readByokForm();
-    if (!form.baseUrl || !form.apiKey || !form.model) {
-      setInlineError('byok-error', t('settings.ai.error.save_missing_fields'));
-      return;
-    }
-    await saveByokConfig(form);
-    toast(t('settings.ai.toast.enabled', { model: form.model }), 'ok');
-    await refreshByokStatus();
-  });
-
-  document.getElementById('btn-byok-clear').addEventListener('click', async () => {
-    if (!confirm(t('settings.ai.confirm.clear'))) return;
-    await clearByokConfig();
-    apiKey.value = '';
-    result.textContent = '';
-    lastTestedFingerprint = null;
-    syncSaveEnabled();
-    toast(t('settings.ai.toast.cleared'), 'info');
-    await refreshByokStatus();
+const wireByokLLM = async () => {
+  const baseUrl = document.getElementById('llm-base-url');
+  const model = document.getElementById('llm-model');
+  const apiKey = document.getElementById('llm-api-key');
+  const clearOnSignout = document.getElementById('llm-clear-on-signout');
+  await wireByokPanel({
+    domPrefix: 'llm',
+    i18nPrefix: 'settings.ai',
+    fieldEls: [baseUrl, model, apiKey],
+    apiKeyEl: apiKey,
+    loadConfig: getByokLLMConfig,
+    saveConfig: saveByokLLMConfig,
+    clearConfig: clearByokLLMConfig,
+    hydrateForm: (cfg) => {
+      baseUrl.value = cfg?.baseUrl || DEFAULT_LLM_BASE_URL;
+      model.value = cfg?.model || DEFAULT_LLM_MODEL;
+      apiKey.value = cfg?.apiKey || '';
+      clearOnSignout.checked = !!cfg?.clearOnSignOut;
+    },
+    // enabled is implicitly true — the only way to persist through this
+    // form is BYOK-on. "Clear key" is the escape hatch back to server LLM.
+    readForm: () => ({
+      enabled: true,
+      baseUrl: baseUrl.value.trim(),
+      model: model.value.trim(),
+      apiKey: apiKey.value.trim(),
+      clearOnSignOut: clearOnSignout.checked,
+    }),
+    fingerprintOf: (o) => `${o.baseUrl || ''}|${o.model || ''}|${o.apiKey || ''}`,
+    validate: (f) => !!(f.baseUrl && f.apiKey && f.model),
+    runTest: (f) => testConnection({ baseUrl: f.baseUrl, apiKey: f.apiKey, model: f.model }),
+    formatTestSuccess: (r) => t('settings.ai.test.success', { latency: r.latencyMs, count: r.modelsCount }),
+    formatSavedToast: (f) => t('settings.ai.toast.enabled', { model: f.model }),
+    onChange: refreshByokLLMStatus,
   });
 };
 
-const refreshScraperStatus = async () => {
+const refreshByokScraperStatus = async () => {
   const status = document.getElementById('scraper-status');
   if (!status) return;
   const [cfg, server] = await Promise.all([
-    getScraperConfig(),
+    getByokScraperConfig(),
     getServerScraperStatus(),
   ]);
-  const active = !!(cfg && cfg.enabled && cfg.baseUrl && cfg.backend && (cfg.backend !== 'firecrawl' || cfg.apiKey));
+  const needsKey = SCRAPER_PROVIDERS[cfg?.provider]?.requiresApiKey;
+  const active = !!(cfg && cfg.enabled && cfg.baseUrl && cfg.provider && (!needsKey || cfg.apiKey));
   if (active) {
-    status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: t('settings.scraper.badge.byok', { backend: cfg.backend }) });
+    status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: t('settings.scraper.badge.byok', { provider: cfg.provider }) });
   } else if (server && server.available) {
-    status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'link', label: t('settings.scraper.badge.server', { backend: server.backend || '' }) });
+    status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'link', label: t('settings.scraper.badge.server', { provider: server.provider || '' }) });
   } else {
     status.innerHTML = '';
   }
-  // Sidebar badge tracks the same state — refresh it so saves/clears here are
-  // reflected immediately without a page reload. Server-status is cached in
-  // the badge module; the server-side value cannot change without a redeploy,
-  // so we only need to invalidate when we know something changed above.
-  invalidateScraperServerStatus();
+  // Sidebar badge tracks the same state — refresh so saves/clears here
+  // reflect immediately without a page reload.
   refreshScraperModeBadge();
 };
 
-const readScraperForm = () => ({
-  enabled: true,
-  backend: document.getElementById('scraper-backend').value,
-  baseUrl: document.getElementById('scraper-base-url').value,
-  apiKey: document.getElementById('scraper-api-key').value,
-});
-
-const wireScraper = async () => {
-  const cfg = await getScraperConfig();
-  const backend = document.getElementById('scraper-backend');
+const wireByokScraper = async () => {
+  const provider = document.getElementById('scraper-provider');
   const baseUrl = document.getElementById('scraper-base-url');
   const apiKey = document.getElementById('scraper-api-key');
-  const result = document.getElementById('scraper-test-result');
-  const saveBtn = document.getElementById('btn-scraper-save');
-
-  backend.value = cfg?.backend || 'firecrawl';
-  baseUrl.value = cfg?.baseUrl || (backend.value === 'crawl4ai' ? 'http://localhost:11235' : 'https://api.firecrawl.dev');
-  apiKey.value = cfg?.apiKey || '';
-
-  // Test-before-save gate (mirrors AI provider panel).
-  const fingerprint = (b, u, k) => `${b}|${u}|${k}`;
-  let lastTestedFingerprint = cfg ? fingerprint(cfg.backend, cfg.baseUrl, cfg.apiKey) : null;
-  const currentFingerprint = () => fingerprint(backend.value.trim(), baseUrl.value.trim(), apiKey.value.trim());
-  const syncSaveEnabled = () => {
-    saveBtn.disabled = !lastTestedFingerprint || lastTestedFingerprint !== currentFingerprint();
-  };
-  syncSaveEnabled();
-  [backend, baseUrl, apiKey].forEach(el => el.addEventListener('input', syncSaveEnabled));
-  backend.addEventListener('change', () => {
-    // Swap the default base URL when the backend changes and the field still
-    // holds the old default. Explicit edits are preserved.
-    const isFCDefault = baseUrl.value === 'https://api.firecrawl.dev';
-    const isC4Default = baseUrl.value === 'http://localhost:11235';
-    if (backend.value === 'crawl4ai' && isFCDefault) baseUrl.value = 'http://localhost:11235';
-    if (backend.value === 'firecrawl' && isC4Default) baseUrl.value = 'https://api.firecrawl.dev';
-    syncSaveEnabled();
+  await wireByokPanel({
+    domPrefix: 'scraper',
+    i18nPrefix: 'settings.scraper',
+    fieldEls: [provider, baseUrl, apiKey],
+    apiKeyEl: apiKey,
+    extraChangeEls: [provider],
+    loadConfig: getByokScraperConfig,
+    saveConfig: saveByokScraperConfig,
+    clearConfig: clearByokScraperConfig,
+    hydrateForm: (cfg) => {
+      provider.value = cfg?.provider || DEFAULT_SCRAPER_PROVIDER;
+      baseUrl.value = cfg?.baseUrl || SCRAPER_PROVIDERS[provider.value].defaultBaseUrl;
+      apiKey.value = cfg?.apiKey || '';
+    },
+    readForm: () => ({
+      enabled: true,
+      provider: provider.value,
+      baseUrl: baseUrl.value.trim(),
+      apiKey: apiKey.value.trim(),
+    }),
+    fingerprintOf: (o) => `${o.provider || ''}|${o.baseUrl || ''}|${o.apiKey || ''}`,
+    validate: (f) => !!(f.provider && f.baseUrl && (!SCRAPER_PROVIDERS[f.provider]?.requiresApiKey || f.apiKey)),
+    runTest: testScraperConnection,
+    formatTestSuccess: (r) => t('settings.scraper.test.success', { sampleLength: r.sampleLength }),
+    formatSavedToast: (f) => t('settings.scraper.toast.enabled', { provider: f.provider }),
+    onChange: refreshByokScraperStatus,
   });
 
-  const revealBtn = document.getElementById('btn-scraper-reveal');
-  revealBtn.addEventListener('click', () => {
-    const revealed = apiKey.type === 'password';
-    apiKey.type = revealed ? 'text' : 'password';
-    revealBtn.innerHTML = icon(revealed ? 'eyeSlash' : 'eye');
-    revealBtn.setAttribute('aria-label', revealed ? t('settings.scraper.field.api_key.hide') : t('settings.scraper.field.api_key.show'));
+  // Swap the default base URL when the provider changes and the field still
+  // holds a different provider's default. Explicit edits are preserved.
+  const isDefaultBaseUrl = () =>
+    SCRAPER_PROVIDER_KEYS.some((k) => SCRAPER_PROVIDERS[k].defaultBaseUrl === baseUrl.value);
+  provider.addEventListener('change', () => {
+    if (isDefaultBaseUrl()) baseUrl.value = SCRAPER_PROVIDERS[provider.value].defaultBaseUrl;
   });
 
-  document.getElementById('btn-scraper-test').addEventListener('click', async () => {
-    setInlineError('scraper-error', '');
-    result.textContent = t('settings.scraper.test.running');
-    const form = readScraperForm();
-    if (!form.backend || !form.baseUrl || (form.backend === 'firecrawl' && !form.apiKey)) {
-      result.textContent = '';
-      setInlineError('scraper-error', t('settings.scraper.error.test_missing_fields'));
-      return;
-    }
-    const res = await testScraperConnection(form);
-    if (res.ok) {
-      result.textContent = t('settings.scraper.test.success', { sampleLength: res.sampleLength });
-      lastTestedFingerprint = currentFingerprint();
-      syncSaveEnabled();
-    } else {
-      result.textContent = '';
-      setInlineError('scraper-error', t('settings.scraper.test.failure', { err: res.error }));
-    }
+  await refreshByokScraperStatus();
+};
+
+const refreshByokSearchStatus = async () => {
+  const status = document.getElementById('search-status');
+  if (!status) return;
+  const [cfg, server] = await Promise.all([
+    getByokSearchConfig(),
+    getServerDiscoverStatus(),
+  ]);
+  const active = !!(cfg && cfg.enabled && cfg.provider && cfg.apiKey);
+  if (active) {
+    status.innerHTML = badge({ color: 'emerald', size: 'xs', icon: 'link', label: t('settings.search.badge.byok', { provider: cfg.provider }) });
+  } else if (server && server.available) {
+    status.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'link', label: t('settings.search.badge.server', { provider: server.provider || '' }) });
+  } else {
+    status.innerHTML = '';
+  }
+  refreshSearchModeBadge();
+};
+
+const wireByokSearch = async () => {
+  const provider = document.getElementById('search-provider');
+  const apiKey = document.getElementById('search-api-key');
+  const maxResults = document.getElementById('search-max-results');
+  await wireByokPanel({
+    domPrefix: 'search',
+    i18nPrefix: 'settings.search',
+    fieldEls: [provider, apiKey, maxResults],
+    apiKeyEl: apiKey,
+    extraChangeEls: [provider],
+    loadConfig: getByokSearchConfig,
+    saveConfig: saveByokSearchConfig,
+    clearConfig: clearByokSearchConfig,
+    hydrateForm: (cfg) => {
+      provider.value = cfg?.provider || DEFAULT_SEARCH_PROVIDER;
+      apiKey.value = cfg?.apiKey || '';
+      maxResults.value = cfg?.maxResults || DEFAULT_SEARCH_MAX;
+    },
+    readForm: () => ({
+      enabled: true,
+      provider: provider.value,
+      apiKey: apiKey.value.trim(),
+      maxResults: parseInt(maxResults.value, 10) || DEFAULT_SEARCH_MAX,
+    }),
+    fingerprintOf: (o) => `${o.provider || ''}|${o.apiKey || ''}|${o.maxResults ?? ''}`,
+    validate: (f) => !!(f.provider && f.apiKey),
+    runTest: testSearchConnection,
+    formatTestSuccess: (r) => t('settings.search.test.success', { sampleCount: r.sampleCount }),
+    formatSavedToast: (f) => t('settings.search.toast.enabled', { provider: f.provider }),
+    onChange: refreshByokSearchStatus,
   });
 
-  document.getElementById('btn-scraper-save').addEventListener('click', async () => {
-    setInlineError('scraper-error', '');
-    const form = readScraperForm();
-    if (!form.backend || !form.baseUrl || (form.backend === 'firecrawl' && !form.apiKey)) {
-      setInlineError('scraper-error', t('settings.scraper.error.save_missing_fields'));
-      return;
-    }
-    await saveScraperConfig(form);
-    toast(t('settings.scraper.toast.enabled', { backend: form.backend }), 'ok');
-    await refreshScraperStatus();
-  });
-
-  document.getElementById('btn-scraper-clear').addEventListener('click', async () => {
-    if (!confirm(t('settings.scraper.confirm.clear'))) return;
-    await clearScraperConfig();
-    apiKey.value = '';
-    result.textContent = '';
-    lastTestedFingerprint = null;
-    syncSaveEnabled();
-    toast(t('settings.scraper.toast.cleared'), 'info');
-    await refreshScraperStatus();
-  });
-
-  await refreshScraperStatus();
+  await refreshByokSearchStatus();
 };
 
 const wireLocalDisk = () => {
@@ -595,6 +511,7 @@ const wireLocalDisk = () => {
       await localDisk.connect();
       toast(t('settings.local_disk.toast.connected', { folder: localDisk.dirHandle.name }), 'ok');
       refreshLocalDisk();
+      refreshStorageModeBadge();
     } catch (err) {
       setInlineError('local-disk-error', t('settings.local_disk.error.connect_failed', { err: err.message }));
     }
@@ -619,7 +536,7 @@ const wireDrive = () => {
       await googleDrive.connect();
       toast(t('settings.drive.toast.connected'), 'ok');
       refreshDrive();
-      refreshOnlineBanner();
+      refreshStorageModeBadge();
     } catch (err) {
       setInlineError('drive-error', t('settings.drive.error.connect_failed', { err: err.message }));
     }
@@ -630,17 +547,17 @@ const wireDrive = () => {
     // Respect the BYOK "clear on signout" preference — some users treat the
     // Drive session as their trust anchor for whether personal creds should
     // persist on this machine.
-    const cfg = await getByokConfig();
+    const cfg = await getByokLLMConfig();
     if (cfg?.clearOnSignOut) {
-      await clearByokConfig();
-      const apiKey = document.getElementById('byok-api-key');
+      await clearByokLLMConfig();
+      const apiKey = document.getElementById('llm-api-key');
       if (apiKey) apiKey.value = '';
-      await refreshByokStatus();
+      await refreshByokLLMStatus();
     }
     listEl.innerHTML = '';
     toast(t('settings.drive.toast.disconnected'), 'info');
     refreshDrive();
-    refreshOnlineBanner();
+    refreshStorageModeBadge();
   });
 
   document.getElementById('btn-list-drive').addEventListener('click', toggleSnapshotList(googleDrive, listEl));
@@ -760,8 +677,9 @@ const wireLocale = () => {
 export const mountSettings = async (root) => {
   render(root);
   wireLocale();
-  await wireByok();
-  await wireScraper();
+  await wireByokLLM();
+  await wireByokScraper();
+  await wireByokSearch();
   wireLocalDisk();
   wireDrive();
   wireSnapshotActions();
@@ -769,9 +687,8 @@ export const mountSettings = async (root) => {
   // Backends were already restored in main.mjs during boot — just paint status.
   refreshLocalDisk();
   refreshDrive();
-  refreshOnlineBanner();
-  await refreshByokStatus();
+  await refreshByokLLMStatus();
 
-  window.addEventListener('online', () => { refreshDrive(); refreshOnlineBanner(); });
-  window.addEventListener('offline', () => { refreshDrive(); refreshOnlineBanner(); });
+  window.addEventListener('online', refreshDrive);
+  window.addEventListener('offline', refreshDrive);
 };

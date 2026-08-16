@@ -209,12 +209,13 @@ export const metaText = (text, { extraClass = '', id = '' } = {}) => {
   return `<p class="${cls}"${idAttr}>${escapeHtml(text)}</p>`;
 };
 
-// hintLink renders a small help line ending in a link — the "Need a new X?
-// Add one" pattern used below select dropdowns. Both `prefix` and `linkLabel`
-// are HTML-escaped; `href` is inserted verbatim (callers control it).
-export const hintLink = ({ prefix, href, linkLabel }) => `
+// hintLink renders a small help line with an inline link — the "Need a new X?
+// Add one" pattern below select dropdowns. Optional `suffix` extends the
+// sentence past the link ("Try <link> or update your profile."). All text is
+// HTML-escaped; `href` is inserted verbatim (callers control it).
+export const hintLink = ({ prefix, href, linkLabel, suffix = '' }) => `
   <p class="${CLS.helpText}">
-    ${escapeHtml(prefix)} <a href="${href}" class="${CLS.brandLink}">${escapeHtml(linkLabel)}</a>
+    ${escapeHtml(prefix)} <a href="${href}" class="${CLS.brandLink}">${escapeHtml(linkLabel)}</a>${suffix ? escapeHtml(suffix) : ''}
   </p>`;
 
 // The "Filtered by company: X · Clear filter" banner used by Applications and
@@ -394,11 +395,14 @@ export const setInlineWarning = (elOrId, message) => {
 
 // emptyState renders the shared "no data yet" box used across list panels,
 // details sub-sections, and the dashboard. Callers pass id when they need to
-// swap the message later without re-rendering the parent.
-export const emptyState = ({ message, id = '', extraClass = '' } = {}) => {
+// swap the message later without re-rendering the parent. When `hint` is set,
+// an inline hintLink renders below the message so the box can be actionable
+// ("<message> — <link to fix it>"), styled to match the surrounding box.
+export const emptyState = ({ message = '', id = '', extraClass = '', hint = null } = {}) => {
   const cls = `rounded-2xl bg-paper px-4 py-6 text-center text-sm text-ink-faint${extraClass ? ' ' + extraClass : ''}`;
   const idAttr = id ? ` id="${id}"` : '';
-  return `<div class="${cls}"${idAttr}>${escapeHtml(message)}</div>`;
+  const body = hint ? hintLink(hint) : escapeHtml(message);
+  return `<div class="${cls}"${idAttr}>${body}</div>`;
 };
 
 // formField renders a labeled <input> / <textarea> / <select> wrapped in the
@@ -531,6 +535,9 @@ const BADGE_COLORS = {
   fuchsia:  'bg-pill-fuchsia-bg text-pill-fuchsia',
   rose:     'bg-status-out-bg text-status-out',
   red:      'bg-status-out-bg text-status-out',
+  // brass = project-wide warning palette (matches inlineWarning). Use for
+  // non-critical "heads-up" pills — e.g. Discover low-confidence match.
+  brass:    'bg-brass-tint text-brass',
 };
 const BADGE_WEIGHTS = { medium: 'font-medium', semibold: 'font-semibold' };
 // badge props:

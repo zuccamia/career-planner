@@ -17,7 +17,7 @@ type crawl4aiClient struct {
 	*httpBase
 }
 
-func (c *crawl4aiClient) Backend() string { return BackendCrawl4AI }
+func (c *crawl4aiClient) Provider() string { return ProviderCrawl4AI }
 
 type crawl4aiMDReq struct {
 	URL string `json:"url"`
@@ -43,7 +43,7 @@ func (c *crawl4aiClient) Scrape(ctx context.Context, u string, _ ScrapeOptions) 
 		URL:       u,
 		Markdown:  resp.Markdown,
 		Metadata:  resp.Metadata,
-		Backend:   BackendCrawl4AI,
+		Provider: ProviderCrawl4AI,
 		FetchedAt: time.Now().UTC(),
 	}, nil
 }
@@ -99,7 +99,7 @@ func (c *crawl4aiClient) Map(ctx context.Context, u string, _ ScrapeOptions) (*M
 	return &MapResult{
 		Domain:    u,
 		URLs:      urls,
-		Backend:   BackendCrawl4AI,
+		Provider: ProviderCrawl4AI,
 		FetchedAt: time.Now().UTC(),
 	}, nil
 }

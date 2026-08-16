@@ -95,6 +95,51 @@ test.describe('local profile page — flat form + sparks', () => {
     await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator('#ov-skills-editor .js-skill-pills span[data-skill-index]', { hasText: 'Python' })).toBeVisible();
   });
+
+  test('flat form dedupes skills, tools, and sparks case-insensitively', async ({ page }) => {
+    await gotoProfile(page);
+    await skipWizardIfPresent(page);
+
+    const skills = page.locator('#ov-skills-editor');
+    await skills.locator('.js-skill-name').fill('Python');
+    await skills.locator('.js-skill-years').fill('4');
+    await skills.locator('.js-skill-level').selectOption('advanced');
+    await skills.locator('.js-add-skill').click();
+    await expect(skills.locator('.js-skill-pills span[data-skill-index]')).toHaveCount(1);
+
+    await skills.locator('.js-skill-name').fill(' python ');
+    await skills.locator('.js-skill-years').fill('9');
+    await skills.locator('.js-skill-level').selectOption('expert');
+    await skills.locator('.js-add-skill').click();
+    await expect(skills.locator('.js-skill-pills span[data-skill-index]')).toHaveCount(1);
+    await expect(skills.locator('.js-skill-pills')).toContainText('Python');
+
+    await page.locator('#ov-tools-input').fill('Notion');
+    await page.locator('#btn-add-tool').click();
+    await expect(page.locator('#ov-tools-list span[data-tool="Notion"]')).toBeVisible();
+
+    await page.locator('#ov-tools-input').fill(' notion ');
+    await page.locator('#btn-add-tool').click();
+    await expect(page.locator('#ov-tools-list span[data-tool]')).toHaveCount(1);
+    await expect(page.locator('#ov-tools-list')).toContainText('Notion');
+
+    await page.locator('#spark-input').fill('Remote-friendly');
+    await page.locator('#spark-priority').selectOption('2');
+    await page.locator('#btn-add-spark').click();
+    await expect(page.locator('#sparks-list span[data-spark-id]')).toHaveCount(1);
+
+    await page.locator('#spark-input').fill(' remote-friendly ');
+    await page.locator('#spark-priority').selectOption('1');
+    await page.locator('#btn-add-spark').click();
+    await expect(page.locator('#sparks-list span[data-spark-id]')).toHaveCount(1);
+    await expect(page.locator('#sparks-list')).toContainText('Remote-friendly');
+
+    await page.reload();
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('#ov-skills-editor .js-skill-pills span[data-skill-index]')).toHaveCount(1);
+    await expect(page.locator('#ov-tools-list span[data-tool]')).toHaveCount(1);
+    await expect(page.locator('#sparks-list span[data-spark-id]')).toHaveCount(1);
+  });
 });
 
 test.describe('local profile page — resumes tab', () => {

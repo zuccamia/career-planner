@@ -1,15 +1,23 @@
 package http
 
-// GET /api/scrape/server-status — reports whether the process was booted with
-// SCRAPER_* env vars, so the settings UI and sidebar badge can show whether
-// scraping works out of the box or needs BYOK setup. Same shape as
-// /api/llm/server-status.
+// GET /api/scrape/server-status — reports whether the process has a configured
+// AND reachable scraper. "Configured" is s.scrape != nil (SCRAPER_* set at
+// boot); "reachable" is a live Ping cached in Server.scrapePing.
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+)
 
 func (s *Server) rpcScrapeServerStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"available": s.serverScrapeAvailable,
-		"backend":   s.serverScrapeBackend,
+		"available": s.serverScrapeAvailable(r.Context()),
+		"provider":   s.serverScrapeProvider,
 	})
+}
+
+// serverScrapeAvailable reports whether the server-side scraper is configured
+// (s.scrape != nil) AND currently reachable (cached Ping).
+func (s *Server) serverScrapeAvailable(ctx context.Context) bool {
+	return s.scrape != nil && s.scrapePing.reachable(ctx, s.scrape.Ping)
 }

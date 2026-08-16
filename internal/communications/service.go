@@ -42,16 +42,20 @@ type MessageResult struct {
 }
 
 // SummarizeThreadContext runs the summary prompt and returns the summary text.
-// Composed from BuildSummaryPrompt + FinalizeSummary.
 func (s *Service) SummarizeThreadContext(ctx context.Context, detail ThreadDetail, outputLanguage string) (string, error) {
 	if s.client == nil {
 		return "", fmt.Errorf("llm client is not configured")
 	}
+	set := llm.PickPromptSet(summarizePrompts(), outputLanguage)
+	prompt := llm.Prompt{
+		System: set.System,
+		User:   fmt.Sprintf(set.User, buildThreadContext(detail)),
+	}
 	var out SummaryResult
-	if err := s.client.GenerateJSON(ctx, s.BuildSummaryPrompt(detail, outputLanguage), &out); err != nil {
+	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return "", err
 	}
-	summary := s.FinalizeSummary(out)
+	summary := llm.SanitizeText(out.Summary)
 	if summary == "" {
 		return "", ErrUnsafeGeneration
 	}
@@ -59,60 +63,29 @@ func (s *Service) SummarizeThreadContext(ctx context.Context, detail ThreadDetai
 }
 
 // GenerateMessageFromContext drafts a message ("outreach" or "reply") from a
-// browser-supplied ThreadDetail. Composed from BuildMessagePrompt + FinalizeMessage.
+// browser-supplied ThreadDetail.
 func (s *Service) GenerateMessageFromContext(ctx context.Context, detail ThreadDetail, goal, outputLanguage string) (string, error) {
-	prompt, err := s.BuildMessagePrompt(detail, goal, outputLanguage)
-	if err != nil {
-		return "", err
+	goal = strings.TrimSpace(strings.ToLower(goal))
+	if _, ok := MessageGoals[goal]; !ok {
+		return "", ErrInvalidGoal
 	}
 	if s.client == nil {
 		return "", fmt.Errorf("llm client is not configured")
+	}
+	set := llm.PickPromptSet(messagePrompts(), outputLanguage)
+	prompt := llm.Prompt{
+		System: set.System,
+		User:   fmt.Sprintf(set.User, goal, buildThreadContext(detail)),
 	}
 	var out MessageResult
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return "", err
 	}
-	message := s.FinalizeMessage(out)
+	message := llm.SanitizeText(out.Message)
 	if message == "" {
 		return "", ErrUnsafeGeneration
 	}
 	return message, nil
-}
-
-// BuildSummaryPrompt assembles the summarize prompt for a ThreadDetail. Pure.
-// outputLanguage selects the locale-specific prompt template; missing locales
-// fall back to English.
-func (s *Service) BuildSummaryPrompt(detail ThreadDetail, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(summarizePrompts(), outputLanguage)
-	return llm.Prompt{
-		System: set.System,
-		User:   fmt.Sprintf(set.User, buildThreadContext(detail)),
-	}
-}
-
-// FinalizeSummary trims a decoded summary result.
-func (s *Service) FinalizeSummary(out SummaryResult) string {
-	return llm.SanitizeText(out.Summary)
-}
-
-// BuildMessagePrompt assembles the message-generation prompt. Validates goal.
-// outputLanguage selects the locale-specific prompt template; missing locales
-// fall back to English.
-func (s *Service) BuildMessagePrompt(detail ThreadDetail, goal, outputLanguage string) (llm.Prompt, error) {
-	goal = strings.TrimSpace(strings.ToLower(goal))
-	if goal != "outreach" && goal != "reply" {
-		return llm.Prompt{}, ErrInvalidGoal
-	}
-	set := llm.PickPromptSet(messagePrompts(), outputLanguage)
-	return llm.Prompt{
-		System: set.System,
-		User:   fmt.Sprintf(set.User, goal, buildThreadContext(detail)),
-	}, nil
-}
-
-// FinalizeMessage trims a decoded message result.
-func (s *Service) FinalizeMessage(out MessageResult) string {
-	return llm.SanitizeText(out.Message)
 }
 
 // buildThreadContext formats thread, person-note, summary, and entry data for

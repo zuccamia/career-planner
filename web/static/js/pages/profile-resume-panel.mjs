@@ -13,7 +13,7 @@
 
 import { CLS } from '../ui/classes.mjs';
 import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
-import { relativeAge } from '../ui/format.mjs';
+import { relativeAge, resumePdfFilename } from '../ui/format.mjs';
 import {
   badge, button, fileStamp, formField, helpText,
   inlineError, logPanel, panelTitle, sectionTitle, setInlineError, subheadTitle,
@@ -23,7 +23,6 @@ import { toast } from '../ui/toast.mjs';
 import { t } from '../i18n.mjs';
 import {
   getResume, createResume, updateResume, deleteResume, setPrimaryResume,
-  resumePdfFilename,
 } from '../entities/resumes.mjs';
 import { listPdfsForResume, linkPdfToApplication } from '../entities/resume-pdfs.mjs';
 import { listApplications } from '../entities/applications.mjs';
@@ -181,7 +180,7 @@ const panelHtml = (resume, pdfList) => {
         ${subheadTitle(t('profile.resumes.preview.title'))}
         ${inlineError({ id: 'resume-panel-compile-error' })}
         <div class="${CLS.actionRowBetween}">
-          <span id="resume-panel-filename" class="${CLS.metaText}">${escapeHtml(resumePdfFilename({ name: '', fallback: resume.title || '' }))}</span>
+          <span id="resume-panel-filename" class="${CLS.metaText}">${escapeHtml(resumePdfFilename({ fallback: resume.title || '' }))}</span>
           ${button({ id: 'btn-resume-download', variant: 'primaryCompact', icon: 'arrowDownTray', label: t('profile.resumes.action.download') })}
         </div>
         <iframe id="resume-panel-iframe" class="hidden h-[600px] w-full rounded-xl border border-line"
@@ -313,7 +312,7 @@ const downloadPdf = async () => {
   const { title } = readForm();
   const a = document.createElement('a');
   a.href = currentPdfUrl;
-  a.download = resumePdfFilename({ name: overview?.name, fallback: title });
+  a.download = resumePdfFilename({ name: overview?.name, title, fallback: title });
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -334,7 +333,8 @@ const attachToApplication = async () => {
   const applicationId = Number(sel.value);
   const opt = sel.options[sel.selectedIndex];
   const overview = await getOverview();
-  const originalFilename = resumePdfFilename({ name: overview?.name, fallback: readForm().title });
+  const formTitle = readForm().title;
+  const originalFilename = resumePdfFilename({ name: overview?.name, title: formTitle, fallback: formTitle });
   const folder = sanitizeFolder(opt?.dataset?.company || 'unknown-company');
   const btn = document.getElementById('btn-resume-attach');
   if (btn) btn.disabled = true;

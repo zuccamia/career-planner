@@ -8,7 +8,7 @@
 import { exec } from '../db/client.mjs';
 import { removeAttachment } from '../storage/attachments.mjs';
 
-export const listAttachmentsByParent = (entityType, entityID) => exec(
+export const listAttachmentsByEntity = (entityType, entityID) => exec(
   `SELECT id, entity_type, entity_id, folder, filename, original_filename,
           mime_type, size_bytes, sha256, created_at
    FROM attachments
@@ -16,6 +16,13 @@ export const listAttachmentsByParent = (entityType, entityID) => exec(
    ORDER BY datetime(created_at) DESC, id DESC`,
   [entityType, entityID],
 );
+
+// Bulk delete used by entity DELETEs (deleteApplication, deleteResume) — the
+// attachments table has no FK on the polymorphic entity_id, so parent entity
+// modules can't rely on cascade and route through here instead. On-disk blobs
+// stay put (paired siblings may reference them; deferred GC sweeps the rest).
+export const deleteAttachmentsByEntity = (entityType, entityID) =>
+  exec('DELETE FROM attachments WHERE entity_type = ? AND entity_id = ?', [entityType, entityID]);
 
 // createAttachment records the metadata row *after* the coordinator has
 // written the bytes to every available backend. It does not touch storage
@@ -42,19 +49,21 @@ export const createAttachment = async ({
   return rows[0].id;
 };
 
-// Deletes both the blob (fan-out across available storage backends) and the
-// metadata row. Blob-delete failures are logged but not fatal — better to have
-// an orphan blob on one backend than to leave the UI showing a row that can
-// never be removed.
+// Deletes the blob (best-effort fan-out) and every attachment row pointing
+// at it. Sibling cascade handles the resume↔application pair from
+// linkPdfToApplication: both rows share folder+filename (unique per upload),
+// so deleting either removes the pair — no orphaned metadata.
 export const deleteAttachment = async (id) => {
   const rows = await exec(
     'SELECT folder, filename FROM attachments WHERE id = ?',
     [id],
   );
   const row = rows[0];
-  if (row && row.folder && row.filename) {
-    try { await removeAttachment(row.folder, row.filename); }
-    catch (err) { console.warn('deleteAttachment: blob delete failed:', err); }
-  }
-  await exec('DELETE FROM attachments WHERE id = ?', [id]);
+  if (!row) return;
+  try { await removeAttachment(row.folder, row.filename); }
+  catch (err) { console.warn('deleteAttachment: blob delete failed:', err); }
+  await exec(
+    'DELETE FROM attachments WHERE folder = ? AND filename = ?',
+    [row.folder, row.filename],
+  );
 };

@@ -8,7 +8,7 @@
 // badge even when the deploy also has a server-side LLM. Clicking navigates
 // to Settings → AI provider.
 
-import { getByokConfig } from '../storage/byok.mjs';
+import { getByokLLMConfig } from '../storage/byok-llm.mjs';
 import { getServerLLMStatus } from '../llm-client.mjs';
 import { badge } from './components.mjs';
 import { t } from '../i18n.mjs';
@@ -18,7 +18,7 @@ export const refreshAiModeBadge = async () => {
   if (!wrap) return;
 
   try {
-    const [cfg, serverLLM] = await Promise.all([getByokConfig(), getServerLLMStatus()]);
+    const [cfg, serverLLM] = await Promise.all([getByokLLMConfig(), getServerLLMStatus()]);
     const byokActive = !!(cfg && cfg.enabled && cfg.baseUrl && cfg.apiKey && cfg.model);
     if (byokActive) {
       wrap.innerHTML = badge({ color: 'slate', size: 'xs', icon: 'sparkles', label: t('settings.ai.badge.byok', { model: cfg.model }) });

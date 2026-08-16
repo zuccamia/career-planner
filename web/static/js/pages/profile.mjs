@@ -1,6 +1,6 @@
 // Career profile page — Overview, Resumes, Brag Sheet. On first run
-// (onboarded_at NULL + all fields empty) the Overview tab hosts the 7-step
-// setup wizard (see profile_wizard.mjs) instead of the flat form.
+// (onboarded_at NULL + all fields empty) the Overview tab hosts the setup
+// wizard (see profile_wizard.mjs) instead of the flat form.
 
 import { CLS } from '../ui/classes.mjs';
 import { escapeHtml, formatDate } from '../ui/dom.mjs';
@@ -9,21 +9,23 @@ import { collectionRowsHtml } from '../ui/collection_list.mjs';
 import { relativeAge } from '../ui/format.mjs';
 import { toast } from '../ui/toast.mjs';
 import { t } from '../i18n.mjs';
+import { SKILL_LEVELS, LOOKING_FOR_VALUES } from '../db/schema.mjs';
 import {
-  getOverview, updateOverview, clearOnboarded, SKILL_LEVELS,
-  getWizardProgress, clearWizardProgress,
+  getOverview, updateOverview, markOnboarded, clearOnboarded, getWizardProgress, clearWizardProgress, hydrateSkills, hydrateCareerSparks, hydrateTools, hydrateLocations,
 } from '../entities/profile-overview.mjs';
 import {
   listSparks, createSpark, deleteSpark, countSparks,
 } from '../entities/career-sparks.mjs';
 import { listResumes, countResumes } from '../entities/resumes.mjs';
 import {
-  listBragEntries, createBragEntry, updateBragEntry, deleteBragEntry, countBragEntries,
+  listBragEntries, createBragEntry, updateBragEntry, deleteBragEntry, countBragEntries, getBragEntry,
 } from '../entities/brag-entries.mjs';
 import { listCompanies } from '../entities/companies.mjs';
 import { generateBragTags } from '../rpc.mjs';
 import { createProgress } from '../ui/progress.mjs';
-import { renderWizard as renderWizardModule } from './profile_wizard.mjs';
+import { wireChipEditor } from '../ui/chip_editor.mjs';
+import { workplaceTypeCardsHtml, wireWorkplaceTypeCards } from '../ui/workplace_type_cards.mjs';
+import { renderWizard as renderWizardModule, WIZARD_STEPS } from './profile_wizard.mjs';
 import { renderImport } from './profile-import.mjs';
 import { openResumePanel } from './profile-resume-panel.mjs';
 
@@ -49,9 +51,9 @@ const CURRENT_YEAR = String(new Date().getFullYear());
 const state = {
   tab: 'overview',
   wizardStep: 0,
-  wizardOverview: { name: '', pitch: '', direction: '', environment: '', skills: [], tools: [] },
-  // Sparks the user picked in the values step (4). Tracked so Back to step 4
-  // can restore selection state without re-fetching by body text.
+  wizardOverview: { name: '', pitch: '', direction: '', workplace_type: '', skills: [], tools: [] },
+  // Sparks the user picked in the values step (4). Stored as normalized spark
+  // objects so wizard state matches persisted career_sparks rows.
   wizardValuesSparkIds: [],
   // Custom "add your own" values captured on step 4 so re-entering the step
   // keeps them selected even before Next commits.
@@ -77,7 +79,7 @@ const shellHtml = () => `
 
     <div class="${CLS.hairline}">
       <nav class="flex gap-1" role="tablist" id="tab-strip">
-        ${TAB_NAMES.map(t => tabButton(t)).join('')}
+        ${TAB_NAMES.map(name => tabButton(name)).join('')}
       </nav>
     </div>
 
@@ -102,7 +104,7 @@ const setTab = (tab) => {
   if (!VALID_TABS.includes(tab)) tab = 'overview';
   state.tab = tab;
   syncTabInUrl(tab);
-  document.getElementById('tab-strip').innerHTML = TAB_NAMES.map(t => tabButton(t)).join('');
+  document.getElementById('tab-strip').innerHTML = TAB_NAMES.map(name => tabButton(name)).join('');
   wireTabStrip();
   refreshProfileTabCounts();
   renderTab();
@@ -151,6 +153,10 @@ const wireTabStrip = () => {
 const renderOverviewTab = async (el) => {
   el.innerHTML = `${helpText(t('app.loading'))}`;
   const [overview, sparkCount, progress] = await Promise.all([getOverview(), countSparks(), getWizardProgress()]);
+  // If the user navigated to a different tab while our promises were
+  // resolving, abandon the render — writing now would clobber whichever
+  // panel the current tab mounted.
+  if (state.tab !== 'overview') return;
   // Wizard shows until the user hits Finish (onboarded_at set). Resume via
   // wizard_progress covers the mid-flow reload; the empty-fields check covers
   // a truly fresh DB where the user hasn't touched anything yet.
@@ -159,12 +165,13 @@ const renderOverviewTab = async (el) => {
     !(overview?.name || '').trim() &&
     !(overview?.headline || '').trim() &&
     !(overview?.summary || '').trim() &&
-    !(overview?.environment || '').trim() &&
+    !(overview?.workplace_type || '').trim() &&
     !(overview?.tools || []).length &&
     sparkCount === 0;
   const isFirstRun = !overview?.onboarded_at && (inFlight || untouched);
   if (isFirstRun) {
     await seedWizardStateFrom(overview);
+    if (state.tab !== 'overview') return;
     renderWizard(el);
   } else {
     renderOverviewFlat(el, overview);
@@ -174,24 +181,29 @@ const renderOverviewTab = async (el) => {
 const seedWizardStateFrom = async (overview) => {
   state.wizardOverview = {
     name: overview?.name || '',
-    pitch: overview?.headline || '',
-    direction: overview?.summary || '',
-    environment: overview?.environment || '',
+    headline: overview?.headline || '',
+    summary: overview?.summary || '',
+    looking_for: overview?.looking_for || 'open',
+    locations: Array.isArray(overview?.locations) ? [...overview.locations] : [],
+    workplace_type: overview?.workplace_type || '',
     skills: overview?.skills || [],
     tools: overview?.tools || [],
   };
-  state.wizardValuesSparkIds = [];
+  const existingSparks = await listSparks().catch(() => []);
+  state.wizardValuesSparkIds = existingSparks.map(s => s.id).filter(Boolean);
   state.wizardValuesCustom = [];
   const progress = await getWizardProgress();
   if (progress && typeof progress === 'object') {
     if (progress.name != null) state.wizardOverview.name = progress.name;
-    if (progress.pitch != null) state.wizardOverview.pitch = progress.pitch;
-    if (progress.direction != null) state.wizardOverview.direction = progress.direction;
-    if (progress.environment != null) state.wizardOverview.environment = progress.environment;
+    if (progress.headline != null) state.wizardOverview.headline = progress.headline;
+    if (progress.summary != null) state.wizardOverview.summary = progress.summary;
+    if (progress.looking_for != null) state.wizardOverview.looking_for = progress.looking_for;
+    if (Array.isArray(progress.locations)) state.wizardOverview.locations = progress.locations;
+    if (progress.workplace_type != null) state.wizardOverview.workplace_type = progress.workplace_type;
     if (Array.isArray(progress.tools)) state.wizardOverview.tools = progress.tools;
     if (Array.isArray(progress.valuesSparkIds)) state.wizardValuesSparkIds = progress.valuesSparkIds;
     if (Array.isArray(progress.valuesCustom)) state.wizardValuesCustom = progress.valuesCustom;
-    state.wizardStep = Math.min(Math.max(1, Number(progress.step) || 1), 7);
+    state.wizardStep = Math.min(Math.max(1, Number(progress.step) || 1), WIZARD_STEPS);
   } else {
     state.wizardStep = 1;
   }
@@ -228,10 +240,26 @@ const renderOverviewFlat = async (el, overview) => {
             ${helpText(t('profile.skills.help'))}
           </div>
           <div class="grid gap-2">
-            <label class="${CLS.label}">${t('profile.field.environment.label')}</label>
-            <div id="ov-env-cards" class="${CLS.choiceCardRow}">
-              ${envCardsHtml(overview?.environment || '')}
+            <label class="${CLS.label}">${t('profile.field.workplace_type.label')}</label>
+            <div id="ov-workplace-type-cards" class="${CLS.choiceCardRow}">
+              ${workplaceTypeCardsHtml(overview?.workplace_type || '')}
             </div>
+          </div>
+          <div class="grid gap-2">
+            <label class="${CLS.label}" for="ov-looking-for">${t('profile.field.looking_for.label')}</label>
+            <select id="ov-looking-for" class="${CLS.select}" data-field="looking_for">
+              ${LOOKING_FOR_VALUES.map(v => `<option value="${v}" ${v === (overview?.looking_for || 'open') ? 'selected' : ''}>${t(`profile.field.looking_for.option.${v}`)}</option>`).join('')}
+            </select>
+            ${helpText(t('profile.field.looking_for.help'))}
+          </div>
+          <div class="grid gap-2">
+            <label class="${CLS.label}" for="ov-locations-input">${t('profile.field.locations.label')}</label>
+            <div id="ov-locations-list">${locationsListHtml(overview?.locations || [])}</div>
+            <div class="${CLS.inlineRow}">
+              <input id="ov-locations-input" type="text" placeholder="${t('profile.field.locations.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
+              ${button({ id: 'btn-add-location', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
+            </div>
+            ${helpText(t('profile.field.locations.help'))}
           </div>
           <div class="grid gap-2">
             <label class="${CLS.label}" for="ov-tools-input">${t('profile.field.tools.label')}</label>
@@ -260,13 +288,14 @@ const renderOverviewFlat = async (el, overview) => {
 };
 
 const sparksListHtml = (sparks) => {
-  if (!sparks.length) {
+  const normalized = hydrateCareerSparks(sparks || []);
+  if (!normalized.length) {
     return `${helpText(t('profile.sparks.empty'))}`;
   }
   // "Top priority" = the smallest sort_order present. Any spark at that tier
   // (there may be several tied) is highlighted; the rest render muted.
-  const topSort = Math.min(...sparks.map(s => Number(s.sort_order ?? 0)));
-  return `<div class="${CLS.chipRow}">${sparks.map(s => sparkPillHtml(s, Number(s.sort_order ?? 0) === topSort)).join('')}</div>`;
+  const topSort = Math.min(...normalized.map(s => Number(s.sort_order ?? 0)));
+  return `<div class="${CLS.chipRow}">${normalized.map(s => sparkPillHtml(s, Number(s.sort_order ?? 0) === topSort)).join('')}</div>`;
 };
 
 const sparkPillHtml = (s, isTopTier) => {
@@ -308,25 +337,6 @@ const sparkInputHtml = () => `
   </div>
 `;
 
-// Environment cards + tools chip editor markup — shared between the flat
-// form and (for the cards) the wizard step. envValue is one of
-// 'remote'|'hybrid'|'onsite' or '' (nothing selected yet).
-const ENV_CHOICES = ['remote', 'hybrid', 'onsite'];
-
-const envCardHtml = (choice, activeValue) => {
-  const active = choice === activeValue;
-  const palette = active ? CLS.choiceCardActive : CLS.choiceCardInactive;
-  return `
-    <button type="button" class="${CLS.choiceCardBase} ${palette} js-env-choice" data-env="${choice}" aria-pressed="${active}">
-      <span class="${CLS.choiceCardTitle}">${t(`profile.env.card.${choice}.title`)}</span>
-      <span class="${CLS.choiceCardHelp}">${t(`profile.env.card.${choice}.help`)}</span>
-    </button>
-  `;
-};
-
-const envCardsHtml = (activeValue) =>
-  ENV_CHOICES.map(c => envCardHtml(c, activeValue)).join('');
-
 const toolPillHtml = (name) => removablePill({
   label: name,
   color: 'slate',
@@ -339,6 +349,19 @@ const toolPillHtml = (name) => removablePill({
 const toolsListHtml = (tools) => tools.length
   ? `<div class="${CLS.chipRow}">${tools.map(toolPillHtml).join('')}</div>`
   : `${helpText(t('profile.tools.empty'))}`;
+
+const locationPillHtml = (name) => removablePill({
+  label: name,
+  color: 'slate',
+  classes: 'gap-1.5',
+  dataset: { location: name },
+  dismissClass: 'js-location-delete',
+  dismissLabel: t('common.action.delete'),
+});
+
+const locationsListHtml = (locations) => locations.length
+  ? `<div class="${CLS.chipRow}">${locations.map(locationPillHtml).join('')}</div>`
+  : `${helpText(t('profile.field.locations.empty'))}`;
 
 const wireOverviewFlat = (overview) => {
   ['ov-name', 'ov-headline', 'ov-summary'].forEach(id => {
@@ -361,7 +384,6 @@ const wireOverviewFlat = (overview) => {
     await clearWizardProgress();
     const fresh = await getOverview();
     await seedWizardStateFrom(fresh);
-    state.wizardStep = 1;
     renderWizard(document.getElementById('tab-content'));
   });
 
@@ -374,63 +396,47 @@ const wireOverviewFlat = (overview) => {
     await updateOverview({ skills });
   });
 
-  // Environment cards — clicking a card commits immediately and rerenders
-  // the row so the active palette moves. Clicking the already-active card
-  // clears the selection.
-  const rerenderEnvCards = (value) => {
-    const mount = document.getElementById('ov-env-cards');
-    if (!mount) return;
-    mount.innerHTML = envCardsHtml(value);
-    wireEnvCards();
+  const flushOverview = async (patch) => {
+    try { await updateOverview(patch); }
+    catch (err) { setInlineError('overview-error', err.message || String(err)); throw err; }
   };
-  const wireEnvCards = () => {
-    document.querySelectorAll('#ov-env-cards .js-env-choice').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const current = overview?.environment || '';
-        const clicked = btn.dataset.env;
-        const next = current === clicked ? '' : clicked;
-        overview.environment = next;
-        try { await updateOverview({ environment: next }); }
-        catch (err) { setInlineError('overview-error', err.message || String(err)); return; }
-        rerenderEnvCards(next);
-      });
-    });
-  };
-  wireEnvCards();
 
-  // Tools chip editor — Enter or click Add appends a normalized tool string;
-  // × on a pill removes it. Each mutation flushes to the DB.
-  let tools = [...(overview?.tools || [])];
-  const rerenderTools = () => {
-    const listEl = document.getElementById('ov-tools-list');
-    if (!listEl) return;
-    listEl.innerHTML = toolsListHtml(tools);
-    listEl.querySelectorAll('.js-tool-delete').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const name = btn.dataset.tool;
-        tools = tools.filter(x => x !== name);
-        try { await updateOverview({ tools }); }
-        catch (err) { setInlineError('overview-error', err.message || String(err)); return; }
-        rerenderTools();
-      });
-    });
-  };
-  const addTool = async () => {
-    const input = document.getElementById('ov-tools-input');
-    const val = (input.value || '').trim();
-    if (!val) return;
-    if (!tools.includes(val)) tools.push(val);
-    input.value = '';
-    try { await updateOverview({ tools }); }
-    catch (err) { setInlineError('overview-error', err.message || String(err)); return; }
-    rerenderTools();
-    input.focus();
-  };
-  document.getElementById('ov-tools-input')?.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Enter') { ev.preventDefault(); addTool(); }
+  wireChipEditor({
+    listEl: document.getElementById('ov-tools-list'),
+    inputEl: document.getElementById('ov-tools-input'),
+    addBtnEl: document.getElementById('btn-add-tool'),
+    initial: overview?.tools || [],
+    render: toolsListHtml,
+    dismissSelector: '.js-tool-delete',
+    itemAttr: 'tool',
+    normalize: hydrateTools,
+    onChange: (tools) => flushOverview({ tools }),
   });
-  document.getElementById('btn-add-tool')?.addEventListener('click', addTool);
-  rerenderTools();
+
+  // Looking-for dropdown — commits immediately on change.
+  document.getElementById('ov-looking-for')?.addEventListener('change', async (ev) => {
+    const val = ev.target.value;
+    try { await updateOverview({ looking_for: val }); }
+    catch (err) { setInlineError('overview-error', err.message || String(err)); }
+  });
+
+  wireChipEditor({
+    listEl: document.getElementById('ov-locations-list'),
+    inputEl: document.getElementById('ov-locations-input'),
+    addBtnEl: document.getElementById('btn-add-location'),
+    initial: overview?.locations || [],
+    render: locationsListHtml,
+    dismissSelector: '.js-location-delete',
+    itemAttr: 'location',
+    normalize: hydrateLocations,
+    onChange: (locations) => flushOverview({ locations }),
+  });
+
+  wireWorkplaceTypeCards({
+    mountEl: document.getElementById('ov-workplace-type-cards'),
+    currentValue: overview?.workplace_type || '',
+    onChange: (workplace_type) => flushOverview({ workplace_type }),
+  });
 };
 
 // ---------- skills editor ----------
@@ -467,7 +473,7 @@ const skillPillHtml = (s, i) => {
   });
 };
 
-const skillsEditorHtml = ({ mountId, skills = [] }) => `
+export const skillsEditorHtml = ({ mountId, skills = [] }) => `
   <div id="${mountId}" data-skills-editor class="space-y-3">
     <div class="${CLS.inlineRow}">
       <input type="text" class="${CLS.inputBase} flex-1 min-w-0 js-skill-name" placeholder="${t('profile.skills.name_placeholder')}" autocomplete="off" />
@@ -490,11 +496,11 @@ const skillsEditorHtml = ({ mountId, skills = [] }) => `
 // wireSkillsEditor attaches handlers to a rendered skillsEditorHtml block.
 // The mount owns its own "current skills" snapshot via dataset so callers
 // don't have to re-render the whole shell on every add/delete.
-const wireSkillsEditor = (mountId, initialSkills, onChange) => {
+export const wireSkillsEditor = (mountId, initialSkills, onChange) => {
   const mount = document.getElementById(mountId);
   if (!mount) return;
 
-  let skills = [...(initialSkills || [])];
+  let skills = hydrateSkills(initialSkills || []);
 
   const rerenderPills = () => {
     const pillsEl = mount.querySelector('.js-skill-pills');
@@ -513,6 +519,7 @@ const wireSkillsEditor = (mountId, initialSkills, onChange) => {
         const idx = Number(btn.dataset.skillIndex);
         if (Number.isNaN(idx)) return;
         skills.splice(idx, 1);
+        skills = hydrateSkills(skills);
         rerenderPills();
         try { await onChange(skills); }
         catch (err) { console.error('[skills editor] delete', err); }
@@ -531,7 +538,7 @@ const wireSkillsEditor = (mountId, initialSkills, onChange) => {
     const skill = { name };
     if (yearsInput.value !== '') skill.years = Number(yearsInput.value);
     if (levelSel.value) skill.level = levelSel.value;
-    skills.push(skill);
+    skills = hydrateSkills([...skills, skill]);
     // Clear the input row so the next skill can be typed immediately.
     nameInput.value = '';
     yearsInput.value = '';
@@ -561,10 +568,10 @@ const wireSparkInput = () => {
   if (!input || !addBtn) return;
 
   const submit = async () => {
-    const val = input.value.trim();
-    if (!val) return;
     const p = priority ? Number(priority.value) : undefined;
-    await createSpark(val, p);
+    const spark = hydrateCareerSparks([{ id: null, body: input.value, sort_order: p ?? 1 }])[0];
+    if (!spark?.body) return;
+    await createSpark(spark.body, spark.sort_order);
     input.value = '';
     if (priority) priority.value = '3'; // reset so the next add starts neutral
     await rerenderSparksList();
@@ -604,7 +611,6 @@ const renderWizard = async (mountEl) => renderWizardModule({
   renderOverviewTab,
   skillsEditorHtml,
   wireSkillsEditor,
-  envCardsHtml,
   toolsListHtml,
 });
 
@@ -759,7 +765,7 @@ const closeBragEditor = () => {
 
 const mountBragEditor = async (companies) => {
   const editorEl = document.getElementById('brag-editor');
-  const entry = state.bragEditorId ? await (await import('../entities/brag-entries.mjs')).getBragEntry(state.bragEditorId) : null;
+  const entry = state.bragEditorId ? await getBragEntry(state.bragEditorId) : null;
   const isNew = !entry;
   const e = entry || { title: '', body: '', impact: '', tags: [], tags_generated_at: null, company_id: null, entry_year: null };
   if (!state.bragDraftTags.length) state.bragDraftTags = [...(e.tags || [])];
@@ -824,8 +830,8 @@ const mountBragEditor = async (companies) => {
       ? `<div class="${CLS.chipRow}">${state.bragDraftTags.map(bragTagPillHtml).join('')}</div>`
       : `${helpText(t('profile.brags.tags.empty'))}`;
     listEl.querySelectorAll('.js-brag-tag-delete').forEach(btn => btn.addEventListener('click', () => {
-      const tag = normalizeTag(btn.dataset.tag);
-      state.bragDraftTags = state.bragDraftTags.filter(t => normalizeTag(t) !== tag);
+      const removed = normalizeTag(btn.dataset.tag);
+      state.bragDraftTags = state.bragDraftTags.filter(draft => normalizeTag(draft) !== removed);
       renderTagList();
     }));
     const stamp = state.bragPendingTagsGeneratedAt || e.tags_generated_at;
@@ -837,7 +843,7 @@ const mountBragEditor = async (companies) => {
     const input = document.getElementById('brag-tag-input');
     const tag = normalizeTag(input.value);
     if (!tag) return;
-    if (!state.bragDraftTags.some(t => normalizeTag(t) === tag)) state.bragDraftTags.push(tag);
+    if (!state.bragDraftTags.some(draft => normalizeTag(draft) === tag)) state.bragDraftTags.push(tag);
     input.value = '';
     renderTagList();
   };

@@ -4,7 +4,7 @@
 // scrape-client.mjs and reports progress through the rpc.mjs step-callback
 // contract.
 
-import { getScraperConfig } from './storage/scraper.mjs';
+import { getByokScraperConfig } from './storage/byok-scraper.mjs';
 import { getCachedScrape, putCachedScrape } from './storage/scrape-cache.mjs';
 import { scrape as browserScrape } from './scrape-client.mjs';
 
@@ -28,14 +28,14 @@ const withStep = async (onStep, name, fn) => {
   }
 };
 
-// resolveBackend reads the saved scraper config and returns the backend id.
-// Callers are expected to have gated on isScraperConfigured() upstream, so cfg
-// and cfg.backend are always populated here. Returns undefined if not — the
+// resolveProvider reads the saved scraper config and returns the provider id.
+// Callers are expected to have gated on isByokScraperActive() upstream, so cfg
+// and cfg.provider are always populated here. Returns undefined if not — the
 // downstream dispatch in scrape-client.mjs will throw a clear "unknown
-// scraper backend" error.
-const resolveBackend = async () => {
-  const cfg = await getScraperConfig();
-  return cfg?.backend;
+// scraper provider" error.
+const resolveProvider = async () => {
+  const cfg = await getByokScraperConfig();
+  return cfg?.provider;
 };
 
 // scrapeWithCache: check the two-layer cache; on miss, browser-scrape and
@@ -43,17 +43,17 @@ const resolveBackend = async () => {
 // underlying scrape failure — callers who want non-fatal behavior should
 // wrap in try/catch or use scrapeInParallel.
 //
-//   opts: { backend?, ttlSeconds, stepName, onStep }
+//   opts: { provider?, ttlSeconds, stepName, onStep }
 export const scrapeWithCache = async (url, opts = {}) => {
   const { ttlSeconds, stepName, onStep = noopStep } = opts;
   if (!url) return '';
-  const backend = opts.backend || await resolveBackend();
+  const provider = opts.provider || await resolveProvider();
   return withStep(onStep, stepName || 'scrape', async () => {
-    const cached = await getCachedScrape(url, backend, ttlSeconds);
+    const cached = await getCachedScrape(url, provider, ttlSeconds);
     if (cached) return cached;
     const res = await browserScrape(url, { onlyMainContent: true });
     const md = res.markdown || '';
-    if (md) await putCachedScrape(url, backend, md, ttlSeconds);
+    if (md) await putCachedScrape(url, provider, md, ttlSeconds);
     return md;
   });
 };
@@ -63,19 +63,19 @@ export const scrapeWithCache = async (url, opts = {}) => {
 // dropped from the batch (no step emitted).
 //
 //   targets: [{ stepName, url, key }]   // key names the return-dict entry
-//   opts:    { backend?, ttlSeconds, onStep }
+//   opts:    { provider?, ttlSeconds, onStep }
 //
 // Returns { [key]: markdown } for each target that produced non-empty content.
 export const scrapeInParallel = async (targets, opts = {}) => {
   const { ttlSeconds, onStep = noopStep } = opts;
-  const backend = opts.backend || await resolveBackend();
+  const provider = opts.provider || await resolveProvider();
   const results = {};
   await Promise.all(
     targets
       .filter(t => t && t.url)
       .map(async (t) => {
         try {
-          const md = await scrapeWithCache(t.url, { backend, ttlSeconds, stepName: t.stepName, onStep });
+          const md = await scrapeWithCache(t.url, { provider, ttlSeconds, stepName: t.stepName, onStep });
           if (md) results[t.key] = md;
         } catch (err) {
           console.warn(`scrapeInParallel: ${t.stepName || t.url} failed, continuing:`, err);

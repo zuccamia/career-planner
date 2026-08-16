@@ -48,6 +48,15 @@ export const exportDb = () => call('export');
 export const importDb = (bytes) => call('import', { bytes }, [bytes.buffer]);
 export const wipeDb = () => call('wipe');
 
+// decodeJSON parses a TEXT-JSON column value with a fallback for null / empty
+// / malformed input. Returned by reference — pass fresh values from the call
+// site if you need independent copies per row.
+export const decodeJSON = (raw, fallback) => {
+  if (!raw) return fallback;
+  try { return JSON.parse(raw); }
+  catch { return fallback; }
+};
+
 // Runs `fn` inside a SQLite transaction. Commits on success, rolls back on
 // throw. Single-writer (one worker per tab, OPFS holds an exclusive lock),
 // so BEGIN is safe. Nesting is not supported — SQLite will throw "cannot

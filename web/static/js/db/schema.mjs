@@ -26,6 +26,8 @@ export let APPLICATION_STATUSES = [];
 export let COMMUNICATION_CHANNELS = [];
 export let COMMUNICATION_DIRECTIONS = [];
 export let COMMUNICATION_STATUSES = [];
+export let LOOKING_FOR_VALUES = [];
+export let SKILL_LEVELS = [];
 
 const MIGRATION_FILE_RE = /^(\d+)_([^./]+)\.sql$/;
 
@@ -99,6 +101,8 @@ export const ensureSchema = async () => {
   COMMUNICATION_CHANNELS = enums.communication_channels || [];
   COMMUNICATION_DIRECTIONS = enums.communication_directions || [];
   COMMUNICATION_STATUSES = enums.communication_statuses || [];
+  LOOKING_FOR_VALUES = enums.looking_for_values || [];
+  SKILL_LEVELS = enums.skill_levels || [];
 
   await exec('PRAGMA foreign_keys = ON');
 

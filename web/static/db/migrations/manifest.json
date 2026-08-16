@@ -9,5 +9,7 @@
   "008_drop_engineering_blog_notes.sql",
   "009_rename_wishlist_add_ghosted.sql",
   "010_profile_wizard_fields.sql",
-  "011_brag_entry_year.sql"
+  "011_brag_entry_year.sql",
+  "012_profile_looking_for_and_locations.sql",
+  "013_rename_environment_to_workplace_type.sql"
 ]

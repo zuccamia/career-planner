@@ -24,8 +24,8 @@ const asStaticHost = async (page: Page) => {
 // imported.
 const primeBYOK = async (page: Page) => {
   await page.evaluate(async () => {
-    const mod = await import('/static/js/storage/byok.mjs');
-    await mod.saveByokConfig({
+    const mod = await import('/static/js/storage/byok-llm.mjs');
+    await mod.saveByokLLMConfig({
       enabled: true,
       baseUrl: 'https://api.openai.com/v1',
       apiKey: 'sk-test',

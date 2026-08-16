@@ -13,29 +13,23 @@ import (
 // outputLanguage selects the locale-specific prompt template; missing locales
 // fall back to English.
 func (s *Service) GenerateTags(ctx context.Context, body, outputLanguage string) ([]string, error) {
-	prompt := s.BuildGenerateTagsPrompt(body, outputLanguage)
 	if s.client == nil {
 		return nil, fmt.Errorf("llm client is not configured")
+	}
+	set := llm.PickPromptSet(generateTagsPrompts(), outputLanguage)
+	prompt := llm.Prompt{
+		System: set.System,
+		User:   fmt.Sprintf(set.User, strings.TrimSpace(body)),
 	}
 	var out TagResult
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return nil, err
 	}
-	return s.FinalizeTags(out), nil
+	return finalizeTags(out), nil
 }
 
-// BuildGenerateTagsPrompt assembles the prompt for generating brag tags.
-func (s *Service) BuildGenerateTagsPrompt(body, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(generateTagsPrompts(), outputLanguage)
-	trimmed := strings.TrimSpace(body)
-	return llm.Prompt{
-		System: set.System,
-		User:   fmt.Sprintf(set.User, trimmed),
-	}
-}
-
-// FinalizeTags trims, deduplicates, and normalizes decoded tags.
-func (s *Service) FinalizeTags(out TagResult) []string {
+// finalizeTags trims, deduplicates, and normalizes decoded tags.
+func finalizeTags(out TagResult) []string {
 	seen := map[string]struct{}{}
 	tags := make([]string, 0, len(out.Tags))
 	for _, raw := range out.Tags {
@@ -64,35 +58,27 @@ func (s *Service) FinalizeTags(out TagResult) []string {
 // and returns candidate brag entries for the browser to review. The DB writes
 // happen in the browser after the user picks which entries to keep.
 func (s *Service) ExtractFromResume(ctx context.Context, markdown, outputLanguage string) ([]ExtractedBrag, error) {
-	prompt := s.BuildExtractFromResumePrompt(markdown, outputLanguage)
 	if s.client == nil {
 		return nil, fmt.Errorf("llm client is not configured")
+	}
+	set := llm.PickPromptSet(extractFromResumePrompts(), outputLanguage)
+	prompt := llm.Prompt{
+		System: set.System,
+		User:   fmt.Sprintf(set.User, strings.TrimSpace(markdown)),
 	}
 	var out ExtractResumeResult
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return nil, err
 	}
-	return s.FinalizeExtracted(out), nil
+	return finalizeExtracted(out), nil
 }
 
-// BuildExtractFromResumePrompt assembles the prompt for résumé-to-brags
-// extraction. The Markdown is passed verbatim (fenced in the prompt template
-// as untrusted input).
-func (s *Service) BuildExtractFromResumePrompt(markdown, outputLanguage string) llm.Prompt {
-	set := llm.PickPromptSet(extractFromResumePrompts(), outputLanguage)
-	trimmed := strings.TrimSpace(markdown)
-	return llm.Prompt{
-		System: set.System,
-		User:   fmt.Sprintf(set.User, trimmed),
-	}
-}
-
-// FinalizeExtracted normalizes decoded résumé extraction output: trims all
+// finalizeExtracted normalizes decoded résumé extraction output: trims all
 // string fields, drops entries with an empty title, clamps confidence to
-// [0, 1], and re-uses FinalizeTags for per-entry tag cleanup. It also
+// [0, 1], and re-uses finalizeTags for per-entry tag cleanup. It also
 // deduplicates on a normalized (title, body) key so retries with slight
 // variance don't produce visible duplicates in the review UI.
-func (s *Service) FinalizeExtracted(out ExtractResumeResult) []ExtractedBrag {
+func finalizeExtracted(out ExtractResumeResult) []ExtractedBrag {
 	entries := make([]ExtractedBrag, 0, len(out.Brags))
 	seen := map[string]struct{}{}
 	for _, raw := range out.Brags {
@@ -129,7 +115,7 @@ func (s *Service) FinalizeExtracted(out ExtractResumeResult) []ExtractedBrag {
 			Title:      title,
 			Body:       body,
 			Impact:     impact,
-			Tags:       s.FinalizeTags(TagResult{Tags: raw.Tags}),
+			Tags:       finalizeTags(TagResult{Tags: raw.Tags}),
 			Company:    companyHint,
 			EntryYear:  entryYear,
 			Confidence: conf,

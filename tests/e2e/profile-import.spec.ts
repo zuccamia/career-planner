@@ -19,6 +19,12 @@ const skipWizardIfPresent = async (page: Page) => {
       await btn.click();
     }
   }
+  // Wait for the wizard to be gone AND the flat overview to have finished
+  // its async render. Wizard-exit fires an un-awaited renderOverviewTab
+  // whose Promise.all can leave "Loading…" on the tab-content — clicking
+  // another tab during that window races and leaves the page stuck.
+  await page.getByText('Loading…').waitFor({ state: 'detached' }).catch(() => {});
+  await expect(page.getByText('About you', { exact: true })).toBeVisible({ timeout: 10_000 });
 };
 
 test.describe('profile import', () => {

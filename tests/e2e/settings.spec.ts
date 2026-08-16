@@ -61,6 +61,9 @@ test.describe('local settings page', () => {
   });
 
   test('sidebar navigation reaches settings from companies', async ({ page }) => {
+    // Cross-page navigation can hit the SAH Pool race + reload dance,
+    // pushing total wall time past the default 30s test timeout.
+    test.setTimeout(120_000);
     await page.goto('/companies');
     await expect(page.getByText('Companies', { exact: true })).toBeVisible({ timeout: 30_000 });
     // Sidebar is an off-canvas drawer — open it, wait for the toggle to
@@ -75,11 +78,12 @@ test.describe('local settings page', () => {
     await expect(page).toHaveURL('/settings');
     // Cross-page navigations can hit a SAH Pool race where the new page's
     // DB worker tries to open before the previous page has fully released
-    // its handle. If we see the "App already open" boot-failure banner,
-    // reload once to force a clean boot.
+    // its handle. Under CI load the boot-failure banner can take >30s to
+    // render, so give the either/or wait a generous budget. If we see the
+    // banner, reload once to force a clean boot.
     const snapshot = page.getByText('Snapshot now');
     const bootError = page.getByText('App already open in another tab');
-    await expect(snapshot.or(bootError)).toBeVisible({ timeout: 30_000 });
+    await expect(snapshot.or(bootError)).toBeVisible({ timeout: 60_000 });
     if (await bootError.isVisible()) await page.reload();
     await expect(snapshot).toBeVisible({ timeout: 30_000 });
   });

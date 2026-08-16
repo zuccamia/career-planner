@@ -183,7 +183,7 @@ func resetApplicationData(ctx context.Context, database *sql.DB) error {
 // back to empty rather than deleting the row.
 func resetProfileData(ctx context.Context, database *sql.DB) error {
 	statements := []string{
-		`UPDATE profile_overview SET name='', headline='', summary='', skills_json='[]', environment='', tools_json='[]', wizard_progress=NULL, onboarded_at=NULL, updated_at=datetime('now') WHERE id=1`,
+		`UPDATE profile_overview SET name='', headline='', summary='', skills_json='[]', workplace_type='', tools_json='[]', wizard_progress=NULL, onboarded_at=NULL, updated_at=datetime('now') WHERE id=1`,
 		`DELETE FROM career_sparks`,
 		`DELETE FROM resumes`,
 		`DELETE FROM brag_entries`,
@@ -223,7 +223,7 @@ func seedProfile(ctx context.Context, database *sql.DB, now time.Time) (string, 
 
 	if _, err := database.ExecContext(ctx, `
 		UPDATE profile_overview
-		SET name = ?, headline = ?, summary = ?, skills_json = ?, environment = ?, tools_json = ?, onboarded_at = ?, updated_at = ?
+		SET name = ?, headline = ?, summary = ?, skills_json = ?, workplace_type = ?, tools_json = ?, onboarded_at = ?, updated_at = ?
 		WHERE id = 1`,
 		"Nova Hoang", "Backend engineer, data pipelines", overviewSummary, overviewSkillsJSON,
 		"remote", overviewToolsJSON, tsFmt, tsFmt,

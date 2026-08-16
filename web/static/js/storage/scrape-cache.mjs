@@ -1,4 +1,4 @@
-// Two-layer scrape cache. Keyed by sha256(url + backend) so hosted-Firecrawl
+// Two-layer scrape cache. Keyed by sha256(url + provider) so hosted-Firecrawl
 // and self-hosted-Crawl4AI results for the same URL stay independent (enables
 // side-by-side quality comparison).
 //
@@ -7,7 +7,7 @@
 //        single session (e.g. building several artifacts for the same
 //        company back-to-back).
 //   L2 — a storage-backend blob under `scrapes/<sha>.md` plus a JSON sidecar
-//        `<sha>.json` carrying {url, backend, fetchedAt, ttlSeconds}. Metadata
+//        `<sha>.json` carrying {url, provider, fetchedAt, ttlSeconds}. Metadata
 //        is intentionally NOT inserted into the SQLite attachments table —
 //        scrape cache is transient/derived data; user attachments are not.
 //
@@ -21,7 +21,7 @@ const FOLDER = 'scrapes';
 const SIDECAR_SUFFIX = '.json';
 const BODY_SUFFIX = '.md';
 
-const l1 = new Map(); // key -> { markdown, expiresAt (ms epoch), backend, url }
+const l1 = new Map(); // key -> { markdown, expiresAt (ms epoch), provider, url }
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -34,13 +34,13 @@ const sha256Hex = async (str) => {
     .join('');
 };
 
-const cacheKey = (url, backend) => sha256Hex(`${backend}\n${url}`);
+const cacheKey = (url, provider) => sha256Hex(`${provider}\n${url}`);
 
 // getCachedScrape returns cached markdown when a fresh hit exists in either
 // layer, else null. ttlSeconds < 0 means "always fresh, never cache."
-export const getCachedScrape = async (url, backend, ttlSeconds) => {
-  if (!url || !backend || ttlSeconds <= 0) return null;
-  const key = await cacheKey(url, backend);
+export const getCachedScrape = async (url, provider, ttlSeconds) => {
+  if (!url || !provider || ttlSeconds <= 0) return null;
+  const key = await cacheKey(url, provider);
 
   // L1
   const l1Hit = l1.get(key);
@@ -49,9 +49,9 @@ export const getCachedScrape = async (url, backend, ttlSeconds) => {
   }
   if (l1Hit) l1.delete(key);
 
-  // L2: try local disk first, then Drive. Bail on the first backend that has
-  // the sidecar — if the sidecar exists but is stale, remove it (best effort)
-  // and return null so the caller re-scrapes.
+  // L2: try local disk first, then Drive. Bail on the first storage backend
+  // that has the sidecar — if the sidecar exists but is stale, remove it
+  // (best effort) and return null so the caller re-scrapes.
   const backends = [localDisk, googleDrive].filter(b => b.isAvailable());
   for (const b of backends) {
     try {
@@ -67,7 +67,7 @@ export const getCachedScrape = async (url, backend, ttlSeconds) => {
       const bodyBytes = await b.loadAttachment(FOLDER, key + BODY_SUFFIX);
       const markdown = decoder.decode(bodyBytes);
       // Promote to L1 for the rest of the session.
-      l1.set(key, { markdown, expiresAt: Date.now() + ttlSeconds * 1000, backend, url });
+      l1.set(key, { markdown, expiresAt: Date.now() + ttlSeconds * 1000, provider, url });
       return markdown;
     } catch (err) {
       console.warn(`scrape-cache: L2 read from ${b.name} failed for ${url}:`, err);
@@ -77,12 +77,12 @@ export const getCachedScrape = async (url, backend, ttlSeconds) => {
 };
 
 // putCachedScrape writes a fresh scrape result to both cache layers.
-export const putCachedScrape = async (url, backend, markdown, ttlSeconds) => {
-  if (!url || !backend || !markdown || ttlSeconds <= 0) return;
-  const key = await cacheKey(url, backend);
+export const putCachedScrape = async (url, provider, markdown, ttlSeconds) => {
+  if (!url || !provider || !markdown || ttlSeconds <= 0) return;
+  const key = await cacheKey(url, provider);
 
   // L1 always.
-  l1.set(key, { markdown, expiresAt: Date.now() + ttlSeconds * 1000, backend, url });
+  l1.set(key, { markdown, expiresAt: Date.now() + ttlSeconds * 1000, provider, url });
 
   // L2: fan-out best-effort. Errors are logged, not thrown — the caller
   // already has the markdown in hand.
@@ -92,7 +92,7 @@ export const putCachedScrape = async (url, backend, markdown, ttlSeconds) => {
   const bodyBytes = encoder.encode(markdown);
   const sidecarBytes = encoder.encode(JSON.stringify({
     url,
-    backend,
+    provider,
     fetchedAt: new Date().toISOString(),
     ttlSeconds,
   }));

@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
+
+	"github.com/zuccamia/career-planner/internal/util"
 )
 
 const greenhouseAPIBase = "https://boards-api.greenhouse.io"
@@ -53,24 +55,11 @@ func (g *Greenhouse) Fetch(ctx context.Context, rawURL string) (Posting, error) 
 	req.Header.Set("User-Agent", "career-planner/1.0")
 	req.Header.Set("Accept", "application/json")
 
-	client := g.client
-	if client == nil {
-		client = safeClient()
-	}
-	resp, err := client.Do(req)
+	// 2 MiB fits Greenhouse's largest observed JSON payloads (long
+	// descriptions + department metadata) with headroom.
+	body, err := fetchPostingBody(g.client, req, "greenhouse", 2<<20)
 	if err != nil {
-		return Posting{}, fmt.Errorf("request greenhouse job: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
-		return Posting{}, fmt.Errorf("greenhouse job not found: %s", rawURL)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Posting{}, fmt.Errorf("unexpected status %d from greenhouse api", resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
-	if err != nil {
-		return Posting{}, fmt.Errorf("read greenhouse response: %w", err)
+		return Posting{}, err
 	}
 
 	var payload greenhouseJob
@@ -90,6 +79,10 @@ func (g *Greenhouse) Fetch(ctx context.Context, rawURL string) (Posting, error) 
 		Location:        strings.TrimSpace(payload.Location.Name),
 		ApplyURL:        strings.TrimSpace(payload.AbsoluteURL),
 		DescriptionText: description,
+		PostedAt: util.ParseTimestamp(
+			[]string{time.RFC3339Nano, time.RFC3339, "2006-01-02"},
+			payload.FirstPublished, payload.UpdatedAt,
+		),
 	}
 	if len(payload.Departments) > 0 {
 		posting.Department = strings.TrimSpace(payload.Departments[0].Name)
@@ -98,11 +91,13 @@ func (g *Greenhouse) Fetch(ctx context.Context, rawURL string) (Posting, error) 
 }
 
 type greenhouseJob struct {
-	Title       string `json:"title"`
-	CompanyName string `json:"company_name"`
-	AbsoluteURL string `json:"absolute_url"`
-	Content     string `json:"content"`
-	Location    struct {
+	Title          string `json:"title"`
+	CompanyName    string `json:"company_name"`
+	AbsoluteURL    string `json:"absolute_url"`
+	Content        string `json:"content"`
+	FirstPublished string `json:"first_published"`
+	UpdatedAt      string `json:"updated_at"`
+	Location       struct {
 		Name string `json:"name"`
 	} `json:"location"`
 	Departments []struct {

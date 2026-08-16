@@ -2,10 +2,24 @@ package ats
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/zuccamia/career-planner/internal/sources/scrape"
 )
+
+// TestMain loads ats-providers.json once for the whole package so
+// LookupATSURL's host-pattern compilation has data to work with.
+func TestMain(m *testing.M) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(thisFile), "..", "..", "..")
+	if err := LoadProviders(filepath.Join(root, "web", "static", "data")); err != nil {
+		panic("LoadProviders: " + err.Error())
+	}
+	os.Exit(m.Run())
+}
 
 type fakeMapper struct {
 	urls []string
@@ -19,7 +33,7 @@ func (f *fakeMapper) Map(_ context.Context, url string, _ scrape.ScrapeOptions) 
 	return &scrape.MapResult{Domain: url, URLs: f.urls}, nil
 }
 
-func TestDiscoverATSURL(t *testing.T) {
+func TestLookupATSURL(t *testing.T) {
 	tests := []struct {
 		name     string
 		urls     []string
@@ -54,13 +68,13 @@ func TestDiscoverATSURL(t *testing.T) {
 			name:     "careers subdomain",
 			urls:     []string{"https://acme.com", "https://careers.acme.com"},
 			wantURL:  "https://careers.acme.com",
-			wantProv: "careers-subdomain",
+			wantProv: "internal",
 		},
 		{
 			name:     "greenhouse beats careers when both listed",
 			urls:     []string{"https://careers.acme.com", "https://boards.greenhouse.io/acme"},
 			wantURL:  "https://careers.acme.com", // first match wins; order is source-controlled
-			wantProv: "careers-subdomain",
+			wantProv: "internal",
 		},
 		{
 			name:    "no match",
@@ -70,7 +84,7 @@ func TestDiscoverATSURL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, prov, err := DiscoverATSURL(context.Background(), &fakeMapper{urls: tt.urls}, "https://acme.com")
+			got, prov, err := LookupATSURL(context.Background(), &fakeMapper{urls: tt.urls}, "https://acme.com")
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -84,7 +98,7 @@ func TestDiscoverATSURL(t *testing.T) {
 	}
 }
 
-func TestDiscoverATSURLRejectsUnsafeSchemes(t *testing.T) {
+func TestLookupATSURLRejectsUnsafeSchemes(t *testing.T) {
 	// A malicious page could put javascript:/data:/mailto: URLs on a page whose
 	// host happens to match one of our patterns. Filter them out before they
 	// land on the company row.
@@ -95,7 +109,7 @@ func TestDiscoverATSURLRejectsUnsafeSchemes(t *testing.T) {
 		"//boards.greenhouse.io/acme", // scheme-relative, empty scheme
 		"https://boards.greenhouse.io/acme",
 	}
-	got, prov, err := DiscoverATSURL(context.Background(), &fakeMapper{urls: urls}, "https://acme.com")
+	got, prov, err := LookupATSURL(context.Background(), &fakeMapper{urls: urls}, "https://acme.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,11 +121,11 @@ func TestDiscoverATSURLRejectsUnsafeSchemes(t *testing.T) {
 	}
 }
 
-func TestDiscoverATSURLNoMapperOrEmptyURL(t *testing.T) {
-	if got, _, _ := DiscoverATSURL(context.Background(), nil, "https://acme.com"); got != "" {
+func TestLookupATSURLNoMapperOrEmptyURL(t *testing.T) {
+	if got, _, _ := LookupATSURL(context.Background(), nil, "https://acme.com"); got != "" {
 		t.Errorf("expected empty result with nil mapper, got %q", got)
 	}
-	if got, _, _ := DiscoverATSURL(context.Background(), &fakeMapper{}, ""); got != "" {
+	if got, _, _ := LookupATSURL(context.Background(), &fakeMapper{}, ""); got != "" {
 		t.Errorf("expected empty result with empty url, got %q", got)
 	}
 }

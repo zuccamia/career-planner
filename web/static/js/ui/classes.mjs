@@ -30,6 +30,10 @@ export const CLS = {
   fileRowMeta:          'truncate font-mono text-xs text-ink-faint',
   linkRow:              'flex items-center gap-3 rounded-xl px-3 py-3 transition hover:bg-paper',
   staticRow:            'flex items-center gap-3 px-3 py-2',
+  // One row in a stepper/progress list. Callers append their own state color
+  // (e.g. text-brand / text-ink-soft / text-ink-faint) so the same base layout
+  // covers active, done, and pending states.
+  progressStepRow:      'flex items-center gap-3 text-sm',
   rowTitle:             'truncate font-semibold text-ink',
   flexTextCol:          'min-w-0 flex-1 space-y-1',
   textCol:              'min-w-0 space-y-1',
@@ -47,7 +51,10 @@ export const CLS = {
   tightList:            'space-y-1 text-sm text-ink',
   metaText:             'font-mono text-xs text-ink-faint',
   codeText:             'font-mono text-xs',
-  inlineRow:            'flex items-center gap-2',
+  // Compact control row: stacks on mobile to avoid viewport overflow for
+  // input + button combinations, then switches back to a horizontal row on
+  // ≥sm screens for denser desktop layouts.
+  inlineRow:            'flex flex-col items-stretch gap-2 sm:flex-row sm:items-center',
   gridTwoCol:           'grid sm:grid-cols-2',
   checkbox:             'h-4 w-4 rounded border-line-strong text-brand focus:ring-brand',
   warningBanner:        'rounded-2xl border border-brass/30 bg-brass-tint px-4 py-3 text-sm text-brass',
@@ -64,6 +71,9 @@ export const CLS = {
   eyebrowFaint:         'text-xs font-semibold uppercase tracking-[0.14em] text-ink-faint',
   divider:              'divide-y divide-line',
   chipRow:              'flex flex-wrap gap-2',
+  // Small, muted meta row beneath a card title (e.g. "Posted 3d ago · Greenhouse").
+  // Tight vertical gap for wrapped lines; xs+faint palette matches CLS.helpText.
+  metaChipRow:          'mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-faint',
   chipRowStable:        'flex flex-wrap items-start content-start gap-2',
   chipRowInline:        'flex flex-wrap items-center gap-2',
   pageHeadRow:          'flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between',

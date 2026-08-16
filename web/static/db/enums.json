@@ -28,5 +28,18 @@
   "communication_statuses": [
     "open",
     "closed"
+  ],
+  "looking_for_values": [
+    "open",
+    "internship",
+    "new_grad",
+    "full_time",
+    "contract"
+  ],
+  "skill_levels": [
+    "beginner",
+    "intermediate",
+    "advanced",
+    "expert"
   ]
 }

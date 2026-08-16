@@ -93,3 +93,22 @@ export const createProgress = (el) => {
     },
   };
 };
+
+// stepped wraps an async block with running/done/failed emissions on
+// onStep. Shared by rpc.mjs and discover-client.mjs so every pipeline
+// speaks the same event contract to createProgress.
+export const stepped = async (onStep, name, fn, hintKey) => {
+  onStep({ name, status: 'running', hintKey });
+  try {
+    const out = await fn();
+    onStep({ name, status: 'done' });
+    return out;
+  } catch (err) {
+    onStep({ name, status: 'failed', error: err && (err.message || String(err)) });
+    throw err;
+  }
+};
+
+// noopStep lets pipeline functions accept a nullable onStep without
+// littering call sites with guards.
+export const noopStep = () => {};

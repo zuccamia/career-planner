@@ -3,8 +3,9 @@
 // precedent (see llm-client.mjs). The browser calls Firecrawl / Crawl4AI
 // directly with the user's saved config; the app server never sees the key.
 
-import { getScraperConfig } from './storage/scraper.mjs';
+import { getByokScraperConfig } from './storage/byok-scraper.mjs';
 import { isStaticHost } from './host.mjs';
+import { isFetchNetworkError } from './fetch-helpers.mjs';
 import { t } from './i18n.mjs';
 
 // getServerScraperStatus reports whether the deploy has a server-side
@@ -13,7 +14,7 @@ import { t } from './i18n.mjs';
 // /api/scrape/server-status once per session and caches the promise.
 let serverScraperStatusPromise = null;
 export const getServerScraperStatus = () => {
-  if (isStaticHost()) return Promise.resolve({ available: false, backend: '' });
+  if (isStaticHost()) return Promise.resolve({ available: false, provider: '' });
   if (!serverScraperStatusPromise) {
     serverScraperStatusPromise = fetch('/api/scrape/server-status')
       .then(async (res) => {
@@ -25,19 +26,13 @@ export const getServerScraperStatus = () => {
         // scraper" so we don't render a false hint.
         serverScraperStatusPromise = null;
         console.warn('[local] scrape server-status fetch failed', err);
-        return { available: false, backend: '' };
+        return { available: false, provider: '' };
       });
   }
   return serverScraperStatusPromise;
 };
 
 const DEFAULT_TIMEOUT_MS = 60_000;
-
-const hostOf = (rawURL) => {
-  try {
-    return new URL(rawURL).hostname;
-  } catch { return ''; }
-};
 
 const withTimeout = (ms) => {
   const controller = new AbortController();
@@ -88,7 +83,7 @@ const firecrawlScrape = async (cfg, url, opts) => {
     markdown: payload.data?.markdown || '',
     html: payload.data?.html || '',
     metadata: payload.data?.metadata || {},
-    backend: 'firecrawl',
+    provider: 'firecrawl',
     fetchedAt: new Date().toISOString(),
   };
 };
@@ -101,7 +96,7 @@ const firecrawlMap = async (cfg, url) => {
   return {
     domain: url,
     urls: payload.links || [],
-    backend: 'firecrawl',
+    provider: 'firecrawl',
     fetchedAt: new Date().toISOString(),
   };
 };
@@ -120,7 +115,7 @@ const crawl4aiScrape = async (cfg, url) => {
     markdown: payload.markdown || '',
     html: '',
     metadata: payload.metadata || {},
-    backend: 'crawl4ai',
+    provider: 'crawl4ai',
     fetchedAt: new Date().toISOString(),
   };
 };
@@ -149,56 +144,52 @@ const crawl4aiMap = async (cfg, url) => {
     seen.add(abs);
     urls.push(abs);
   }
-  return { domain: url, urls, backend: 'crawl4ai', fetchedAt: new Date().toISOString() };
+  return { domain: url, urls, provider: 'crawl4ai', fetchedAt: new Date().toISOString() };
 };
 
 // --- Public API ----------------------------------------------------------
 
 const dispatch = (cfg) => {
-  switch (cfg.backend) {
+  switch (cfg.provider) {
     case 'firecrawl':
       return { scrape: firecrawlScrape, mapDomain: firecrawlMap };
     case 'crawl4ai':
       return { scrape: crawl4aiScrape, mapDomain: crawl4aiMap };
     default:
-      throw new Error(`unknown scraper backend: ${cfg.backend}`);
+      throw new Error(t('settings.scraper.error.unknown_provider', { provider: cfg.provider }));
   }
 };
 
-// scrape(url, opts?) — resolves saved config, dispatches to the backend.
+// scrape(url, opts?) — resolves saved config, dispatches to the provider.
 export const scrape = async (url, opts) => {
-  const cfg = await getScraperConfig();
-  if (!cfg || !cfg.enabled) throw new Error('scraper not configured');
+  const cfg = await getByokScraperConfig();
+  if (!cfg || !cfg.enabled) throw new Error(t('settings.scraper.error.not_configured'));
   return dispatch(cfg).scrape(cfg, url, opts);
 };
 
 // mapDomain(url, opts?) — same, for the Map endpoint.
 export const mapDomain = async (url, opts) => {
-  const cfg = await getScraperConfig();
-  if (!cfg || !cfg.enabled) throw new Error('scraper not configured');
+  const cfg = await getByokScraperConfig();
+  if (!cfg || !cfg.enabled) throw new Error(t('settings.scraper.error.not_configured'));
   return dispatch(cfg).mapDomain(cfg, url, opts);
 };
 
 // testConnection(config) — used by the settings panel's Test button before
 // save. Runs a minimal scrape of https://example.com against the provided
-// config (not the saved one) and returns { ok, backend, error? }. CORS or
+// config (not the saved one) and returns { ok, provider, error? }. CORS or
 // auth failures surface with a hint so the UI can point at the README.
 export const testConnection = async (config) => {
-  const backend = config.backend;
-  const disp = { firecrawl: firecrawlScrape, crawl4ai: crawl4aiScrape }[backend];
-  if (!disp) return { ok: false, error: `unknown backend: ${backend}` };
+  const provider = config.provider;
+  const disp = { firecrawl: firecrawlScrape, crawl4ai: crawl4aiScrape }[provider];
+  if (!disp) return { ok: false, error: t('settings.scraper.error.unknown_provider', { provider }) };
   try {
     const res = await disp(config, 'https://example.com', { onlyMainContent: true });
-    return { ok: !!res.markdown, backend, sampleLength: (res.markdown || '').length };
+    return { ok: !!res.markdown, provider, sampleLength: (res.markdown || '').length };
   } catch (err) {
     let hint = '';
-    if (err.message && (err.message.includes('Failed to fetch') || err.message.includes('NetworkError'))) {
-      hint = t('settings.scraper.test.hint_cors');
-    } else if (err.status === 401 || err.status === 403) {
-      hint = t('settings.scraper.test.hint_auth');
-    }
-    return { ok: false, backend, error: (err.message || String(err)) + hint };
+    if (isFetchNetworkError(err)) hint = t('settings.scraper.test.hint_cors');
+    else if (err.status === 401 || err.status === 403) hint = t('settings.scraper.test.hint_auth');
+    return { ok: false, provider, error: (err.message || String(err)) + hint };
   }
 };
 
-export { hostOf };

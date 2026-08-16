@@ -13,6 +13,8 @@
 import { exec, transaction } from '../db/client.mjs';
 import { APPLICATION_STATUSES } from '../db/schema.mjs';
 import { sanitizeURL } from '../ui/dom.mjs';
+import { t } from '../i18n.mjs';
+import { deleteAttachmentsByEntity } from './attachments.mjs';
 
 export { APPLICATION_STATUSES };
 
@@ -38,6 +40,10 @@ export const listApplications = () => exec(`
   ORDER BY datetime(a.updated_at) DESC, a.id DESC
 `);
 
+// Skips the companies JOIN on purpose — the only caller (company detail
+// page) already has the company name in hand. listApplicationsByPerson
+// (below) DOES join because "person → applications" spans multiple
+// companies.
 export const listApplicationsByCompany = (companyID) => exec(`
   SELECT id, company_id, role_title, status, created_at, updated_at
   FROM applications
@@ -66,20 +72,48 @@ export const getApplication = async (id) => {
   return rows[0] || null;
 };
 
-const normalize = (data) => ({
-  company_id: data.company_id,
-  person_id: data.person_id ?? null,
-  role_title: (data.role_title ?? '').trim(),
-  job_posting_url: sanitizeURL(data.job_posting_url),
-  job_description_raw: data.job_description_raw ?? '',
-  job_description_extracted_json: data.job_description_extracted_json ?? '{}',
-  status: data.status ?? 'lead',
-  notes: (data.notes ?? '').trim(),
-});
+// createApplicationEvent inserts a timeline row. Callers pass application_id +
+// type; the write helpers below auto-emit `created` and `status_changed`.
+// UI code can call directly to add ad-hoc `note` events.
+export const createApplicationEvent = async ({
+  application_id, type = 'note', content = '',
+  from_status = '', to_status = '', occurred_at = null,
+}) => {
+  if (!application_id) throw new Error('application_id required');
+  const eventType = ALLOWED_EVENT_TYPES.has(type) ? type : 'note';
+  const trimmed = (content ?? '').trim();
+  if (eventType === 'note' && !trimmed) throw new Error('event content is required');
+  if (eventType === 'status_changed' && !to_status) throw new Error('destination status is required');
+
+  await exec(
+    `INSERT INTO application_events
+       (application_id, type, content, from_status, to_status, occurred_at)
+     VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
+    [application_id, eventType, trimmed, from_status || '', to_status || '', occurred_at || null],
+  );
+  const rows = await exec('SELECT last_insert_rowid() AS id');
+  return rows[0].id;
+};
+
+// Sanitizes a create/update payload and asserts the FK. company_id is
+// required in the schema, so no callable path should reach persistence
+// without it — this is the single gate.
+const sanitizeApplicationFields = (data) => {
+  if (!data.company_id) throw new Error('company_id required');
+  return {
+    company_id: data.company_id,
+    person_id: data.person_id ?? null,
+    role_title: (data.role_title ?? '').trim(),
+    job_posting_url: sanitizeURL(data.job_posting_url),
+    job_description_raw: data.job_description_raw ?? '',
+    job_description_extracted_json: data.job_description_extracted_json ?? '{}',
+    status: data.status ?? 'lead',
+    notes: (data.notes ?? '').trim(),
+  };
+};
 
 export const createApplication = async (data) => {
-  const n = normalize(data);
-  if (!n.company_id) throw new Error('company_id required');
+  const n = sanitizeApplicationFields(data);
   const values = EDITABLE_COLS.map(c => n[c]);
   return transaction(async () => {
     await exec(
@@ -89,7 +123,7 @@ export const createApplication = async (data) => {
     );
     const rows = await exec('SELECT last_insert_rowid() AS id');
     const id = rows[0].id;
-    await createEvent({ application_id: id, type: 'created', to_status: n.status });
+    await createApplicationEvent({ application_id: id, type: 'created', to_status: n.status });
     return id;
   });
 };
@@ -98,11 +132,10 @@ export const createApplication = async (data) => {
 // when the status transitions. Non-status edits do NOT produce timeline
 // entries — the timeline is a status-only history.
 export const updateApplication = async (id, data) => {
-  const n = normalize(data);
-  if (!n.company_id) throw new Error('company_id required');
+  const n = sanitizeApplicationFields(data);
 
   const before = await getApplication(id);
-  if (!before) throw new Error(`application #${id} not found`);
+  if (!before) throw new Error(t('applications.error.not_found', { id }));
 
   const values = EDITABLE_COLS.map(c => n[c]);
   await transaction(async () => {
@@ -115,7 +148,7 @@ export const updateApplication = async (id, data) => {
     );
     const after = await getApplication(id);
     if (before.status !== after.status) {
-      await createEvent({
+      await createApplicationEvent({
         application_id: id,
         type: 'status_changed',
         from_status: before.status,
@@ -131,7 +164,7 @@ export const updateApplication = async (id, data) => {
 // widget. No-op when the status is unchanged (matches Service.UpdateStatus).
 export const updateApplicationStatus = async ({ id, status, occurred_at, notes }) => {
   const before = await getApplication(id);
-  if (!before) throw new Error(`application #${id} not found`);
+  if (!before) throw new Error(t('applications.error.not_found', { id }));
   if (!status || before.status === status) return before;
 
   await transaction(async () => {
@@ -141,7 +174,7 @@ export const updateApplicationStatus = async ({ id, status, occurred_at, notes }
        WHERE id = ?`,
       [status, id],
     );
-    await createEvent({
+    await createApplicationEvent({
       application_id: id,
       type: 'status_changed',
       content: notes || '',
@@ -168,8 +201,16 @@ export const updateApplicationExtraction = async (id, { structuredJson, jobDescr
   );
 };
 
-export const deleteApplication = (id) =>
-  exec('DELETE FROM applications WHERE id = ?', [id]);
+// Deletes the application + its attachment rows. Timeline events cascade
+// via FK; attachments have no FK on the polymorphic entity_id, so manual
+// cleanup via deleteAttachmentsByEntity. Paired resume-side rows and on-disk
+// blobs stay (still referenced).
+export const deleteApplication = async (id) => {
+  await transaction(async () => {
+    await deleteAttachmentsByEntity('application', id);
+    await exec('DELETE FROM applications WHERE id = ?', [id]);
+  });
+};
 
 // Wipe every application from the local DB while leaving companies, people,
 // and communications intact. Meant for starting a new time-period snapshot
@@ -188,7 +229,7 @@ export const clearAllApplications = async () => {
 
 export const countApplications = async () => {
   const rows = await exec('SELECT COUNT(*) AS n FROM applications');
-  return rows[0].n;
+  return Number(rows[0]?.n ?? 0);
 };
 
 // Most recently updated application's status per company. Companies with no
@@ -272,26 +313,4 @@ export const listEventsByApplication = (applicationID) => exec(
   [applicationID],
 );
 
-// ---------- timeline event helper ----------
-
-export const createEvent = async ({
-  application_id, type = 'note', content = '',
-  from_status = '', to_status = '', occurred_at = null,
-}) => {
-  if (!application_id) throw new Error('application_id required');
-  const eventType = ALLOWED_EVENT_TYPES.has(type) ? type : 'note';
-  const trimmed = (content ?? '').trim();
-  if (eventType === 'note' && !trimmed) throw new Error('event content is required');
-  if (eventType === 'status_changed' && !to_status) throw new Error('destination status is required');
-
-  const occurred = occurred_at || null;
-  await exec(
-    `INSERT INTO application_events
-       (application_id, type, content, from_status, to_status, occurred_at)
-     VALUES (?, ?, ?, ?, ?, COALESCE(?, datetime('now')))`,
-    [application_id, eventType, trimmed, from_status || '', to_status || '', occurred],
-  );
-  const rows = await exec('SELECT last_insert_rowid() AS id');
-  return rows[0].id;
-};
 

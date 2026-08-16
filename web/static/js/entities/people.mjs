@@ -22,6 +22,9 @@ export const listPeople = () => exec(`
   ORDER BY p.full_name COLLATE NOCASE
 `);
 
+// Skips the companies JOIN on purpose — the only caller (company detail
+// page) already has the company name in hand. Mirrors the intentional
+// asymmetry in entities/applications.mjs's listApplicationsByCompany.
 export const listPeopleByCompanyID = (companyID) => exec(`
   SELECT id, full_name, title, company_id, social_url, notes,
          created_at, updated_at
@@ -50,19 +53,25 @@ export const findPersonByName = async (name) => {
   return rows[0] || null;
 };
 
-const normalize = (data) => ({
-  full_name: (data.full_name ?? '').trim(),
-  title: (data.title ?? '').trim(),
-  // company_id is nullable — coerce empty strings and zero to null so the FK
-  // stays consistent with the Go side.
-  company_id: data.company_id ? Number(data.company_id) : null,
-  social_url: sanitizeURL(data.social_url),
-  notes: data.notes ?? '',
-});
+// Sanitizes a create/update payload and asserts required fields. Every
+// persistence path goes through here — single gate for the full_name
+// invariant. company_id is nullable (a person may exist without a company),
+// so no assert there; empty strings and zero coerce to null to keep the FK
+// consistent with the Go side.
+const sanitizePersonFields = (data) => {
+  const full_name = (data.full_name ?? '').trim();
+  if (!full_name) throw new Error('full_name required');
+  return {
+    full_name,
+    title: (data.title ?? '').trim(),
+    company_id: data.company_id ? Number(data.company_id) : null,
+    social_url: sanitizeURL(data.social_url),
+    notes: data.notes ?? '',
+  };
+};
 
 export const createPerson = async (data) => {
-  const n = normalize(data);
-  if (!n.full_name) throw new Error('full_name required');
+  const n = sanitizePersonFields(data);
   const values = EDITABLE_COLS.map(c => n[c]);
   await exec(
     `INSERT INTO people (${EDITABLE_COLS.join(', ')})
@@ -74,8 +83,7 @@ export const createPerson = async (data) => {
 };
 
 export const updatePerson = async (id, data) => {
-  const n = normalize(data);
-  if (!n.full_name) throw new Error('full_name required');
+  const n = sanitizePersonFields(data);
   const values = EDITABLE_COLS.map(c => n[c]);
   await exec(
     `UPDATE people
@@ -91,7 +99,7 @@ export const deletePerson = (id) =>
 
 export const countPeople = async () => {
   const rows = await exec('SELECT COUNT(*) AS n FROM people');
-  return rows[0].n;
+  return Number(rows[0]?.n ?? 0);
 };
 
 export const countPeopleByCompany = async () => {

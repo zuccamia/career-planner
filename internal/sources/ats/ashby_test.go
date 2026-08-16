@@ -2,6 +2,7 @@ package ats
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +37,8 @@ const ashbyPageHTML = `<html><head>
   "employmentType": "FULL_TIME",
   "hiringOrganization": {"@type": "Organization", "name": "Serval"},
   "jobLocation": {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": "San Francisco", "addressRegion": "California", "addressCountry": "United States"}},
-  "baseSalary": {"@type": "MonetaryAmount", "currency": "USD", "value": {"@type": "QuantitativeValue", "minValue": 11000, "maxValue": 11000, "unitText": "MONTH"}}
+  "baseSalary": {"@type": "MonetaryAmount", "currency": "USD", "value": {"@type": "QuantitativeValue", "minValue": 11000, "maxValue": 11000, "unitText": "MONTH"}},
+  "datePosted": "2026-08-03"
 }
 </script>
 </head><body></body></html>`
@@ -77,6 +79,12 @@ func TestAshbyFetchFromJSONLD(t *testing.T) {
 	if !strings.Contains(got.DescriptionText, "Build the platform at Serval") {
 		t.Errorf("DescriptionText = %q", got.DescriptionText)
 	}
+	if got.PostedAt.IsZero() || got.PostedAt.Format("2006-01-02") != "2026-08-03" {
+		t.Errorf("PostedAt = %v, want datePosted 2026-08-03", got.PostedAt)
+	}
+	if got.EmploymentType != "FULL_TIME" {
+		t.Errorf("EmploymentType = %q, want raw schema.org value %q", got.EmploymentType, "FULL_TIME")
+	}
 }
 
 func TestAshbyFetchMissingJSONLD(t *testing.T) {
@@ -89,5 +97,53 @@ func TestAshbyFetchMissingJSONLD(t *testing.T) {
 	_, err := a.Fetch(context.Background(), "https://jobs.ashbyhq.com/acme/uuid-1")
 	if err == nil || !strings.Contains(err.Error(), "JobPosting") {
 		t.Fatalf("expected missing-JSON-LD error, got %v", err)
+	}
+}
+
+func TestAshbyFetch404(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.NotFound(w, nil)
+	}))
+	defer server.Close()
+
+	a := &Ashby{client: server.Client(), pageBase: server.URL}
+	_, err := a.Fetch(context.Background(), "https://jobs.ashbyhq.com/acme/deleted-role")
+	// discover.extractPostings uses errors.Is(err, ErrPostingNotFound) to
+	// drop dead-link URLs before they reach the ranker. Assert on the
+	// sentinel, not the error string.
+	if !errors.Is(err, ErrPostingNotFound) {
+		t.Fatalf("expected ErrPostingNotFound, got %v", err)
+	}
+}
+
+// ashbyPageNoSalaryHTML mimics a real Ashby page for a role that doesn't
+// publish a salary — baseSalary object is absent from the JSON-LD entirely.
+const ashbyPageNoSalaryHTML = `<html><head>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org/",
+  "@type": "JobPosting",
+  "title": "Backend Engineer",
+  "description": "&lt;p&gt;Do work.&lt;/p&gt;",
+  "employmentType": "FULL_TIME",
+  "hiringOrganization": {"@type": "Organization", "name": "Acme"},
+  "jobLocation": {"@type": "Place", "address": {"@type": "PostalAddress", "addressLocality": "Remote"}}
+}
+</script>
+</head><body></body></html>`
+
+func TestAshbyFetchEmptySalary(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, ashbyPageNoSalaryHTML)
+	}))
+	defer server.Close()
+
+	a := &Ashby{client: server.Client(), pageBase: server.URL}
+	got, err := a.Fetch(context.Background(), "https://jobs.ashbyhq.com/acme/backend")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Compensation != "" {
+		t.Errorf("Compensation = %q, want empty when baseSalary absent", got.Compensation)
 	}
 }

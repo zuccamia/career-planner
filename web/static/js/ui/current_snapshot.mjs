@@ -11,7 +11,7 @@ export const refreshCurrentSnapshotBadge = async () => {
     const name = await getCurrentSnapshotName();
     if (!name) {
       wrap.classList.add('hidden');
-      wrap.classList.remove('sm:inline-flex');
+      wrap.classList.remove('inline-flex');
       nameEl.textContent = '';
       nameEl.title = '';
       return;
@@ -19,7 +19,7 @@ export const refreshCurrentSnapshotBadge = async () => {
     nameEl.textContent = formatSnapshotName(name);
     nameEl.title = name;
     wrap.classList.remove('hidden');
-    wrap.classList.add('sm:inline-flex');
+    wrap.classList.add('inline-flex');
   } catch (err) {
     console.warn('[local] current snapshot badge', err);
   }

@@ -8,7 +8,7 @@
 // The server sees prompts + raw responses but never the key.
 //
 // The record is deleted by:
-//   - Settings → "Clear key"                        (clearByokConfig)
+//   - Settings → "Clear key"                        (clearByokLLMConfig)
 //   - Google Drive sign-out, if clearOnSignOut=true (settings.mjs)
 //   - Settings → "Wipe all local data"              (idbWipe drops the DB)
 
@@ -16,25 +16,29 @@ import { idbGet, idbSet, idbDel } from './idb.mjs';
 
 const KEY = 'byokConfig';
 
-// getByokConfig returns the saved config, or null if BYOK has never been
+// Defaults surfaced in the Settings form when no config has been saved yet.
+export const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+export const DEFAULT_MODEL = 'gpt-4o-mini';
+
+// getByokLLMConfig returns the saved config, or null if BYOK has never been
 // enabled on this browser. Shape: { enabled, baseUrl, apiKey, model,
 // clearOnSignOut, updatedAt }. Callers should treat null as "use server-side LLM".
-export const getByokConfig = async () => {
+export const getByokLLMConfig = async () => {
   const raw = await idbGet(KEY);
   if (!raw || typeof raw !== 'object') return null;
   return raw;
 };
 
-// isByokActive is a convenience: true when a config exists AND is enabled
+// isByokLLMActive is a convenience: true when a config exists AND is enabled
 // AND has the fields needed to make a provider call.
-export const isByokActive = async () => {
-  const cfg = await getByokConfig();
+export const isByokLLMActive = async () => {
+  const cfg = await getByokLLMConfig();
   return !!(cfg && cfg.enabled && cfg.baseUrl && cfg.apiKey && cfg.model);
 };
 
-// saveByokConfig persists a validated config. The caller is responsible for
+// saveByokLLMConfig persists a validated config. The caller is responsible for
 // running testConnection first — this function only stores.
-export const saveByokConfig = async (cfg) => {
+export const saveByokLLMConfig = async (cfg) => {
   const normalized = {
     enabled: !!cfg.enabled,
     baseUrl: String(cfg.baseUrl || '').trim().replace(/\/+$/, ''),
@@ -47,7 +51,7 @@ export const saveByokConfig = async (cfg) => {
   return normalized;
 };
 
-// clearByokConfig removes the saved config entirely. Used by the Settings
+// clearByokLLMConfig removes the saved config entirely. Used by the Settings
 // "Clear key" button and (when clearOnSignOut is true) by the Drive signout
 // path in settings.mjs.
-export const clearByokConfig = () => idbDel(KEY);
+export const clearByokLLMConfig = () => idbDel(KEY);

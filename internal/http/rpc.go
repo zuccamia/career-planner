@@ -15,9 +15,9 @@ import (
 	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/i18n"
 	"github.com/zuccamia/career-planner/internal/people"
 	"github.com/zuccamia/career-planner/internal/sources/ats"
-	"github.com/zuccamia/career-planner/internal/sources/llm"
 	"github.com/zuccamia/career-planner/internal/sources/scrape"
 )
 
@@ -43,24 +43,6 @@ func writeErr(w http.ResponseWriter, status int, msg string) {
 func decodeJSON[T any](r *http.Request, w http.ResponseWriter, dst *T) bool {
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid json body")
-		return false
-	}
-	return true
-}
-
-// decodeRawResponse decodes the standard BYOK parse envelope `{raw: "..."}`
-// and unmarshals the LLM's raw text into out via llm.DecodeJSONResponse.
-// Returns false after writing a 400 (bad envelope) or 502 (bad LLM JSON);
-// on success out is populated and returns true.
-func decodeRawResponse[T any](r *http.Request, w http.ResponseWriter, out *T) bool {
-	var body struct {
-		Raw string `json:"raw"`
-	}
-	if !decodeJSON(r, w, &body) {
-		return false
-	}
-	if err := llm.DecodeJSONResponse(body.Raw, out); err != nil {
-		writeErr(w, http.StatusBadGateway, err.Error())
 		return false
 	}
 	return true
@@ -95,7 +77,7 @@ func (s *Server) rpcGuessCompanyCandidate(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"candidate": candidate})
 }
 
-// rpcBuildDossier wraps dossiers.Service.BuildText for the browser client.
+// rpcBuildDossier wraps dossiers.Service.Build for the browser client.
 // Input: {official_name, website, ats_url, ats_provider}. Output: the Dossier
 // struct (JSON-tagged). No DB access — the browser stores the result locally.
 func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
@@ -126,39 +108,33 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 	blogURL := strings.TrimSpace(body.BlogURL)
 	atsURL := strings.TrimSpace(body.ATSURL)
 	atsProvider := strings.TrimSpace(body.ATSProvider)
-	enrichment := dossiers.WebsiteEnrichment{
+	pages := dossiers.Pages{
 		Website: strings.TrimSpace(body.WebsiteContent),
 		Blog:    strings.TrimSpace(body.BlogContent),
 		Careers: strings.TrimSpace(body.CareersContent),
 	}
 
-	// Server-side scrape fallback: run in parallel for any URL the browser
-	// didn't pre-scrape, when a scraper is configured. Best-effort per URL —
-	// individual failures are logged and dropped; the dossier still builds
-	// from whatever succeeded plus the structured fields.
-	if s.scrape != nil {
-		s.scrapeMissingIntoEnrichment(r.Context(), &enrichment, website, blogURL, atsURL)
-	}
-
-	// Best-effort ATS discovery when the caller didn't supply an ats_url.
-	if s.scrape != nil && website != "" && atsURL == "" {
-		if got, prov, err := ats.DiscoverATSURL(r.Context(), s.scrape, website); err != nil {
-			log.Printf("dossier: ats discovery failed for %s: %v", website, err)
-		} else if got != "" {
-			atsURL = got
-			if atsProvider == "" {
-				atsProvider = prov
+	if s.serverScrapeAvailable(r.Context()) {
+		if website != "" && atsURL == "" {
+			if got, prov, err := ats.LookupATSURL(r.Context(), s.scrape, website); err != nil {
+				log.Printf("dossier: ats lookup failed for %s: %v", website, err)
+			} else if got != "" {
+				atsURL = got
+				if atsProvider == "" {
+					atsProvider = prov
+				}
 			}
 		}
+		s.scrapeMissingContent(r.Context(), &pages, website, blogURL, atsURL)
 	}
 
-	out, err := s.dossiers.BuildText(r.Context(), companies.Company{
+	out, err := s.dossiers.Build(r.Context(), companies.Company{
 		OfficialName: name,
 		Website:      website,
 		BlogURL:      blogURL,
 		ATSURL:       atsURL,
 		ATSProvider:  atsProvider,
-	}, body.OutputLanguage, enrichment)
+	}, body.OutputLanguage, pages)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -166,10 +142,10 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// scrapeMissingIntoEnrichment scrapes each URL in parallel and writes the
-// markdown into the matching enrichment field. Skips URLs already prefilled
+// scrapeMissingContent scrapes each URL in parallel and writes the
+// markdown into the matching pages field. Skips URLs already prefilled
 // by the browser's BYOK scraper. Per-URL failures are logged.
-func (s *Server) scrapeMissingIntoEnrichment(ctx context.Context, e *dossiers.WebsiteEnrichment, website, blog, careers string) {
+func (s *Server) scrapeMissingContent(ctx context.Context, e *dossiers.Pages, website, blog, careers string) {
 	var wg sync.WaitGroup
 	fanout := func(label, url string, dst *string) {
 		if url == "" || *dst != "" {
@@ -359,7 +335,7 @@ func (s *Server) rpcSummarizeThread(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("rpc summarize-thread: %v", err)
 		if errors.Is(err, communications.ErrUnsafeGeneration) {
-			writeErr(w, http.StatusBadRequest, "Couldn’t safely generate a summary from this thread. Remove prompt-like text and try again.")
+			writeErr(w, http.StatusBadRequest, i18n.T(body.OutputLanguage, "communications.error.unsafe_summary"))
 			return
 		}
 		writeErr(w, http.StatusBadGateway, err.Error())
@@ -378,11 +354,11 @@ func (s *Server) rpcGenerateMessage(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(r, w, &body) {
 		return
 	}
-	message, err := s.communications.GenerateMessageFromContext(r.Context(), body.threadDetailPayload.toThreadDetail(), body.Goal, body.threadDetailPayload.OutputLanguage)
+	message, err := s.communications.GenerateMessageFromContext(r.Context(), body.toThreadDetail(), body.Goal, body.OutputLanguage)
 	if err != nil {
 		log.Printf("rpc generate-message: %v", err)
 		if errors.Is(err, communications.ErrUnsafeGeneration) {
-			writeErr(w, http.StatusBadRequest, "Couldn’t safely generate a draft from this thread. Remove prompt-like text and try again.")
+			writeErr(w, http.StatusBadRequest, i18n.T(body.OutputLanguage, "communications.error.unsafe_message"))
 			return
 		}
 		writeErr(w, http.StatusBadGateway, err.Error())
@@ -391,9 +367,8 @@ func (s *Server) rpcGenerateMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": message})
 }
 
-// rpcExtractJobDescription wraps applications.Service.ExtractJobDescriptionText.
-// Input: {company_name, role_title, job_posting_url, job_description_raw}.
-// Output: JobDescriptionStructured JSON.
+// rpcExtractJobDescription runs the full server-LLM JD flow: fetch (if raw
+// is empty) → prompt → LLM → sanitize. Used by callers without BYOK LLM.
 func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		CompanyName       string `json:"company_name"`
@@ -405,7 +380,7 @@ func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request
 	if !decodeJSON(r, w, &body) {
 		return
 	}
-	structured, raw, err := s.applications.ExtractJobDescriptionText(r.Context(), applications.ExtractJobDescriptionTextInput{
+	structured, raw, err := s.applications.ExtractJD(r.Context(), applications.JDExtractionInput{
 		CompanyName:       body.CompanyName,
 		RoleTitle:         body.RoleTitle,
 		JobPostingURL:     body.JobPostingURL,
@@ -417,13 +392,94 @@ func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	warning := applications.DetectSuspiciousJDInput(raw)
-	if warning != "" {
-		log.Printf("rpc extract-job-description warning: %s", warning)
-	}
+	// ExtractJD already logs the suspicious-input warning internally; just
+	// surface it in the response so the browser can render it.
 	writeJSON(w, http.StatusOK, struct {
 		Structured        applications.JobDescriptionStructured `json:"structured"`
 		JobDescriptionRaw string                                `json:"job_description_raw"`
 		Warning           string                                `json:"warning,omitempty"`
-	}{Structured: structured, JobDescriptionRaw: raw, Warning: warning})
+	}{Structured: structured, JobDescriptionRaw: raw, Warning: applications.DetectSuspiciousJDInput(raw)})
+}
+
+// rpcDossierScrape fetches per-page markdown + discovers the ATS URL for a
+// dossier. Called by BYOK-LLM browsers with no BYOK scraper; the browser
+// runs the LLM itself.
+func (s *Server) rpcDossierScrape(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Website        string `json:"website"`
+		BlogURL        string `json:"blog_url"`
+		ATSURL         string `json:"ats_url"`
+		ATSProvider    string `json:"ats_provider"`
+		WebsiteContent string `json:"website_content"`
+		BlogContent    string `json:"blog_content"`
+		CareersContent string `json:"careers_content"`
+	}
+	if !decodeJSON(r, w, &body) {
+		return
+	}
+	if !s.serverScrapeAvailable(r.Context()) {
+		writeErr(w, http.StatusServiceUnavailable, "server scraper is not configured")
+		return
+	}
+	website := strings.TrimSpace(body.Website)
+	blogURL := strings.TrimSpace(body.BlogURL)
+	atsURL := strings.TrimSpace(body.ATSURL)
+	atsProvider := strings.TrimSpace(body.ATSProvider)
+	pages := dossiers.Pages{
+		Website: strings.TrimSpace(body.WebsiteContent),
+		Blog:    strings.TrimSpace(body.BlogContent),
+		Careers: strings.TrimSpace(body.CareersContent),
+	}
+	if website != "" && atsURL == "" {
+		if got, prov, err := ats.LookupATSURL(r.Context(), s.scrape, website); err != nil {
+			log.Printf("dossier: ats lookup failed for %s: %v", website, err)
+		} else if got != "" {
+			atsURL = got
+			if atsProvider == "" {
+				atsProvider = prov
+			}
+		}
+	}
+	s.scrapeMissingContent(r.Context(), &pages, website, blogURL, atsURL)
+	writeJSON(w, http.StatusOK, struct {
+		ATSURL         string `json:"ats_url"`
+		ATSProvider    string `json:"ats_provider"`
+		WebsiteContent string `json:"website_content"`
+		BlogContent    string `json:"blog_content"`
+		CareersContent string `json:"careers_content"`
+	}{
+		ATSURL: atsURL, ATSProvider: atsProvider,
+		WebsiteContent: pages.Website,
+		BlogContent:    pages.Blog,
+		CareersContent: pages.Careers,
+	})
+}
+
+// rpcApplicationScrape fetches a job posting via FetchPosting's ladder
+// (known ATS → server scraper → generic HTTP) and returns enriched raw text
+// + the ats.Posting struct. Called by BYOK-LLM browsers with no BYOK
+// scraper; the browser runs the LLM itself.
+func (s *Server) rpcApplicationScrape(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		JobPostingURL     string `json:"job_posting_url"`
+		JobDescriptionRaw string `json:"job_description_raw"`
+		OutputLanguage    string `json:"output_language"`
+	}
+	if !decodeJSON(r, w, &body) {
+		return
+	}
+	raw, posting, err := s.applications.FetchPosting(r.Context(), applications.PostingSource{
+		URL:            body.JobPostingURL,
+		Raw:            body.JobDescriptionRaw,
+		OutputLanguage: body.OutputLanguage,
+	})
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		EnrichedRaw string      `json:"enriched_raw"`
+		Posting     ats.Posting `json:"posting"`
+		Warning     string      `json:"warning,omitempty"`
+	}{EnrichedRaw: raw, Posting: posting, Warning: applications.DetectSuspiciousJDInput(raw)})
 }

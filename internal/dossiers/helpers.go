@@ -78,12 +78,12 @@ func sanitizeTechStacks(stacks MajorTechStacks) MajorTechStacks {
 // alongside the system + user prompt without truncating the response budget.
 const ScrapedContentMaxBytes = 12000
 
-// WebsiteEnrichment carries optional pre-scraped markdown for each of the
+// Pages carries optional pre-scraped markdown for each of the
 // three URLs the dossier prompt can consume. Empty fields are omitted from
 // the prompt entirely (no empty header). Callers scrape URLs they care about
 // and pass through only what succeeded — this struct is a pure carrier, not
 // a scraper.
-type WebsiteEnrichment struct {
+type Pages struct {
 	Website string
 	Blog    string
 	Careers string

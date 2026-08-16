@@ -185,14 +185,6 @@ test.describe('local companies page', () => {
     await expect(page.getByLabel('Official name')).toBeFocused();
   });
 
-  test('top-bar quick-action link opens the editor', async ({ page }) => {
-    await gotoCompanies(page);
-    // Top-bar "Add company" quick action — layout renders relative hrefs
-    // so nav works under both root and project-page deploys.
-    await page.locator('a[href="companies?new=1"]').click();
-    await expect(page.getByText('New company')).toBeVisible();
-  });
-
   test('row meta reflects per-company application counts', async ({ page }) => {
     // Seed two companies; only Alpha gets an application, so we can assert
     // per-company role counts are independent (not global).

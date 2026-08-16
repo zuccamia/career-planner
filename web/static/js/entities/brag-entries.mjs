@@ -3,26 +3,31 @@
 // Stripe" without requiring it (some entries are between-jobs, personal
 // projects, etc.).
 
-import { exec } from '../db/client.mjs';
+import { exec, decodeJSON } from '../db/client.mjs';
 
 const EDITABLE_COLS = ['title', 'body', 'impact', 'tags_json', 'tags_generated_at', 'company_id', 'entry_year'];
 
-const normalize = (data) => ({
-  title: (data.title ?? '').toString().trim(),
-  body: (data.body ?? '').toString(),
-  impact: (data.impact ?? '').toString().trim(),
-  tags_json: JSON.stringify(Array.isArray(data.tags) ? data.tags : (data.tags_json ? JSON.parse(data.tags_json) : [])),
-  tags_generated_at: data.tags_generated_at || null,
-  company_id: data.company_id ? Number(data.company_id) : null,
-  entry_year: data.entry_year ? Number(data.entry_year) : null,
-});
+// Callers may pass `tags` (array) or `tags_json` (string). Prefer the array
+// form; fall back to decoding the string via the shared decodeJSON helper so
+// malformed JSON doesn't throw here.
+const sanitizeBragEntryFields = (data) => {
+  const tags = Array.isArray(data.tags)
+    ? data.tags
+    : decodeJSON(data.tags_json, []);
+  return {
+    title: (data.title ?? '').toString().trim(),
+    body: (data.body ?? '').toString(),
+    impact: (data.impact ?? '').toString().trim(),
+    tags_json: JSON.stringify(tags),
+    tags_generated_at: data.tags_generated_at || null,
+    company_id: data.company_id ? Number(data.company_id) : null,
+    entry_year: data.entry_year ? Number(data.entry_year) : null,
+  };
+};
 
-const hydrate = (row) => {
+const hydrateBragEntry = (row) => {
   if (!row) return row;
-  const out = { ...row };
-  try { out.tags = JSON.parse(row.tags_json || '[]'); }
-  catch { out.tags = []; }
-  return out;
+  return { ...row, tags: decodeJSON(row.tags_json, []) };
 };
 
 export const listBragEntries = async () => {
@@ -32,7 +37,7 @@ export const listBragEntries = async () => {
     LEFT JOIN companies c ON c.id = b.company_id
     ORDER BY b.entry_year DESC NULLS LAST, b.updated_at DESC, b.id DESC
   `);
-  return rows.map(hydrate);
+  return rows.map(hydrateBragEntry);
 };
 
 export const countBragEntries = async () => {
@@ -42,7 +47,7 @@ export const countBragEntries = async () => {
 
 export const getBragEntry = async (id) => {
   const rows = await exec('SELECT * FROM brag_entries WHERE id = ?', [id]);
-  return hydrate(rows[0] || null);
+  return hydrateBragEntry(rows[0] || null);
 };
 
 // listByCompany — the primary consumer for later LLM resume-tailoring: pull
@@ -53,11 +58,11 @@ export const listBragEntriesByCompany = async (companyID) => {
      ORDER BY entry_year DESC NULLS LAST, updated_at DESC, id DESC`,
     [companyID],
   );
-  return rows.map(hydrate);
+  return rows.map(hydrateBragEntry);
 };
 
 export const createBragEntry = async (data) => {
-  const n = normalize(data);
+  const n = sanitizeBragEntryFields(data);
   const values = EDITABLE_COLS.map(c => n[c]);
   await exec(
     `INSERT INTO brag_entries (${EDITABLE_COLS.join(', ')})
@@ -69,7 +74,7 @@ export const createBragEntry = async (data) => {
 };
 
 export const updateBragEntry = async (id, data) => {
-  const n = normalize(data);
+  const n = sanitizeBragEntryFields(data);
   const values = EDITABLE_COLS.map(c => n[c]);
   await exec(
     `UPDATE brag_entries

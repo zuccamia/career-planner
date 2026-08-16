@@ -397,6 +397,86 @@ test.describe('local applications page — attachments', () => {
     // was removed. Documents the "delete row, keep bytes" tradeoff.
     expect(await readStoredKeys(page)).toEqual(['alpha_co/resume.pdf']);
   });
+
+  test('detaching an application-side PDF cascades to the paired resume-side row', async ({ page }) => {
+    // Regression for the sibling cascade in deleteAttachment. A resume PDF
+    // sent to an application produces two attachment rows sharing folder +
+    // filename (see entities/resume-pdfs.mjs::linkPdfToApplication). Deleting
+    // either row must remove both, or the surviving row will list a PDF whose
+    // file is gone. Exercises the DB path directly since compiling a Typst
+    // resume + attaching through the UI is out of reach for headless Chromium.
+    await gotoApps(page);
+    await installFakeStorageBackend(page);
+
+    const ids = await page.evaluate(async () => {
+      const [companies, applications, resumes, pdfs, storage] = await Promise.all([
+        import('/static/js/entities/companies.mjs'),
+        import('/static/js/entities/applications.mjs'),
+        import('/static/js/entities/resumes.mjs'),
+        import('/static/js/entities/resume-pdfs.mjs'),
+        import('/static/js/storage/attachments.mjs'),
+      ]);
+      const companyId = await companies.createCompany({ official_name: 'Cascade Co.' });
+      const applicationId = await applications.createApplication({
+        company_id: companyId, role_title: 'Backend Engineer', status: 'applied',
+      });
+      const resumeId = await resumes.createResume({
+        title: 'Cascade Co. - Backend Engineer', format: 'md', body: '# CV',
+      });
+      const file = new File([new Uint8Array([1, 2, 3])], 'resume.pdf', { type: 'application/pdf' });
+      const meta = await storage.uploadAttachment('cascade_co', file);
+      const link = await pdfs.linkPdfToApplication({
+        resumeId, applicationId,
+        folder: 'cascade_co',
+        storedFilename: meta.storedFilename,
+        originalFilename: 'resume.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 3,
+        sha256: '',
+      });
+      return { applicationId, resumeId, applicationAttachmentId: link.applicationAttachmentId };
+    });
+
+    // Baseline: both polymorphic rows exist, referencing the same blob.
+    const before = await page.evaluate(async () => {
+      const { exec } = await import('/static/js/db/client.mjs');
+      return exec(
+        `SELECT entity_type FROM attachments
+           WHERE folder = ? AND filename = ?
+           ORDER BY entity_type`,
+        ['cascade_co', 'resume.pdf'],
+      );
+    });
+    expect(before.map(r => r.entity_type)).toEqual(['application', 'resume']);
+
+    // Detach — mirrors what the "Delete attachment" button in the details
+    // panel does, but scoped to the entity API so we don't rely on Typst.
+    await page.evaluate(async (attachmentId) => {
+      const { deleteAttachment } = await import('/static/js/entities/attachments.mjs');
+      await deleteAttachment(attachmentId);
+    }, ids.applicationAttachmentId);
+
+    // Sibling cascade: both rows gone.
+    const after = await page.evaluate(async () => {
+      const { exec } = await import('/static/js/db/client.mjs');
+      return exec(`SELECT id FROM attachments WHERE folder = ? AND filename = ?`, ['cascade_co', 'resume.pdf']);
+    });
+    expect(after).toEqual([]);
+
+    // Application and resume themselves survive — cascade goes sideways, not
+    // up to the parent entities.
+    const parents = await page.evaluate(async ([appId, resumeId]) => {
+      const [{ getApplication }, { getResume }] = await Promise.all([
+        import('/static/js/entities/applications.mjs'),
+        import('/static/js/entities/resumes.mjs'),
+      ]);
+      return {
+        hasApp: !!(await getApplication(appId)),
+        hasResume: !!(await getResume(resumeId)),
+      };
+    }, [ids.applicationId, ids.resumeId] as const);
+    expect(parents).toEqual({ hasApp: true, hasResume: true });
+  });
 });
 
 test.describe('local applications page — clear all', () => {
@@ -424,6 +504,36 @@ test.describe('local applications page — clear all', () => {
     await page.goto('/companies');
     await expect(page.locator('#list-content li', { hasText: 'Alpha Co.' })).toBeVisible();
     await expect(page.locator('#list-content li', { hasText: 'Beta Co.' })).toBeVisible();
+  });
+
+  test('button hidden when a filter narrows the list (search, headline pill, or company)', async ({ page }) => {
+    await createCompany(page, 'Alpha Co.');
+    await createCompany(page, 'Beta Co.');
+    await createApplication(page, 'Alpha Co.', 'Backend Engineer');
+    await createApplication(page, 'Beta Co.',  'Frontend Engineer');
+
+    await gotoApps(page);
+    await expect(page.locator('#btn-clear-all')).toBeVisible();
+
+    // Search narrows results → button must disappear so a user can't
+    // accidentally wipe the whole set from a filtered view.
+    await page.locator('#apps-search').fill('Backend');
+    await expect(page.locator('#list-content li')).toHaveCount(1);
+    await expect(page.locator('#btn-clear-all')).toHaveCount(0);
+
+    // Clearing the search restores the button.
+    await page.locator('#apps-search').fill('');
+    await expect(page.locator('#btn-clear-all')).toBeVisible();
+
+    // Headline pill filter — same rule.
+    await page.locator('#apps-filters [data-filter="lead"]').click();
+    await expect(page.locator('#btn-clear-all')).toHaveCount(0);
+    await page.locator('#apps-filters [data-filter="all"]').click();
+    await expect(page.locator('#btn-clear-all')).toBeVisible();
+
+    // Company filter via URL — same rule.
+    await page.goto('/applications?company_id=1');
+    await expect(page.locator('#btn-clear-all')).toHaveCount(0);
   });
 
   test('cancelling the confirm dialog leaves data untouched', async ({ page }) => {

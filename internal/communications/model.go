@@ -40,6 +40,13 @@ type Service struct {
 	client llm.Client
 }
 
+// MessageGoals is the set of supported goals for GenerateMessageFromContext.
+// A membership check on a normalized goal string gates message generation.
+var MessageGoals = map[string]struct{}{
+	"outreach": {},
+	"reply":    {},
+}
+
 // ErrInvalidGoal reports that a message generation goal is unsupported.
 var ErrInvalidGoal = errors.New("invalid communication goal")
 

@@ -11,7 +11,7 @@ import {
 import { listCompanies, getCompany } from '../entities/companies.mjs';
 import {
   COMMUNICATION_CHANNELS, COMMUNICATION_DIRECTIONS,
-  listThreadsByPersonID, getThread, createThread, updateThreadStatus,
+  listThreadsByPersonID, getThread, createThread, updateThread, updateThreadStatus,
   updateThreadSummary, deleteThread, countThreadsByPersonID,
   listEntriesByThreadID, createEntry, deleteEntry,
 } from '../entities/communications.mjs';
@@ -221,7 +221,7 @@ const threadsHeaderHtml = (person) => {
     </div>
     <div class="${CLS.headActions}">
       ${button({ id: 'btn-new-thread', icon: 'plus', variant: 'primaryCompact', label: t('people.action.new_thread'), ariaLabel: t('people.aria.add_thread') })}
-      ${button({ id: 'btn-threads-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('people.aria.edit') })}
+      ${button({ id: 'btn-person-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('people.aria.edit') })}
       ${button({ id: 'btn-threads-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('people.aria.delete', { name: person.full_name }) })}
       ${button({ id: 'btn-threads-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
     </div>
@@ -231,31 +231,49 @@ const threadsHeaderHtml = (person) => {
 `;
 };
 
-const newThreadFormHtml = () => `
-  <form id="new-thread-form" class="${CLS.paperCard} space-y-3">
+// threadFormHtml renders the subject+channel form used for both create and
+// edit. `mode` selects the eyebrow label, form id, and aria labels.
+// `initial` pre-fills the fields (empty for create).
+const threadFormHtml = ({ mode, initial = {} }) => {
+  const isEdit = mode === 'edit';
+  const eyebrowKey = isEdit ? 'people.thread_form.edit_eyebrow' : 'people.thread_form.new_eyebrow';
+  const saveAria   = isEdit ? 'people.aria.save_thread_edit'   : 'people.aria.create_thread';
+  const cancelAria = isEdit ? 'people.aria.cancel_thread_edit' : 'people.aria.cancel_new_thread';
+  const formId     = isEdit ? 'edit-thread-form'   : 'new-thread-form';
+  const cancelId   = isEdit ? 'btn-cancel-edit-thread' : 'btn-cancel-new-thread';
+  const errorId    = isEdit ? 'edit-thread-error'  : 'new-thread-error';
+  const subjectId  = isEdit ? 'edit_thread_subject' : 'new_thread_subject';
+  const channelId  = isEdit ? 'edit_thread_channel' : 'new_thread_channel';
+  const subject    = initial.subject ?? '';
+  const channel    = initial.channel ?? '';
+  return `
+  <form id="${formId}" class="${CLS.paperCard} space-y-3">
     <div class="${CLS.formHeadRow}">
-      <p class="${CLS.eyebrow}">${t('people.thread_form.new_eyebrow')}</p>
+      <p class="${CLS.eyebrow}">${t(eyebrowKey)}</p>
       <div class="${CLS.inlineRow}">
-        ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.create_thread') })}
-        ${button({ id: 'btn-cancel-new-thread', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('people.aria.cancel_new_thread') })}
+        ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t(saveAria) })}
+        ${button({ id: cancelId, variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t(cancelAria) })}
       </div>
     </div>
-    ${inlineError({ id: 'new-thread-error' })}
+    ${inlineError({ id: errorId })}
     <div class="grid gap-3 sm:grid-cols-3">
       <div class="grid gap-1 sm:col-span-2">
-        <label class="${CLS.label}" for="new_thread_subject">${t('people.thread_form.subject.label')}</label>
-        <input id="new_thread_subject" name="subject" type="text" required
+        <label class="${CLS.label}" for="${subjectId}">${t('people.thread_form.subject.label')}</label>
+        <input id="${subjectId}" name="subject" type="text" required value="${escapeHtml(subject)}"
                class="${CLS.input}" placeholder="${t('people.thread_form.subject.placeholder')}">
       </div>
       <div class="grid gap-1">
-        <label class="${CLS.label}" for="new_thread_channel">${t('people.thread_form.channel.label')}</label>
-        <select id="new_thread_channel" name="channel" class="${CLS.select}">
-          ${COMMUNICATION_CHANNELS.map(c => `<option value="${c}">${titleCase(c)}</option>`).join('')}
+        <label class="${CLS.label}" for="${channelId}">${t('people.thread_form.channel.label')}</label>
+        <select id="${channelId}" name="channel" class="${CLS.select}">
+          ${COMMUNICATION_CHANNELS.map(c => `<option value="${c}"${c === channel ? ' selected' : ''}>${titleCase(c)}</option>`).join('')}
         </select>
       </div>
     </div>
   </form>
 `;
+};
+
+const newThreadFormHtml = () => threadFormHtml({ mode: 'new' });
 
 const threadListHtml = (threads, openThreadID) => {
   if (!threads.length) {
@@ -291,9 +309,11 @@ const threadListHtml = (threads, openThreadID) => {
                     extraClass: 'js-toggle-status',
                     dataset: { id: th.id, status: th.status },
                   })}
+                  ${button({ variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('people.aria.edit_thread', { subject: th.subject }), extraClass: 'js-edit-thread', dataset: { id: th.id } })}
                   ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('people.aria.delete_thread', { subject: th.subject }), extraClass: 'js-delete-thread', dataset: { id: th.id, subject: th.subject } })}
                 </div>
               </div>
+              <div id="thread-edit-container-${th.id}"></div>
               ${expanded ? `<div id="thread-detail-${th.id}" class="mt-4 ${CLS.dividerTop}"></div>` : ''}
             </div>
           </li>`;
@@ -414,7 +434,6 @@ const draftPanelHtml = (goal, message) => `
 let editorMode = null;              // null | 'new' | { id }
 let openThreadsPerson = null;       // person row when threads panel is open
 let openThreadID = null;            // currently expanded thread within that panel
-let personEditing = false;
 // Optional company_id filter (from ?company_id=… — set by company-card pill).
 let companyFilter = null;           // { id, name } | null
 
@@ -585,7 +604,6 @@ const openThreads = async (personID, triggerEl = null) => {
     onClose: () => {
       openThreadsPerson = null;
       openThreadID = null;
-      personEditing = false;
       editorMode = null;
     },
   });
@@ -630,55 +648,66 @@ const applicationsSectionHtml = (apps, personID) => {
     </section>`;
 };
 
-const renderThreads = async () => {
+// Two entry points for the threads slide-over. Both mount into #threads-panel
+// but render different bodies — no shared boolean flag. Callers pick which one
+// matches the intent (list vs edit-person). renderThreads dispatches based on
+// current state; direct callers should prefer the specific renderer.
+
+const renderThreads = () => renderThreadsList();
+
+const renderThreadsList = async () => {
   if (!openThreadsPerson) return;
   const panel = document.getElementById('threads-panel');
-  const threads = personEditing ? [] : await listThreadsByPersonID(openThreadsPerson.id);
-  const apps = personEditing ? [] : await listApplicationsByPerson(openThreadsPerson.id);
-  const companies = personEditing ? await listCompanies() : [];
-  const body = personEditing
-    ? editorHtml(openThreadsPerson, companies)
-    : `${applicationsSectionHtml(apps, openThreadsPerson.id)}
-       <div id="new-thread-container"></div>
-       <div id="thread-list">${threadListHtml(threads, openThreadID)}</div>`;
+  const threads = await listThreadsByPersonID(openThreadsPerson.id);
+  const apps = await listApplicationsByPerson(openThreadsPerson.id);
   panel.innerHTML = `
     <div class="${CLS.slideOverBody}">
       ${threadsHeaderHtml(openThreadsPerson)}
-      ${body}
+      ${applicationsSectionHtml(apps, openThreadsPerson.id)}
+      <div id="new-thread-container"></div>
+      <div id="thread-list">${threadListHtml(threads, openThreadID)}</div>
     </div>
   `;
   wireThreadsPanel();
-  if (personEditing) {
-    editorMode = { id: openThreadsPerson.id };
-    wireEditor({
-      onCancel: () => {
-        personEditing = false;
-        editorMode = null;
-        renderThreads();
-      },
-      onSaved: async () => {
-        personEditing = false;
-        editorMode = null;
-        // The saved person may have a new name/company — pick up fresh values.
-        const fresh = await getPerson(openThreadsPerson.id);
-        if (fresh) openThreadsPerson = fresh;
-        await refreshList();
-        await renderThreads();
-      },
-    });
-  } else if (openThreadID) {
-    // Expand the currently open thread's detail (if any).
+  if (openThreadID) {
     await renderThreadDetail(openThreadID);
   }
+};
+
+const renderPersonEditorInPanel = async () => {
+  if (!openThreadsPerson) return;
+  const panel = document.getElementById('threads-panel');
+  const companies = await listCompanies();
+  panel.innerHTML = `
+    <div class="${CLS.slideOverBody}">
+      ${threadsHeaderHtml(openThreadsPerson)}
+      ${editorHtml(openThreadsPerson, companies)}
+    </div>
+  `;
+  wireThreadsPanel();
+  editorMode = { id: openThreadsPerson.id };
+  wireEditor({
+    onCancel: () => {
+      editorMode = null;
+      renderThreadsList();
+    },
+    onSaved: async () => {
+      editorMode = null;
+      // The saved person may have a new name/company — pick up fresh values.
+      const fresh = await getPerson(openThreadsPerson.id);
+      if (fresh) openThreadsPerson = fresh;
+      await refreshList();
+      await renderThreadsList();
+    },
+  });
 };
 
 const wireThreadsPanel = () => {
   document.getElementById('btn-threads-close').addEventListener('click', closeThreads);
   document.getElementById('btn-new-thread').addEventListener('click', openNewThreadForm);
-  document.getElementById('btn-threads-edit')?.addEventListener('click', () => {
+  document.getElementById('btn-person-edit')?.addEventListener('click', () => {
     if (!openThreadsPerson) return;
-    personEditing = true;
-    renderThreads();
+    renderPersonEditorInPanel();
   });
   document.getElementById('btn-threads-delete')?.addEventListener('click', () => {
     if (!openThreadsPerson) return;
@@ -689,6 +718,8 @@ const wireThreadsPanel = () => {
     btn.addEventListener('click', () => toggleThread(Number(btn.dataset.id))));
   document.querySelectorAll('.js-toggle-status').forEach(btn =>
     btn.addEventListener('click', () => toggleThreadStatus(Number(btn.dataset.id), btn.dataset.status)));
+  document.querySelectorAll('.js-edit-thread').forEach(btn =>
+    btn.addEventListener('click', () => openEditThreadForm(Number(btn.dataset.id))));
   document.querySelectorAll('.js-delete-thread').forEach(btn =>
     btn.addEventListener('click', () => deleteThreadFromList(Number(btn.dataset.id), btn.dataset.subject)));
 };
@@ -722,6 +753,35 @@ const openNewThreadForm = () => {
       await refreshList();
     } catch (err) {
       setInlineError('new-thread-error', t('people.error.create_thread_failed', { err: err.message }));
+    }
+  });
+};
+
+const openEditThreadForm = async (threadID) => {
+  const thread = await getThread(threadID);
+  if (!thread) return;
+  const container = document.getElementById(`thread-edit-container-${threadID}`);
+  if (!container) return;
+  container.innerHTML = threadFormHtml({ mode: 'edit', initial: thread });
+  container.querySelector('#edit_thread_subject')?.focus();
+  document.getElementById('btn-cancel-edit-thread').addEventListener('click', () => {
+    container.innerHTML = '';
+  });
+  document.getElementById('edit-thread-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    setInlineError('edit-thread-error', '');
+    const fd = new FormData(ev.target);
+    const subject = (fd.get('subject') || '').toString().trim();
+    if (!subject) {
+      setInlineError('edit-thread-error', t('people.error.subject_required'));
+      return;
+    }
+    try {
+      await updateThread(threadID, { subject, channel: fd.get('channel') });
+      toast(t('people.toast.thread_updated'), 'ok');
+      await renderThreadsList();
+    } catch (err) {
+      setInlineError('edit-thread-error', err.message);
     }
   });
 };

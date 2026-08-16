@@ -5,7 +5,7 @@
 // scoped to a thread. ON DELETE CASCADE on both FKs means deleting a person
 // removes their threads and every entry underneath.
 
-import { exec } from '../db/client.mjs';
+import { exec, transaction } from '../db/client.mjs';
 import { COMMUNICATION_CHANNELS, COMMUNICATION_DIRECTIONS, COMMUNICATION_STATUSES } from '../db/schema.mjs';
 
 export { COMMUNICATION_CHANNELS, COMMUNICATION_DIRECTIONS, COMMUNICATION_STATUSES };
@@ -53,7 +53,7 @@ export const countThreadsByPersonID = async (personID) => {
     'SELECT COUNT(*) AS n FROM communication_threads WHERE person_id = ?',
     [personID],
   );
-  return rows[0].n;
+  return Number(rows[0]?.n ?? 0);
 };
 
 export const createThread = async (data) => {
@@ -71,14 +71,32 @@ export const createThread = async (data) => {
   return rows[0].id;
 };
 
-export const updateThread = async (id, data) => {
-  const subject = (data.subject ?? '').trim();
-  if (!subject) throw new Error('subject required');
+// updateThread accepts a partial patch. Only fields present in `patch` are
+// written — `subject: 'foo'` alone will not touch channel/status. Trimmed
+// empty subject is a hard error; unknown channel/status values fall back to
+// the safe default (matches the normalize* helpers).
+export const updateThread = async (id, patch) => {
+  const cols = [];
+  const values = [];
+  if (Object.hasOwn(patch, 'subject')) {
+    const subject = (patch.subject ?? '').trim();
+    if (!subject) throw new Error('subject required');
+    cols.push('subject = ?');
+    values.push(subject);
+  }
+  if (Object.hasOwn(patch, 'channel')) {
+    cols.push('channel = ?');
+    values.push(normalizeChannel(patch.channel));
+  }
+  if (Object.hasOwn(patch, 'status')) {
+    cols.push('status = ?');
+    values.push(normalizeStatus(patch.status));
+  }
+  if (!cols.length) return;
+  cols.push(`updated_at = datetime('now')`);
   await exec(
-    `UPDATE communication_threads
-     SET channel = ?, subject = ?, updated_at = datetime('now')
-     WHERE id = ?`,
-    [normalizeChannel(data.channel), subject, id],
+    `UPDATE communication_threads SET ${cols.join(', ')} WHERE id = ?`,
+    [...values, id],
   );
 };
 
@@ -142,24 +160,28 @@ export const createEntry = async (data) => {
     content,
     occurredAt,
   ];
-  await exec(
-    `INSERT INTO communication_entries (${ENTRY_EDITABLE_COLS.join(', ')})
-     VALUES (${ENTRY_EDITABLE_COLS.map(() => '?').join(', ')})`,
-    values,
-  );
-  await recomputeThreadActivity(threadID);
-  const rows = await exec('SELECT last_insert_rowid() AS id');
-  return rows[0].id;
+  return transaction(async () => {
+    await exec(
+      `INSERT INTO communication_entries (${ENTRY_EDITABLE_COLS.join(', ')})
+       VALUES (${ENTRY_EDITABLE_COLS.map(() => '?').join(', ')})`,
+      values,
+    );
+    const rows = await exec('SELECT last_insert_rowid() AS id');
+    await recomputeThreadActivity(threadID);
+    return rows[0].id;
+  });
 };
 
 export const deleteEntry = async (id) => {
-  const rows = await exec(
-    'SELECT thread_id FROM communication_entries WHERE id = ?',
-    [id],
-  );
-  const threadID = rows[0]?.thread_id;
-  await exec('DELETE FROM communication_entries WHERE id = ?', [id]);
-  if (threadID) await recomputeThreadActivity(threadID);
+  await transaction(async () => {
+    const rows = await exec(
+      'SELECT thread_id FROM communication_entries WHERE id = ?',
+      [id],
+    );
+    const threadID = rows[0]?.thread_id;
+    await exec('DELETE FROM communication_entries WHERE id = ?', [id]);
+    if (threadID) await recomputeThreadActivity(threadID);
+  });
 };
 
 // listDailyEntryCounts returns per-day counts of communication_entries within

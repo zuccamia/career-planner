@@ -72,12 +72,12 @@ func buildNav(locale string) []NavGroup {
 	tt := func(k string) string { return i18n.T(locale, k) }
 	return []NavGroup{
 		{Key: "workspace", Label: tt("nav.group.workspace"), Items: []NavItem{
-			{Page: "dashboard", Href: urlForPage("dashboard"), Icon: "chartBar",    Label: tt("nav.dashboard")},
-			{Page: "profile",   Href: urlForPage("profile"),   Icon: "profileCard", Label: tt("nav.profile")},
+			{Page: "dashboard", Href: urlForPage("dashboard"), Icon: "chartBar", Label: tt("nav.dashboard")},
+			{Page: "profile", Href: urlForPage("profile"), Icon: "profileCard", Label: tt("nav.profile")},
 		}},
 		{Key: "collections", Label: tt("nav.group.collections"), Items: []NavItem{
-			{Page: "companies",    Href: urlForPage("companies"),    Icon: "companies",    Label: tt("nav.companies"),    CountKey: "companies"},
-			{Page: "people",       Href: urlForPage("people"),       Icon: "people",       Label: tt("nav.people"),       CountKey: "people"},
+			{Page: "companies", Href: urlForPage("companies"), Icon: "companies", Label: tt("nav.companies"), CountKey: "companies"},
+			{Page: "people", Href: urlForPage("people"), Icon: "people", Label: tt("nav.people"), CountKey: "people"},
 			{Page: "applications", Href: urlForPage("applications"), Icon: "applications", Label: tt("nav.applications"), CountKey: "applications"},
 		}},
 		{Key: "system", Label: tt("nav.group.system"), Items: []NavItem{

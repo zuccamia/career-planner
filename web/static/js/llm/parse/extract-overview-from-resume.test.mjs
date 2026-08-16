@@ -9,7 +9,7 @@ describe('extract-overview-from-resume finalizeExtracted', () => {
       name: '  Ada Lovelace  ',
       headline: ' First programmer ',
       summary: '  Storied history in analytical engines.  ',
-      environment: ' Research labs ',
+      workplace_type: ' Research labs ',
       skills: [
         { name: '  Go  ', years: 5, level: 'Expert' },
         { name: 'go' },
@@ -21,7 +21,7 @@ describe('extract-overview-from-resume finalizeExtracted', () => {
     });
     expect(got.name).toBe('Ada Lovelace');
     expect(got.headline).toBe('First programmer');
-    expect(got.environment).toBe('Research labs');
+    expect(got.workplace_type).toBe('Research labs');
     expect(got.skills).toHaveLength(3);
     expect(got.skills[0]).toEqual({ name: 'Go', years: 5, level: 'expert' });
     expect(got.skills[1].level).toBeUndefined();
@@ -45,7 +45,7 @@ describe('extract-overview-from-resume parse', () => {
       name: 'Ada Lovelace',
       headline: 'First programmer',
       summary: 'Storied history in analytical engines.',
-      environment: 'Research labs',
+      workplace_type: 'Research labs',
       skills: [{ name: 'Go', level: 'expert' }],
       tools: ['Datadog'],
     });

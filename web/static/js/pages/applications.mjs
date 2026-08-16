@@ -16,7 +16,7 @@ import {
 import { relativeAge } from '../ui/format.mjs';
 import { collectionListPanel, filterPillsHtml as collectionFilterPillsHtml, collectionRowsHtml } from '../ui/collection_list.mjs';
 import {
-  listAttachmentsByParent, createAttachment, deleteAttachment,
+  listAttachmentsByEntity, createAttachment, deleteAttachment,
 } from '../entities/attachments.mjs';
 import {
   sanitizeFolder, uploadAttachment, downloadAttachment,
@@ -602,6 +602,13 @@ const filterBannerHtml = () => companyFilter
     })
   : '';
 
+// isUnfiltered reports whether the list is showing the full application
+// set — no URL scoping, no search query, no headline pill selection. The
+// "Clear all applications" button only appears in this state so a user
+// filtered down to a subset can't accidentally wipe everything.
+const isUnfiltered = () =>
+  !companyFilter && !personFilter && !filterState.query.trim() && filterState.headline === 'all';
+
 const applyFilters = () => {
   const q = filterState.query.trim().toLowerCase();
   return cachedApps.filter(a => {
@@ -622,7 +629,7 @@ const renderList = () => {
   document.getElementById('list-content').innerHTML =
     filterBannerHtml()
     + collectionRowsHtml({ rows: filtered.map(appFileRow), emptyMessage: t('applications.list.empty') })
-    + (filtered.length ? clearAllHtml() : '');
+    + (filtered.length && isUnfiltered() ? clearAllHtml() : '');
   if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
   setPageCount('app-count', filtered.length, n => companyFilter
     ? t(n === 1 ? 'applications.list.count_one_at_company' : 'applications.list.count_many_at_company', { n, company: companyFilter.name })
@@ -803,7 +810,7 @@ const renderDetails = async () => {
   }
   const [events, attachments] = await Promise.all([
     listEventsByApplication(detailsID),
-    listAttachmentsByParent('application', detailsID),
+    listAttachmentsByEntity('application', detailsID),
   ]);
   let companies = [];
   let people = [];

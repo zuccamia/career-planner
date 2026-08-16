@@ -38,7 +38,7 @@ func TestFirecrawlScrape(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(Config{Backend: BackendFirecrawl, BaseURL: server.URL, APIKey: "test-key"})
+	client, err := NewClient(Config{Provider: ProviderFirecrawl, BaseURL: server.URL, APIKey: "test-key"})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -49,8 +49,8 @@ func TestFirecrawlScrape(t *testing.T) {
 	if res.Markdown != "# Hello" {
 		t.Fatalf("markdown = %q", res.Markdown)
 	}
-	if res.Backend != BackendFirecrawl {
-		t.Fatalf("backend = %s", res.Backend)
+	if res.Provider != ProviderFirecrawl {
+		t.Fatalf("backend = %s", res.Provider)
 	}
 }
 
@@ -66,7 +66,7 @@ func TestFirecrawlMap(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, _ := NewClient(Config{Backend: BackendFirecrawl, BaseURL: server.URL, APIKey: "k"})
+	client, _ := NewClient(Config{Provider: ProviderFirecrawl, BaseURL: server.URL, APIKey: "k"})
 	res, err := client.Map(context.Background(), "https://acme.com", ScrapeOptions{})
 	if err != nil {
 		t.Fatalf("Map: %v", err)
@@ -89,7 +89,7 @@ func TestCrawl4AIScrape(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, _ := NewClient(Config{Backend: BackendCrawl4AI, BaseURL: server.URL})
+	client, _ := NewClient(Config{Provider: ProviderCrawl4AI, BaseURL: server.URL})
 	res, err := client.Scrape(context.Background(), "https://example.com", ScrapeOptions{})
 	if err != nil {
 		t.Fatalf("Scrape: %v", err)
@@ -97,8 +97,8 @@ func TestCrawl4AIScrape(t *testing.T) {
 	if res.Markdown != "# Hi" {
 		t.Fatalf("markdown = %q", res.Markdown)
 	}
-	if res.Backend != BackendCrawl4AI {
-		t.Fatalf("backend = %s", res.Backend)
+	if res.Provider != ProviderCrawl4AI {
+		t.Fatalf("backend = %s", res.Provider)
 	}
 }
 
@@ -119,7 +119,7 @@ func TestCrawl4AIMapExtractsSameDomainLinks(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, _ := NewClient(Config{Backend: BackendCrawl4AI, BaseURL: server.URL})
+	client, _ := NewClient(Config{Provider: ProviderCrawl4AI, BaseURL: server.URL})
 	res, err := client.Map(context.Background(), "https://acme.com", ScrapeOptions{})
 	if err != nil {
 		t.Fatalf("Map: %v", err)
@@ -146,7 +146,7 @@ func TestAPIErrorOnNon2xx(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, _ := NewClient(Config{Backend: BackendFirecrawl, BaseURL: server.URL, APIKey: "k"})
+	client, _ := NewClient(Config{Provider: ProviderFirecrawl, BaseURL: server.URL, APIKey: "k"})
 	_, err := client.Scrape(context.Background(), "https://example.com", ScrapeOptions{})
 	if err == nil {
 		t.Fatal("expected error")
@@ -194,8 +194,8 @@ func TestLoadConfigCrawl4AIOK(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
-	if cfg.Backend != BackendCrawl4AI {
-		t.Fatalf("backend = %s", cfg.Backend)
+	if cfg.Provider != ProviderCrawl4AI {
+		t.Fatalf("backend = %s", cfg.Provider)
 	}
 	if cfg.BaseURL != "http://localhost:11235" {
 		t.Fatalf("base url = %s", cfg.BaseURL)

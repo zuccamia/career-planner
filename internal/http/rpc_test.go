@@ -157,6 +157,99 @@ func TestRPCBuildDossierSuccess(t *testing.T) {
 	}
 }
 
+// TestRPCBuildDossierScrapesAndDiscoversWhenMissing exercises the server-LLM
+// entry point. Both handlers run the same scrape + ats.LookupATSURL block
+// inline, so this test locks in that rpcBuildDossier also does the scrape.
+func TestRPCBuildDossierScrapesAndDiscoversWhenMissing(t *testing.T) {
+	f := &fakeScraper{mapURLs: []string{"https://boards.greenhouse.io/acme"}}
+	s := serverWithScraper(f)
+	// A nil LLM client makes Build error out, but scrape/discover run
+	// before that — the test asserts they were called.
+	req := httptest.NewRequest("POST", "/", strings.NewReader(
+		`{"official_name":"Acme","website":"https://acme.example"}`))
+	rr := httptest.NewRecorder()
+	s.rpcBuildDossier(rr, req)
+	if got := f.scrapeCalls.Load(); got == 0 {
+		t.Errorf("expected Scrape on server-LLM path; got 0 calls")
+	}
+	if got := f.mapCalls.Load(); got == 0 {
+		t.Errorf("expected Map on server-LLM path; got 0 calls")
+	}
+}
+
+// ---------- rpcDossierScrape ----------
+
+// TestRPCDossierScrapeFillsMissingContent covers the BYOK-LLM path: browser
+// hits /api/dossiers/scrape for server-side scrape + ATS discovery.
+func TestRPCDossierScrapeFillsMissingContent(t *testing.T) {
+	f := &fakeScraper{mapURLs: []string{"https://boards.greenhouse.io/acme"}}
+	s := serverWithScraper(f)
+	req := httptest.NewRequest("POST", "/", strings.NewReader(
+		`{"website":"https://acme.example"}`))
+	rr := httptest.NewRecorder()
+	s.rpcDossierScrape(rr, req)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	if got := f.scrapeCalls.Load(); got == 0 {
+		t.Errorf("expected Scrape to fill enrichment; got 0 calls")
+	}
+	if got := f.mapCalls.Load(); got == 0 {
+		t.Errorf("expected Map to be called for ATS discovery; got 0 calls")
+	}
+	var body struct {
+		ATSURL         string `json:"ats_url"`
+		WebsiteContent string `json:"website_content"`
+	}
+	decodeBody(t, rr, &body)
+	if !strings.Contains(body.ATSURL, "boards.greenhouse.io/acme") {
+		t.Errorf("discovered ATS URL missing from response: %+v", body)
+	}
+	if !strings.Contains(body.WebsiteContent, "scraped:https://acme.example") {
+		t.Errorf("scraped website content missing: %+v", body)
+	}
+}
+
+// TestRPCDossierScrapePreservesPrescrapedContent asserts non-empty *_content
+// fields on the request survive round trip (browser BYOK scraper case).
+func TestRPCDossierScrapePreservesPrescrapedContent(t *testing.T) {
+	f := &fakeScraper{}
+	s := serverWithScraper(f)
+	body := map[string]any{
+		"website":         "https://acme.example",
+		"blog_url":        "https://acme.example/blog",
+		"ats_url":         "https://boards.greenhouse.io/acme",
+		"website_content": "prescraped-website",
+		"blog_content":    "prescraped-blog",
+		"careers_content": "prescraped-careers",
+	}
+	raw, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", "/", strings.NewReader(string(raw)))
+	rr := httptest.NewRecorder()
+	s.rpcDossierScrape(rr, req)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	if got := f.scrapeCalls.Load(); got != 0 {
+		t.Errorf("expected no scrapes when all content prefilled; got %d", got)
+	}
+	if got := f.mapCalls.Load(); got != 0 {
+		t.Errorf("expected no ATS discovery when ats_url supplied; got %d Map calls", got)
+	}
+}
+
+// TestRPCDossierScrapeNoScraper returns 503 so the browser can degrade gracefully.
+func TestRPCDossierScrapeNoScraper(t *testing.T) {
+	s := nilServer() // no scrape configured
+	req := httptest.NewRequest("POST", "/", strings.NewReader(
+		`{"website":"https://acme.example"}`))
+	rr := httptest.NewRecorder()
+	s.rpcDossierScrape(rr, req)
+	if rr.Code != nethttp.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rr.Code)
+	}
+}
+
 // ---------- rpcExtractJobDescription ----------
 
 func TestRPCExtractJobDescriptionBadJSON(t *testing.T) {

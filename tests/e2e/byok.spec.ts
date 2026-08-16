@@ -27,20 +27,20 @@ const mockProviderModels = async (page: Page, ok = true) => {
 };
 
 const fillAndTest = async (page: Page, key = 'sk-test-abcdef') => {
-  await page.locator('#byok-api-key').fill(key);
+  await page.locator('#llm-api-key').fill(key);
   // The scraper panel also has a "Test connection" button. Click the AI
   // panel's directly by id to disambiguate.
-  await page.locator('#btn-byok-test').click();
-  await expect(page.locator('#byok-test-result')).toContainText(/Reached provider/);
+  await page.locator('#btn-llm-test').click();
+  await expect(page.locator('#llm-test-result')).toContainText(/Reached provider/);
 };
 
 test.describe('local settings — AI provider (BYOK-only server)', () => {
   test('BYOK fields visible with sensible defaults and Save disabled', async ({ page }) => {
     await gotoSettings(page);
 
-    await expect(page.locator('#byok-fields')).toBeVisible();
-    await expect(page.locator('#byok-base-url')).toHaveValue('https://api.openai.com/v1');
-    await expect(page.locator('#byok-model')).toHaveValue('gpt-4o-mini');
+    await expect(page.locator('#llm-fields')).toBeVisible();
+    await expect(page.locator('#llm-base-url')).toHaveValue('https://api.openai.com/v1');
+    await expect(page.locator('#llm-model')).toHaveValue('gpt-4o-mini');
     await expect(page.getByRole('button', { name: 'Save AI provider settings' })).toBeDisabled();
   });
 
@@ -50,7 +50,7 @@ test.describe('local settings — AI provider (BYOK-only server)', () => {
     await fillAndTest(page);
     await expect(page.getByRole('button', { name: 'Save AI provider settings' })).toBeEnabled();
 
-    await page.locator('#byok-api-key').fill('sk-different');
+    await page.locator('#llm-api-key').fill('sk-different');
     await expect(page.getByRole('button', { name: 'Save AI provider settings' })).toBeDisabled();
   });
 
@@ -59,11 +59,11 @@ test.describe('local settings — AI provider (BYOK-only server)', () => {
     await gotoSettings(page);
     await fillAndTest(page);
     await page.getByRole('button', { name: 'Save AI provider settings' }).click();
-    await expect(page.locator('#byok-status')).toContainText(/gpt-4o-mini/);
+    await expect(page.locator('#llm-status')).toContainText(/gpt-4o-mini/);
 
     await page.reload();
     await expect(page.getByText('AI provider')).toBeVisible({ timeout: 30_000 });
-    await expect(page.locator('#byok-api-key')).toHaveValue('sk-test-abcdef');
+    await expect(page.locator('#llm-api-key')).toHaveValue('sk-test-abcdef');
     // Persisted config was previously tested → Save stays enabled on reload.
     await expect(page.getByRole('button', { name: 'Save AI provider settings' })).toBeEnabled();
 
@@ -152,21 +152,23 @@ test.describe('local settings — AI provider (server-side LLM available, mocked
 
   test('BYOK fields visible even when server-side LLM is available', async ({ page }) => {
     await gotoSettings(page);
-    await expect(page.locator('#byok-fields')).toBeVisible();
+    await expect(page.locator('#llm-fields')).toBeVisible();
   });
 
-  test('clear key wipes fields, disables Save, and clears status badge', async ({ page }) => {
+  test('clear key wipes fields, disables Save, and status badge falls back to server LLM', async ({ page }) => {
     await mockProviderModels(page);
     await gotoSettings(page);
     await fillAndTest(page);
     await page.getByRole('button', { name: 'Save AI provider settings' }).click();
-    await expect(page.locator('#byok-status')).toContainText(/gpt-4o-mini/);
+    await expect(page.locator('#llm-status')).toContainText(/gpt-4o-mini/);
 
     page.once('dialog', d => d.accept());
     // The scraper panel also has a "Clear key" button; scope to the AI one.
-    await page.locator('#btn-byok-clear').click();
-    await expect(page.locator('#byok-api-key')).toHaveValue('');
-    await expect(page.locator('#byok-status')).toBeEmpty();
+    await page.locator('#btn-llm-clear').click();
+    await expect(page.locator('#llm-api-key')).toHaveValue('');
+    // Server LLM is mocked as available, so clearing BYOK reveals the
+    // server-side model in the status badge rather than emptying it.
+    await expect(page.locator('#llm-status')).toContainText(/gpt-4o-mini/);
     await expect(page.getByRole('button', { name: 'Save AI provider settings' })).toBeDisabled();
   });
 });

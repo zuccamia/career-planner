@@ -16,7 +16,21 @@ import { refreshSidebarCounts } from './ui/sidebar_counts.mjs';
 import { refreshCurrentSnapshotBadge } from './ui/current_snapshot.mjs';
 import { refreshAiModeBadge } from './ui/ai_mode_badge.mjs';
 import { refreshScraperModeBadge } from './ui/scraper_mode_badge.mjs';
+import { refreshSearchModeBadge } from './ui/search_mode_badge.mjs';
+import { refreshStorageModeBadge } from './ui/storage_mode_badge.mjs';
+import { mountHeaderCTA } from './ui/header_cta.mjs';
 import { restoreAll } from './storage/index.mjs';
+
+// Any promise rejection that escapes the app's own catch blocks lands here.
+// Local-first means there's no server log, so at least the browser console
+// gets a labeled stack — enough for a user bug report and for devs correlating
+// the console trace to whatever cryptic English toast the entity layer surfaced.
+window.addEventListener('unhandledrejection', (ev) => {
+  console.error('[local] unhandled rejection:', ev.reason);
+});
+window.addEventListener('error', (ev) => {
+  console.error('[local] uncaught error:', ev.error || ev.message);
+});
 
 // Swap server-rendered [data-icon] placeholders (sidebar, quick-start buttons)
 // with SVGs from ui/icons.mjs. Runs immediately so the sidebar renders before
@@ -50,12 +64,17 @@ const boot = async () => {
     // queryPermission (also fast when the permission is still granted).
     await restoreAll();
 
-    // Populate sidebar entity counts. Page mounts also call this after
-    // create/delete via the shared helper.
-    refreshSidebarCounts().catch(err => console.warn('[local] sidebar counts', err));
-    refreshCurrentSnapshotBadge();
-    refreshAiModeBadge();
-    refreshScraperModeBadge();
+    // Populate sidebar entity counts + top-of-page badges + CTA. All fire in
+    // parallel — none blocks page mount. Each failure gets a labeled console
+    // warning, never propagates.
+    const safeCall = (label, fn) => fn().catch(err => console.warn(`[local] ${label}`, err));
+    safeCall('sidebar counts', refreshSidebarCounts);
+    safeCall('current snapshot badge', refreshCurrentSnapshotBadge);
+    safeCall('storage mode badge', refreshStorageModeBadge);
+    safeCall('ai mode badge', refreshAiModeBadge);
+    safeCall('scraper mode badge', refreshScraperModeBadge);
+    safeCall('search mode badge', refreshSearchModeBadge);
+    safeCall('header cta', mountHeaderCTA);
 
     const page = appEl.dataset.page;
     if (page === 'dashboard') {

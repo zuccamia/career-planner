@@ -12,47 +12,21 @@ import (
 )
 
 // GuessCandidate turns free-form user input into a probable canonical company
-// record for confirmation. Composed from BuildCandidatePrompt + FinalizeCandidate
-// so the BYOK path can call each half independently.
+// record for confirmation. Empty input or a nil LLM client returns a fallback
+// candidate populated from the input itself.
 func (s *Service) GuessCandidate(ctx context.Context, input, outputLanguage string) (Candidate, error) {
-	prompt, fallback, skip := s.BuildCandidatePrompt(input, outputLanguage)
-	if skip || s == nil || s.client == nil {
+	trimmed := strings.TrimSpace(input)
+	fallback := Candidate{OfficialName: trimmed}
+	if trimmed == "" || s == nil || s.client == nil {
 		return fallback, nil
 	}
+	set := llm.PickPromptSet(companyCandidatePrompts(), outputLanguage)
+	prompt := llm.Prompt{System: set.System, User: fmt.Sprintf(set.User, trimmed)}
 	var candidate Candidate
 	if err := s.client.GenerateJSON(ctx, prompt, &candidate); err != nil {
 		return fallback, err
 	}
-	return s.FinalizeCandidate(candidate, input), nil
-}
-
-// BuildCandidatePrompt assembles the LLM prompt for GuessCandidate along with
-// the fallback to return when the LLM should be skipped (empty input). skip=true
-// means the caller should return fallback without invoking the LLM.
-// outputLanguage selects the locale-specific prompt template; missing locales
-// fall back to English.
-func (s *Service) BuildCandidatePrompt(input, outputLanguage string) (llm.Prompt, Candidate, bool) {
-	trimmed := strings.TrimSpace(input)
-	fallback := Candidate{OfficialName: trimmed}
-	if trimmed == "" {
-		return llm.Prompt{}, fallback, true
-	}
-	set := llm.PickPromptSet(companyCandidatePrompts(), outputLanguage)
-	return llm.Prompt{
-		System: set.System,
-		User:   fmt.Sprintf(set.User, trimmed),
-	}, fallback, false
-}
-
-// FinalizeCandidate applies sanitization + fallback logic to a decoded LLM
-// candidate. Pure — no I/O. Runs on both hosted and BYOK paths.
-func (s *Service) FinalizeCandidate(candidate Candidate, input string) Candidate {
-	trimmed := strings.TrimSpace(input)
-	candidate = sanitizeCandidate(candidate, trimmed)
-	if candidate.OfficialName == "" {
-		candidate.OfficialName = trimmed
-	}
-	return candidate
+	return sanitizeCandidate(candidate, trimmed), nil
 }
 
 // sanitizeCandidate trims and URL-normalizes guessed company fields while preserving a fallback name.
