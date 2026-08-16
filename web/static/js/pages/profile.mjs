@@ -255,7 +255,7 @@ const renderOverviewFlat = async (el, overview) => {
           <div class="grid gap-2">
             <label class="${CLS.label}" for="ov-locations-input">${t('profile.field.locations.label')}</label>
             <div id="ov-locations-list">${locationsListHtml(overview?.locations || [])}</div>
-            <div class="${CLS.inlineRow}">
+            <div class="${CLS.responsiveRow}">
               <input id="ov-locations-input" type="text" placeholder="${t('profile.field.locations.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
               ${button({ id: 'btn-add-location', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
             </div>
@@ -264,7 +264,7 @@ const renderOverviewFlat = async (el, overview) => {
           <div class="grid gap-2">
             <label class="${CLS.label}" for="ov-tools-input">${t('profile.field.tools.label')}</label>
             <div id="ov-tools-list">${toolsListHtml(overview?.tools || [])}</div>
-            <div class="${CLS.inlineRow}">
+            <div class="${CLS.responsiveRow}">
               <input id="ov-tools-input" type="text" placeholder="${t('profile.tools.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
               ${button({ id: 'btn-add-tool', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
             </div>
@@ -326,7 +326,7 @@ const bragTagPillHtml = (tag) => {
 // can mark several sparks as equally top-tier. Default priority is 3
 // (middle) so the first spark added isn't automatically the top.
 const sparkInputHtml = () => `
-  <div class="${CLS.inlineRow}">
+  <div class="${CLS.responsiveRow}">
     <input id="spark-input" type="text" placeholder="${t('profile.sparks.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
     <select id="spark-priority" title="${t('profile.sparks.priority_title')}" class="${CLS.inputBase} w-24 shrink-0">
       <option value="1">${t('profile.sparks.priority.p1')}</option>
@@ -475,7 +475,7 @@ const skillPillHtml = (s, i) => {
 
 export const skillsEditorHtml = ({ mountId, skills = [] }) => `
   <div id="${mountId}" data-skills-editor class="space-y-3">
-    <div class="${CLS.inlineRow}">
+    <div class="${CLS.responsiveRow}">
       <input type="text" class="${CLS.inputBase} flex-1 min-w-0 js-skill-name" placeholder="${t('profile.skills.name_placeholder')}" autocomplete="off" />
       <input type="number" class="${CLS.inputBase} w-24 shrink-0 px-2 text-center js-skill-years"
              min="0" step="0.5" placeholder="${t('profile.skills.years_placeholder')}" title="${t('profile.skills.years_title')}" />
@@ -774,7 +774,7 @@ const mountBragEditor = async (companies) => {
       <form id="brag-form" class="space-y-4">
         <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('profile.brags.form.new_eyebrow') : t('profile.brags.form.edit_eyebrow')}</p>
-          <div class="${CLS.inlineRow}">
+          <div class="${CLS.rowInline}">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('common.action.save') })}
             ${button({ id: 'btn-close-brag', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
@@ -813,7 +813,7 @@ const mountBragEditor = async (companies) => {
           ${inlineError({ id: 'brag-tags-error' })}
           <div id="brag-tags-progress" class="hidden"></div>
           <div id="brag-tags-list"></div>
-          <div class="${CLS.inlineRow}">
+          <div class="${CLS.responsiveRow}">
             <input id="brag-tag-input" type="text" placeholder="${t('profile.brags.tags.placeholder')}" class="${CLS.inputBase} flex-1 min-w-0" autocomplete="off" />
             ${button({ id: 'btn-add-brag-tag', variant: 'secondaryCompact', icon: 'plus', label: t('common.action.add') })}
           </div>

@@ -107,12 +107,12 @@ const render = (root) => {
         </div>
         ${inlineError({ id: 'snapshot-error' })}
         <div class="${CLS.formRow}">
-          <label class="${CLS.inlineRow} text-sm text-ink-soft">
+          <label class="${CLS.responsiveRow} ${CLS.bodyText}">
             ${t('settings.snapshot.keep_last_prefix')}
             <input id="keep-count" type="number" min="1" value="5" class="${CLS.inputCompact}">
             ${t('settings.snapshot.keep_last_suffix')}
           </label>
-          <label class="${CLS.inlineRow} text-sm text-ink-soft">
+          <label class="${CLS.responsiveRow} ${CLS.bodyText}">
             ${t('settings.snapshot.label_field')}
             <input id="snapshot-label" type="text" placeholder="${t('settings.snapshot.label_placeholder')}" maxlength="40" class="${CLS.inputCompact}" style="width: 14rem">
           </label>
@@ -142,7 +142,7 @@ const render = (root) => {
             <input id="llm-model" type="text" placeholder="${DEFAULT_LLM_MODEL}" class="${CLS.input} mt-1">
           </label>
           ${byokAPIKeyRow({ domPrefix: 'llm', i18nPrefix: 'settings.ai', placeholder: 'sk-…', hasNote: true })}
-          <label class="${CLS.inlineRow} text-sm text-ink-soft">
+          <label class="${CLS.rowInline} ${CLS.bodyText}">
             <input id="llm-clear-on-signout" type="checkbox" class="h-4 w-4">
             <span>${t('settings.ai.field.clear_with_drive.label')}</span>
           </label>

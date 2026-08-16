@@ -175,7 +175,7 @@ const editorHtml = (app, companies, people) => {
       <form id="editor-form" class="space-y-5">
         <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('applications.form.new_eyebrow') : t('applications.form.edit_eyebrow')}</p>
-          <div class="${CLS.inlineRow}">
+          <div class="${CLS.rowInline}">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('applications.form.aria.create') : t('common.action.save_changes') })}
             ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
@@ -487,23 +487,20 @@ const detailsHtml = (a, events, attachments, { editing = false, companies = [], 
   const hasPerson = !!a.person_id;
   return `
     <div class="${CLS.slideOverBody}">
-      <header class="${CLS.panelHeadRow}">
-        <div class="${CLS.textCol}">
+      <header class="space-y-2">
+        <div class="flex items-center justify-between gap-3">
           ${fileStamp('application', a.id)}
-          <p class="${CLS.eyebrow}">${escapeHtml(a.company_name) || t('applications.details.unknown_company')}</p>
-          <div class="flex flex-wrap items-center gap-3">
-            ${panelTitle(a.role_title, hasURL
-              ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="hover:text-brand hover:underline">${escapeHtml(a.role_title)}</a>`
-              : '')}
-            <span class="${pillClass}">${escapeHtml(statusLabel(status))}</span>
+          <div class="${CLS.rowInline}">
+            ${button({ id: 'btn-details-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('applications.aria.edit') })}
+            ${button({ id: 'btn-details-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('applications.aria.delete', { label: a.role_title }) })}
+            ${button({ id: 'btn-details-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
           </div>
         </div>
-        <div class="${CLS.headActions}">
-          ${hasRaw || hasURL ? outputLanguageSelect('out-lang-extract-jd') : ''}
-          ${hasRaw || hasURL ? button({ id: 'btn-details-extract', icon: 'sparkles', label: t('applications.action.extract_description') }) : ''}
-          ${button({ id: 'btn-details-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('applications.aria.edit') })}
-          ${button({ id: 'btn-details-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('applications.aria.delete', { label: a.role_title }) })}
-          ${button({ id: 'btn-details-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
+        <div class="${CLS.textCol}">
+          <p class="${CLS.eyebrow}">${escapeHtml(a.company_name) || t('applications.details.unknown_company')}</p>
+          ${panelTitle(a.role_title, `${hasURL
+              ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="hover:text-brand hover:underline">${escapeHtml(a.role_title)}</a>`
+              : escapeHtml(a.role_title)} <span class="${pillClass} align-middle ml-1">${escapeHtml(statusLabel(status))}</span>`)}
         </div>
       </header>
 
@@ -513,6 +510,11 @@ const detailsHtml = (a, events, attachments, { editing = false, companies = [], 
       <div id="details-progress" class="hidden"></div>
 
       ${editing ? editorHtml(a, companies, people) : `
+      ${hasRaw || hasURL ? `
+      <div class="flex flex-wrap items-center justify-end gap-2">
+        ${outputLanguageSelect('out-lang-extract-jd')}
+        ${button({ id: 'btn-details-extract', icon: 'sparkles', label: t('applications.action.extract_description') })}
+      </div>` : ''}
       <form id="quick-status-form" class="${CLS.paperCard} grid gap-3 pt-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] sm:items-end">
         <div class="grid gap-2">
           <label class="${CLS.label}" for="quick-status">${t('applications.quickstatus.status.label')}</label>
@@ -530,7 +532,7 @@ const detailsHtml = (a, events, attachments, { editing = false, companies = [], 
           <label class="${CLS.label}" for="quick-notes">${t('applications.quickstatus.short_notes.label')}</label>
           <input class="${CLS.input}" id="quick-notes" name="notes" type="text" maxlength="255" placeholder="${t('applications.quickstatus.short_notes.placeholder')}">
         </div>
-        <div>
+        <div class="flex justify-end sm:block">
           ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('applications.action.update_status') })}
         </div>
       </form>

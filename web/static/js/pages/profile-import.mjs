@@ -56,7 +56,7 @@ const uploadHtml = () => `
 // via classList. Callers pass labelId (dynamic text via setStatus) or
 // staticLabel (baked in at render time).
 const spinnerRow = ({ id, labelId = '', staticLabel = '' }) => `
-  <div id="${id}" class="hidden ${CLS.inlineRow} ${CLS.bodyText}">
+  <div id="${id}" class="hidden ${CLS.responsiveRow} ${CLS.bodyText}">
     <span data-icon="loader" data-icon-size="4" class="animate-spin"></span>
     ${labelId
       ? `<span id="${labelId}"></span>`
@@ -182,7 +182,7 @@ export const renderImport = async (ctx) => {
   const { mountEl, onExit } = ctx;
   mountEl.innerHTML = `
     <div class="space-y-6">
-      <header class="${CLS.panelHeadRow}">
+      <header class="flex items-start justify-between gap-3">
         <div class="${CLS.textCol}">
           ${panelTitle(t('page.profile_import.title'))}
           <p class="${CLS.bodyText}">${escapeHtml(t('profile_import.subtitle'))}</p>

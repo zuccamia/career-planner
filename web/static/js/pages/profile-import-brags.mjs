@@ -63,7 +63,7 @@ const candidateCardHtml = (candidate, idx, similar, companies) => {
   const yearValue = candidate.entry_year ? String(candidate.entry_year) : '';
   return `
     <article class="${CLS.card}" data-brag-idx="${idx}">
-      <label class="${CLS.inlineRow}">
+      <label class="${CLS.responsiveRow}">
         <input type="checkbox" data-brag-select${similar?.match ? '' : ' checked'} class="${CLS.checkbox}">
         <input type="text" data-brag-field="title" value="${escapeHtml(candidate.title)}"
                class="${CLS.input} font-semibold" aria-label="${escapeHtml(t('profile_import.brags.field.title'))}">

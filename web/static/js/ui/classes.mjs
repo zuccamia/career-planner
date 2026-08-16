@@ -54,7 +54,7 @@ export const CLS = {
   // Compact control row: stacks on mobile to avoid viewport overflow for
   // input + button combinations, then switches back to a horizontal row on
   // ≥sm screens for denser desktop layouts.
-  inlineRow:            'flex flex-col items-stretch gap-2 sm:flex-row sm:items-center',
+  responsiveRow:            'flex flex-col items-stretch gap-2 sm:flex-row sm:items-center',
   gridTwoCol:           'grid sm:grid-cols-2',
   checkbox:             'h-4 w-4 rounded border-line-strong text-brand focus:ring-brand',
   warningBanner:        'rounded-2xl border border-brass/30 bg-brass-tint px-4 py-3 text-sm text-brass',
@@ -68,6 +68,7 @@ export const CLS = {
   softRow:              'rounded-2xl bg-paper px-4 py-3',
   entryRow:             'flex items-start gap-3 rounded-xl bg-paper px-3 py-2',
   formHeadRow:          'flex items-baseline justify-between',
+  rowInline:            'flex items-center gap-2',
   eyebrowFaint:         'text-xs font-semibold uppercase tracking-[0.14em] text-ink-faint',
   divider:              'divide-y divide-line',
   chipRow:              'flex flex-wrap gap-2',
@@ -78,8 +79,8 @@ export const CLS = {
   chipRowInline:        'flex flex-wrap items-center gap-2',
   pageHeadRow:          'flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between',
   cardHeadRow:          'flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between',
-  panelHeadRow:         'flex items-start justify-between gap-4',
-  headActions:          'flex shrink-0 items-center gap-2',
+  panelHeadRow:         'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4',
+  headActions:          'flex flex-wrap shrink-0 items-center gap-2',
   dividerTop:           'border-t border-line pt-4',
   hairline:             'border-b border-line',
   dot:                  'inline-block h-2 w-2 rounded-full',

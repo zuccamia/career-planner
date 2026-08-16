@@ -134,7 +134,7 @@ const editorHtml = (person, companies) => {
       <form id="editor-form" class="space-y-5">
         <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('people.form.new_eyebrow') : t('people.form.edit_eyebrow')}</p>
-          <div class="${CLS.inlineRow}">
+          <div class="${CLS.rowInline}">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('people.form.aria.create') : t('common.action.save_changes') })}
             ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
@@ -211,19 +211,20 @@ const threadsHeaderHtml = (person) => {
     ? `<a href="${escapeHtml(social)}" target="_blank" rel="noopener noreferrer" class="hover:text-brand hover:underline">${escapeHtml(person.full_name)}</a>`
     : '';
   return `
-  <header class="${CLS.panelHeadRow}">
-    <div class="${CLS.textCol}">
+  <header class="space-y-2">
+    <div class="flex items-center justify-between gap-3">
       ${fileStamp('person', person.id)}
+      <div class="${CLS.rowInline}">
+        ${button({ id: 'btn-person-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('people.aria.edit') })}
+        ${button({ id: 'btn-threads-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('people.aria.delete', { name: person.full_name }) })}
+        ${button({ id: 'btn-threads-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
+      </div>
+    </div>
+    <div class="${CLS.textCol}">
       ${panelTitle(person.full_name, nameHtml)}
       ${person.title || person.company_name ? metaText(
         `${person.title || ''}${person.title && person.company_name ? '  ·  ' : ''}${person.company_name || ''}`,
       ) : ''}
-    </div>
-    <div class="${CLS.headActions}">
-      ${button({ id: 'btn-new-thread', icon: 'plus', variant: 'primaryCompact', label: t('people.action.new_thread'), ariaLabel: t('people.aria.add_thread') })}
-      ${button({ id: 'btn-person-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('people.aria.edit') })}
-      ${button({ id: 'btn-threads-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('people.aria.delete', { name: person.full_name }) })}
-      ${button({ id: 'btn-threads-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
     </div>
   </header>
   ${inlineError({ id: 'threads-error' })}
@@ -250,7 +251,7 @@ const threadFormHtml = ({ mode, initial = {} }) => {
   <form id="${formId}" class="${CLS.paperCard} space-y-3">
     <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t(eyebrowKey)}</p>
-      <div class="${CLS.inlineRow}">
+      <div class="${CLS.rowInline}">
         ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t(saveAria) })}
         ${button({ id: cancelId, variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t(cancelAria) })}
       </div>
@@ -355,7 +356,7 @@ const threadDetailHtml = (thread, entries) => `
         ${button({ id: 'btn-new-entry', variant: 'primaryCompact', icon: 'plus', label: t('people.action.new_entry'), ariaLabel: t('people.aria.add_entry') })}
         ${button({ id: 'btn-generate-outreach', variant: 'secondaryCompact', icon: 'sparkles', label: t('people.action.draft_outreach') })}
         ${button({ id: 'btn-generate-reply', variant: 'secondaryCompact', icon: 'sparkles', label: t('people.action.draft_reply') })}
-        <div class="inline-${CLS.inlineRow}">
+        <div class="${CLS.rowInline}">
           ${outputLanguageSelect('out-lang-summary')}
           ${button({ id: 'btn-summarize', variant: 'secondaryCompact', icon: 'sparkles', label: thread.summary ? t('people.action.resummarize') : t('people.action.summarize') })}
         </div>
@@ -389,7 +390,7 @@ const newEntryFormHtml = () => `
   <form id="new-entry-form" class="space-y-3 rounded-xl border border-line bg-surface p-3">
     <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('people.entry_form.new_eyebrow')}</p>
-      <div class="${CLS.inlineRow}">
+      <div class="${CLS.rowInline}">
         ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.create_entry') })}
         ${button({ id: 'btn-cancel-new-entry', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('people.aria.cancel_new_entry') })}
       </div>
@@ -420,7 +421,7 @@ const draftPanelHtml = (goal, message) => `
   <div class="space-y-3 rounded-xl border border-brand/20 bg-brand-tint/40 p-3">
     <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('people.draft.eyebrow', { goal })}</p>
-      <div class="${CLS.inlineRow}">
+      <div class="${CLS.rowInline}">
         ${button({ id: 'btn-save-draft', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.save_draft_entry') })}
         ${button({ id: 'btn-discard-draft', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('people.aria.discard_draft') })}
       </div>
@@ -664,6 +665,9 @@ const renderThreadsList = async () => {
     <div class="${CLS.slideOverBody}">
       ${threadsHeaderHtml(openThreadsPerson)}
       ${applicationsSectionHtml(apps, openThreadsPerson.id)}
+      <div class="flex justify-end">
+        ${button({ id: 'btn-new-thread', icon: 'plus', variant: 'primaryCompact', label: t('people.action.new_thread'), ariaLabel: t('people.aria.add_thread') })}
+      </div>
       <div id="new-thread-container"></div>
       <div id="thread-list">${threadListHtml(threads, openThreadID)}</div>
     </div>
@@ -703,8 +707,8 @@ const renderPersonEditorInPanel = async () => {
 };
 
 const wireThreadsPanel = () => {
-  document.getElementById('btn-threads-close').addEventListener('click', closeThreads);
-  document.getElementById('btn-new-thread').addEventListener('click', openNewThreadForm);
+  document.getElementById('btn-threads-close')?.addEventListener('click', closeThreads);
+  document.getElementById('btn-new-thread')?.addEventListener('click', openNewThreadForm);
   document.getElementById('btn-person-edit')?.addEventListener('click', () => {
     if (!openThreadsPerson) return;
     renderPersonEditorInPanel();
@@ -984,6 +988,7 @@ const renderDraftPanel = (threadID, goal, message) => {
   const panel = document.getElementById('draft-panel');
   panel.classList.remove('hidden');
   panel.innerHTML = draftPanelHtml(goal, message);
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   document.getElementById('btn-discard-draft').addEventListener('click', () => {
     panel.classList.add('hidden');

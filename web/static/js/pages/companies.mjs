@@ -67,7 +67,7 @@ const editorHtml = (company) => {
       <form id="editor-form" class="space-y-5">
         <div class="${CLS.formHeadRow}">
           <p class="${CLS.eyebrow}">${isNew ? t('companies.form.new_eyebrow') : t('companies.form.edit_eyebrow')}</p>
-          <div class="${CLS.inlineRow}">
+          <div class="${CLS.rowInline}">
             ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: isNew ? t('companies.form.aria.create') : t('common.action.save_changes') })}
             ${button({ id: 'btn-cancel', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.cancel') })}
           </div>
@@ -78,12 +78,14 @@ const editorHtml = (company) => {
 
         <div class="grid gap-2">
           <label class="${CLS.label}" for="official_name">${t('companies.field.official_name.label')}</label>
-          <div class="flex gap-2">
+          <div class="flex flex-col gap-2 sm:flex-row">
             <input id="official_name" name="official_name" type="text" required
                    value="${escapeHtml(c.official_name)}" placeholder="${t('companies.field.official_name.placeholder')}"
-                   class="${CLS.input}">
-            ${outputLanguageSelect('out-lang-company-candidate')}
-            ${button({ id: 'btn-lookup', variant: 'secondaryCompact', icon: 'search', label: t('companies.action.lookup'), extraClass: 'whitespace-nowrap' })}
+                   class="${CLS.input} sm:flex-1">
+            <div class="flex items-end gap-2">
+              ${outputLanguageSelect('out-lang-company-candidate')}
+              ${button({ id: 'btn-lookup', variant: 'secondaryCompact', icon: 'search', label: t('companies.action.lookup'), extraClass: 'whitespace-nowrap' })}
+            </div>
           </div>
           ${helpText(t('companies.field.official_name.help'))}
         </div>
@@ -323,17 +325,19 @@ const dossierHtml = (company, { editing = false, apps = [], people = [] } = {}) 
     .some(k => (stacks[k] || []).length);
   return `
     <div class="${CLS.slideOverBody}">
-      <header class="${CLS.panelHeadRow}">
-        <div class="${CLS.textCol}">
+      <header class="space-y-2">
+        <div class="flex items-center justify-between gap-3">
           ${fileStamp('company', company.id)}
+          <div class="${CLS.rowInline}">
+            ${button({ id: 'btn-dossier-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('companies.aria.edit') })}
+            ${button({ id: 'btn-dossier-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('companies.aria.delete', { name: company.official_name }) })}
+            ${button({ id: 'btn-dossier-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
+          </div>
+        </div>
+        <div class="${CLS.textCol}">
           ${panelTitle(company.official_name, company.website
             ? `<a href="${escapeHtml(company.website)}" target="_blank" rel="noopener noreferrer" class="hover:text-brand hover:underline">${escapeHtml(company.official_name)}</a>`
             : '')}
-        </div>
-        <div class="${CLS.headActions}">
-          ${button({ id: 'btn-dossier-edit', variant: 'icon', icon: 'edit', iconOnly: true, ariaLabel: t('companies.aria.edit') })}
-          ${button({ id: 'btn-dossier-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('companies.aria.delete', { name: company.official_name }) })}
-          ${button({ id: 'btn-dossier-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
         </div>
       </header>
 

@@ -131,15 +131,17 @@ const panelHtml = (resume, pdfList) => {
   const isTypst = resume.format === 'typ';
   return `
     <div class="${CLS.slideOverBody}">
-      <header class="${CLS.panelHeadRow}">
-        <div class="${CLS.textCol}">
-          ${isNew ? '' : fileStamp('resume', resume.id)}
-          ${panelTitle(resume.title || t('profile.resumes.untitled'))}
-          <p class="${CLS.eyebrow}">${escapeHtml(eyebrow)}</p>
+      <header class="space-y-2">
+        <div class="flex items-center justify-between gap-3">
+          ${isNew ? '<span></span>' : fileStamp('resume', resume.id)}
+          <div class="${CLS.rowInline}">
+            ${isNew ? '' : button({ id: 'btn-resume-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('common.action.delete') })}
+            ${button({ id: 'btn-resume-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
+          </div>
         </div>
-        <div class="${CLS.headActions}">
-          ${isNew ? '' : button({ id: 'btn-resume-delete', variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('common.action.delete') })}
-          ${button({ id: 'btn-resume-close', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('common.action.close') })}
+        <div class="${CLS.textCol}">
+          ${isNew ? '' : panelTitle(resume.title || t('profile.resumes.untitled'))}
+          <p class="${CLS.eyebrow}">${escapeHtml(eyebrow)}</p>
         </div>
       </header>
 
@@ -147,7 +149,7 @@ const panelHtml = (resume, pdfList) => {
 
       <section class="space-y-4">
         <div class="${CLS.chipRowInline}">
-          ${badge({ label: isTypst ? t('profile.resumes.format.typst') : t('profile.resumes.format.markdown'), color: isTypst ? 'violet' : 'slate', size: 'xs' })}
+          ${isNew ? '' : badge({ label: isTypst ? t('profile.resumes.format.typst') : t('profile.resumes.format.markdown'), color: isTypst ? 'violet' : 'slate', size: 'xs' })}
           ${resume.is_primary ? badge({ label: t('profile.resumes.primary'), color: 'emerald', size: 'xs' }) : ''}
           ${isNew ? '' : `<span class="${CLS.metaText}">${escapeHtml(t('common.updated_at', { date: formatDate(resume.updated_at) }))}</span>`}
         </div>
@@ -155,14 +157,22 @@ const panelHtml = (resume, pdfList) => {
           ${formField({ type: 'text', name: 'res-title', label: t('profile.resumes.field.title.label'),
                         value: resume.title || '', required: true,
                         placeholder: t('profile.resumes.field.title.placeholder') })}
-          <label class="${CLS.inlineRow}">
+          ${isNew ? `
+          <div class="grid gap-2">
+            <label class="${CLS.label}" for="res-format">${escapeHtml(t('profile.resumes.field.format.label'))}</label>
+            <select id="res-format" class="${CLS.select}">
+              <option value="typ" selected>${escapeHtml(t('profile.resumes.format.typst'))}</option>
+              <option value="md">${escapeHtml(t('profile.resumes.format.markdown'))}</option>
+            </select>
+          </div>` : ''}
+          <label class="${CLS.rowInline}">
             <input type="checkbox" id="res-primary" class="${CLS.checkbox}"${resume.is_primary ? ' checked' : ''}>
             <span class="${CLS.label}">${escapeHtml(t('profile.resumes.field.primary.label'))}</span>
           </label>
         </form>
       </section>
 
-      ${attachedListHtml(pdfList)}
+      ${isNew ? '' : attachedListHtml(pdfList)}
 
       <section class="space-y-2">
         ${subheadTitle(t('profile.resumes.field.source.label'))}
@@ -171,7 +181,7 @@ const panelHtml = (resume, pdfList) => {
                   placeholder="${escapeHtml(t('profile.resumes.field.source.placeholder'))}">${escapeHtml(resume.body || '')}</textarea>
         <div class="${CLS.actionRowEnd}">
           ${button({ id: 'btn-resume-render', variant: 'secondaryCompact', icon: 'document', label: t('profile.resumes.action.render') })}
-          ${button({ id: 'btn-resume-save', variant: 'primaryCompact', icon: 'check', label: t('common.action.save') })}
+          ${button({ id: 'btn-resume-save', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('common.action.save') })}
         </div>
         <span id="resume-panel-status" class="${CLS.helpText}"></span>
       </section>
@@ -220,12 +230,11 @@ const setStatus = (msg) => {
   if (el) el.textContent = msg || '';
 };
 
-// Format is not editable here — inherited from the row being opened, or
-// defaults to `typ` for a brand-new résumé (the format the preview flow is
-// built around).
+// Format is picked in create mode via #res-format (Typst/Markdown); in edit
+// mode it's inherited from the row being opened.
 const readForm = () => ({
   title: document.getElementById('res-title')?.value?.trim() || '',
-  format: currentResume?.format || 'typ',
+  format: document.getElementById('res-format')?.value || currentResume?.format || 'typ',
   body: document.getElementById('res-body')?.value || '',
   isPrimary: document.getElementById('res-primary')?.checked || false,
 });
@@ -394,6 +403,10 @@ const wire = () => {
   document.getElementById('btn-resume-download')?.addEventListener('click', () => downloadPdf());
   document.getElementById('btn-resume-attach')?.addEventListener('click', () => attachToApplication());
   document.getElementById('res-body')?.addEventListener('input', syncActionButtons);
+  document.getElementById('res-format')?.addEventListener('change', (ev) => {
+    const preview = document.getElementById('resume-panel-preview');
+    if (preview) preview.classList.toggle('hidden', ev.target.value !== 'typ');
+  });
   syncActionButtons();
 };
 

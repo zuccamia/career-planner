@@ -15,7 +15,7 @@ import { t } from '../i18n.mjs';
 
 export const byokSectionHeader = ({ domPrefix, i18nPrefix }) => `
   <header class="space-y-1">
-    <div class="${CLS.inlineRow}">
+    <div class="${CLS.responsiveRow}">
       <p class="${CLS.eyebrow}">${t(`${i18nPrefix}.eyebrow`)}</p>
       <span id="${domPrefix}-status"></span>
     </div>
@@ -47,7 +47,7 @@ export const byokAPIKeyRow = ({ domPrefix, i18nPrefix, placeholder, hasNote = fa
   <label class="block ${CLS.bodyText}">
     ${t(`${i18nPrefix}.field.api_key.label`)}
     ${hasNote ? `<span class="ml-1 ${CLS.helpText}">${t(`${i18nPrefix}.field.api_key.note`)}</span>` : ''}
-    <div class="mt-1 ${CLS.inlineRow}">
+    <div class="mt-1 ${CLS.responsiveRow}">
       <input id="${domPrefix}-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(placeholder)}" class="${CLS.input} flex-1">
       ${button({ id: `btn-${domPrefix}-reveal`, variant: 'icon', icon: 'eye', iconOnly: true, ariaLabel: t(`${i18nPrefix}.field.api_key.show`) })}
     </div>

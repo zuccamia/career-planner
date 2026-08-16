@@ -76,7 +76,7 @@ export const emptyDash = () => `<p class="text-sm ${CLS.placeholder}">—</p>`;
 // Uses tight vertical rhythm (space-y-1) so a list of 3–4 lines feels dense
 // against the section header above it.
 export const bulletList = (items) =>
-  `<ul class="list-disc space-y-1 pl-5 text-sm text-ink-soft">${
+  `<ul class="list-disc space-y-1 pl-5 text-sm text-ink-soft break-words">${
     items.map(v => `<li>${escapeHtml(v)}</li>`).join('')
   }</ul>`;
 
@@ -103,7 +103,7 @@ export const outputLanguageSelect = (id) => {
     `<option value="${code}"${code === active ? ' selected' : ''}>${localeDisplayName(code)}</option>`,
   ).join('');
   return `
-    <label class="${CLS.inlineRow} ${CLS.helpText}">
+    <label class="${CLS.responsiveRow} ${CLS.helpText}">
       <span>${t('common.output_language')}</span>
       <select id="${id}" class="${CLS.inputBase} py-1.5 pl-2 pr-7 text-xs">${options}</select>
     </label>
@@ -174,7 +174,7 @@ export const logPanel = ({ id }) =>
 
 // Narrative body paragraph — soft ink, preserves whitespace (LLM output).
 export const narrativeText = (text) =>
-  `<p class="text-sm text-ink-soft whitespace-pre-wrap">${escapeHtml(text)}</p>`;
+  `<p class="text-sm text-ink-soft whitespace-pre-wrap break-words">${escapeHtml(text)}</p>`;
 
 // Small caption/help paragraph. For inline `<span>` variants or complex mixed
 // content, keep using `<p class="${CLS.helpText}">…</p>` directly.

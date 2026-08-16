@@ -86,7 +86,7 @@ const renderOverviewPills = () => {
 
 const overviewFieldRow = ({ key, label, checked, currentValue, control }) => `
   <div class="space-y-1" data-ov-row="${key}">
-    <label class="${CLS.inlineRow}">
+    <label class="${CLS.responsiveRow}">
       <input type="checkbox" data-ov-select="${key}"${checked ? ' checked' : ''} class="${CLS.checkbox}">
       <span class="${CLS.label}">${escapeHtml(label)}</span>
     </label>

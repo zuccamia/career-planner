@@ -93,7 +93,7 @@ const searchInBrowser = async (signals, req) => {
             title: h.title,
             content: h.content,
             engine: h.engine,
-            published_at: h.publishedAt || '',
+            ...(h.publishedAt ? { published_at: h.publishedAt } : {}),
           })),
         };
       } catch (err) {

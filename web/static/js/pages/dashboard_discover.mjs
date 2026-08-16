@@ -172,7 +172,7 @@ const cardHtml = (rec, idx) => {
           <h3 class="${CLS.cardTitle}">${escapeHtml(rec.title)}</h3>
           <p class="${CLS.bodyText}">${escapeHtml(rec.company || '—')}${host ? ` · <span class="${CLS.metaText}">${escapeHtml(host)}</span>` : ''}</p>
         </div>
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="${CLS.rowInline} flex-shrink-0">
           ${lowConfidenceBadge}
           <span class="${CLS.tagPill}">${escapeHtml(t('discover.match_score', { n: score }))}</span>
         </div>
