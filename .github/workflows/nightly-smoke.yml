@@ -1,0 +1,23 @@
+name: weekly-smoke
+
+# Hits real ATS provider URLs to catch response-shape / URL-scheme drift
+# within ~7 days. The default suite doesn't touch these — they run only under
+# `-tags=smoke`. When a URL 404s, the anchor posting was filled/removed:
+# swap it in internal/sources/ats/smoke_test.go. Response-shape errors
+# usually mean a parser needs updating.
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # 08:00 UTC every Monday
+  workflow_dispatch:     # manual trigger from the Actions tab
+
+jobs:
+  ats-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Run ATS smoke tests
+        run: go test -tags=smoke -v -timeout=5m ./internal/sources/ats/...

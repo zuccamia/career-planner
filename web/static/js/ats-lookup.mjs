@@ -9,6 +9,9 @@ import { hostOf } from './fetch-helpers.mjs';
 import { fetchPosting as greenhouseFetch, supports as greenhouseSupports } from './sources/ats/greenhouse.mjs';
 import { fetchPosting as leverFetch, supports as leverSupports } from './sources/ats/lever.mjs';
 import { fetchPosting as ashbyFetch, supports as ashbySupports } from './sources/ats/ashby.mjs';
+import { supports as eightfoldSupports } from './sources/ats/eightfold.mjs';
+import { supports as smartRecruitersSupports } from './sources/ats/smartrecruiters.mjs';
+import { supports as workableSupports } from './sources/ats/workable.mjs';
 
 const PROVIDERS_URL = `${STATIC_ROOT}data/ats-providers.json`;
 
@@ -29,6 +32,7 @@ const loadProviders = () => {
       hostRegex: new RegExp(p.host_pattern, 'i'),
       searchHosts: p.search_hosts || [],
       slugInPath: !!p.slug_in_path,
+      deadMarkers: p.dead_markers || [],
     })))
     .catch((err) => {
       providersPromise = null;
@@ -102,20 +106,47 @@ export const fetchATSPosting = async (url) => {
 
 // Providers that ship a browser-side structured extractor. Anything else
 // in ats-providers.json has host_pattern but no fetcher, so we can't
-// triage their URLs beyond the generic fallback.
-const STRUCTURED_PROVIDERS = new Set(['greenhouse', 'lever', 'ashby']);
+// triage their URLs beyond the segment-count heuristic.
+const STRUCTURED_PROVIDERS = new Set(['greenhouse', 'lever', 'ashby', 'eightfold', 'smartrecruiters', 'workable']);
 
-// isATSLandingPage mirrors ats.Registry.IsLandingPage: URL is on a host
-// served by one of STRUCTURED_PROVIDERS but no supports() matches — i.e.
-// tenant landing page, not a specific posting. Pre-filters use this to
-// skip URLs that would only fetch to a 404.
+const supportsSpecificPosting = (rawURL) =>
+  greenhouseSupports(rawURL) || leverSupports(rawURL) ||
+  ashbySupports(rawURL) || eightfoldSupports(rawURL) ||
+  smartRecruitersSupports(rawURL) || workableSupports(rawURL);
+
+// deadMarkersForURL mirrors ats.DeadMarkersForHost — returns the body
+// substrings whose presence signals a removed posting (SPA hosts whose dead
+// pages return HTTP 200: startup.jobs, google-careers, etc.). Empty array
+// when the host has no registered markers.
+export const deadMarkersForURL = async (rawURL) => {
+  if (!rawURL) return [];
+  let u;
+  try { u = new URL(String(rawURL).trim()); } catch { return []; }
+  const host = u.hostname.toLowerCase();
+  const providers = await loadProviders();
+  const matched = providers.find((p) => p.hostRegex.test(host));
+  return matched?.deadMarkers?.length ? matched.deadMarkers : [];
+};
+
+// isATSLandingPage mirrors ats.Registry.IsLandingPage. Two cases:
+//   - Host matches a structured provider but no supports() matches → landing
+//     (e.g. boards.greenhouse.io/acme).
+//   - Host matches a registered slug_in_path provider and the URL path has
+//     fewer than 2 non-empty segments → landing (e.g. apply.workable.com/acme/
+//     vs .../acme/j/CODE).
+// Pre-filters use this to skip URLs that would only fetch to a 404.
 export const isATSLandingPage = async (rawURL) => {
   if (!rawURL) return false;
   let u;
   try { u = new URL(String(rawURL).trim()); } catch { return false; }
   const host = u.hostname.toLowerCase();
   const providers = await loadProviders();
-  const hostKnown = providers.some((p) => STRUCTURED_PROVIDERS.has(p.provider) && p.hostRegex.test(host));
-  if (!hostKnown) return false;
-  return !(greenhouseSupports(rawURL) || leverSupports(rawURL) || ashbySupports(rawURL));
+  const matched = providers.find((p) => p.hostRegex.test(host));
+  if (!matched) return false;
+  if (STRUCTURED_PROVIDERS.has(matched.provider)) {
+    return !supportsSpecificPosting(rawURL);
+  }
+  if (!matched.slugInPath) return false;
+  const segments = u.pathname.split('/').filter(Boolean).length;
+  return segments < 2;
 };

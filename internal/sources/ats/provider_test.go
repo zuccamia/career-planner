@@ -94,6 +94,17 @@ func TestRegistryIsLandingPage(t *testing.T) {
 		"ashby landing":                                        {"https://jobs.ashbyhq.com/acme", true},
 		"non-ATS host (workable — no structured parser):":      {"https://apply.workable.com/co/j/xyz", false},
 		"totally unrelated host":                               {"https://example.com/careers", false},
+
+		// Slug-in-path segment-count branch: fires for registered hosts that
+		// don't have a structured extractor in the registry under test. Real
+		// posting shapes carry ≥2 non-empty path segments; landing shapes
+		// (tenant-only, or post-redirect ?not_found=true) carry <2.
+		"workable landing (tenant only)":                       {"https://apply.workable.com/acme", true},
+		"workable landing (trailing slash)":                    {"https://apply.workable.com/acme/", true},
+		"workable landing (post-redirect not_found)":           {"https://apply.workable.com/acme/?not_found=true", true},
+		"workable posting shape (three path segments)":         {"https://apply.workable.com/acme/j/CODE", false},
+		"smartrecruiters landing":                              {"https://jobs.smartrecruiters.com/acme", true},
+		"smartrecruiters specific posting":                     {"https://jobs.smartrecruiters.com/acme/7440-role-slug", false},
 	}
 	for name, tc := range cases {
 		if got := reg.IsLandingPage(tc.url); got != tc.want {

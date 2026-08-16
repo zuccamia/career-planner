@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/zuccamia/career-planner/internal/sources/llm"
+	"github.com/zuccamia/career-planner/internal/util"
 )
 
 const (
@@ -91,10 +92,7 @@ func (s *Service) rankPostings(ctx context.Context, req DiscoverRequest, posting
 		if r.MatchScore > maxMatchScore {
 			r.MatchScore = maxMatchScore
 		}
-		company := strings.TrimSpace(r.Company)
-		if company == "" {
-			company = origin.Company
-		}
+		company := util.FirstNonEmpty(strings.TrimSpace(r.Company), origin.Company, companyFromURL(url))
 		cleaned = append(cleaned, Recommendation{
 			Title:      title,
 			Company:    company,

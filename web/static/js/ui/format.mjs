@@ -37,6 +37,17 @@ export const initials = (name) => (name || '')
   .map(w => w[0].toUpperCase())
   .join('');
 
+// prettifySlug: "high-agency-labs" → "High Agency Labs"; already-capitalized
+// slugs are left alone so acronyms stay upper. Mirrors ats.PrettifySlug in
+// internal/sources/ats/providers.go for URL-slug → company-name display.
+export const prettifySlug = (s) => {
+  const cleaned = (s || '').replace(/[-_]/g, ' ').trim();
+  if (!cleaned) return '';
+  return cleaned.split(/\s+/).map(w => (
+    w && w === w.toLowerCase() ? w[0].toUpperCase() + w.slice(1) : w
+  )).join(' ');
+};
+
 // resumePdfFilename builds the download filename. Resume titles typically
 // encode the target ("Company - Role"), so the title acts as the version
 // differentiator; the YYMMDD stamp at the end is a lightweight audit trail

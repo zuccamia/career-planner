@@ -2,8 +2,8 @@ package discover
 
 import (
 	"context"
-	"errors"
 	"log"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -16,11 +16,34 @@ import (
 type ATSFetcher interface {
 	HasSupportingProvider(rawURL string) bool
 	IsLandingPage(rawURL string) bool
+	ResolvesToLandingPage(ctx context.Context, rawURL string) bool
 	Fetch(ctx context.Context, rawURL string) (ats.Posting, error)
 }
 
 // extractConcurrency matches the JS mirror; stays under provider rate limits.
 const extractConcurrency = 5
+
+// companyFromURL derives a display name from the URL's tenant slug for
+// slug_in_path providers when structured extraction and the LLM both leave
+// Company empty. Non-slug_in_path hosts don't get a URL-based guess — that
+// used to fire wrong labels for Workday/Google/MS/internal-ATS URLs; those
+// paths return "" and let the LLM or the user's own edit fill it in.
+func companyFromURL(rawURL string) string {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || u.Hostname() == "" {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	_, slugInPath, ok := ats.LookupHost(host)
+	if !ok || !slugInPath {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	return ats.PrettifySlug(parts[0])
+}
 
 // extractPostings turns raw search hits into JobPostings. budget targets
 // SURVIVORS, not attempts — gone URLs cost a fetch slot but not a budget
@@ -69,6 +92,13 @@ func extractEach(ctx context.Context, h SearchHit, atsReg ATSFetcher) (JobPostin
 		log.Printf("discover: dropped gone posting (dead-marker) url=%s", h.URL)
 		return JobPosting{URL: h.URL}, true
 	}
+	// Catches hosts that 302 removed postings to a tenant landing page
+	// (Workable → `/{tenant}/?not_found=true`). Cheap URL-shape check already
+	// ran in preFilterHits; this one follows redirects and re-checks.
+	if atsReg != nil && atsReg.ResolvesToLandingPage(ctx, h.URL) {
+		log.Printf("discover: dropped gone posting (resolves-to-landing) url=%s", h.URL)
+		return JobPosting{URL: h.URL}, true
+	}
 	if atsReg != nil && atsReg.HasSupportingProvider(h.URL) {
 		posting, err := atsReg.Fetch(ctx, h.URL)
 		if err == nil && strings.TrimSpace(posting.Title) != "" {
@@ -85,15 +115,14 @@ func extractEach(ctx context.Context, h SearchHit, atsReg ATSFetcher) (JobPostin
 				PostedAt:       util.CoalesceTime(posting.PostedAt, h.PublishedAt),
 			}, false
 		}
-		if errors.Is(err, ats.ErrPostingNotFound) {
-			// The API says 404 but the frontend page often 200s, so
-			// filterDeadLinks can't catch these downstream — drop here.
-			log.Printf("discover: dropped gone posting url=%s err=%v", h.URL, err)
-			return JobPosting{URL: h.URL}, true
-		}
-		if err != nil {
-			log.Printf("discover: ats-fetch fail url=%s err=%v", h.URL, err)
-		}
+		// Any failure on a supporting host is a strong "gone" signal — the
+		// structured extractor is the source of truth for these providers and
+		// a live posting always yields a title. Non-404 errors (missing
+		// JSON-LD, malformed body) and empty-title 200s both indicate the
+		// posting is removed or malformed; falling back to the search snippet
+		// just manufactures a bogus recommendation from cached copy.
+		log.Printf("discover: dropped gone posting url=%s err=%v", h.URL, err)
+		return JobPosting{URL: h.URL}, true
 	}
 	// Non-ATS host or ATS fetch failed non-404 — fall through with the
 	// search-engine snippet.

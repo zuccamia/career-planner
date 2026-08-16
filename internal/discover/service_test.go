@@ -113,14 +113,16 @@ func (f *fakeSearch) Search(_ context.Context, q string, _ search.Options) ([]se
 }
 
 type fakeATS struct {
-	supports map[string]bool
-	landing  map[string]bool
-	posting  ats.Posting
-	err      error
+	supports        map[string]bool
+	landing         map[string]bool
+	resolvesLanding map[string]bool
+	posting         ats.Posting
+	err             error
 }
 
-func (f *fakeATS) HasSupportingProvider(u string) bool { return f.supports[u] }
-func (f *fakeATS) IsLandingPage(u string) bool         { return f.landing[u] }
+func (f *fakeATS) HasSupportingProvider(u string) bool                       { return f.supports[u] }
+func (f *fakeATS) IsLandingPage(u string) bool                               { return f.landing[u] }
+func (f *fakeATS) ResolvesToLandingPage(_ context.Context, u string) bool    { return f.resolvesLanding[u] }
 func (f *fakeATS) Fetch(_ context.Context, u string) (ats.Posting, error) {
 	if f.err != nil {
 		return ats.Posting{}, f.err
@@ -454,34 +456,44 @@ func TestRankPostings_CapsSnippetTitle(t *testing.T) {
 	}
 }
 
-func TestExtractPostings_ATSFallsThroughOnFailure(t *testing.T) {
-	publishedAt := time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC)
+func TestExtractPostings_DropsSupportingHostFailures(t *testing.T) {
+	// Any error on a host with a supporting extractor (Greenhouse/Lever/Ashby)
+	// is treated as gone. Live postings on these hosts always yield a title;
+	// non-404 errors (missing JSON-LD, rate limits, format drift) indicate the
+	// posting is removed or malformed. Falling back to the search snippet
+	// would just manufacture a bogus recommendation from cached copy.
 	hits := []SearchHit{
-		{URL: "https://jobs.lever.co/co/1", Title: "Original", BoardURL: "https://jobs.lever.co/co", Provider: "lever", PublishedAt: publishedAt},
+		{URL: "https://jobs.lever.co/co/1", Title: "Original", BoardURL: "https://jobs.lever.co/co", Provider: "lever"},
 	}
 	atsFake := &fakeATS{
 		supports: map[string]bool{"https://jobs.lever.co/co/1": true},
 		err:      errors.New("boom"),
 	}
 	got, dead := extractPostings(context.Background(), hits, atsFake, newGoneCache(), 5)
-	if dead != 0 {
-		t.Errorf("non-404 error should not increment dead count, got %d", dead)
+	if len(got) != 0 {
+		t.Fatalf("expected 0 postings (supporting-host failure dropped), got %d: %+v", len(got), got)
 	}
-	if len(got) != 1 {
-		t.Fatalf("expected 1 posting from fallback, got %d", len(got))
+	if dead != 1 {
+		t.Errorf("expected dead=1, got %d", dead)
 	}
-	// ATS was recognized but Fetch errored — degrade to the search-hit
-	// snippet rather than dropping. Many Fetch failures (rate limit, tenant
-	// migration, format drift) don't mean the posting is gone; a HEAD check
-	// on the final recs catches true 404s.
-	if got[0].Source != "search" {
-		t.Errorf("expected fallback source=search, got %q", got[0].Source)
+}
+
+func TestExtractPostings_DropsSupportingHostEmptyTitle(t *testing.T) {
+	// Empty-title 200s from a supporting extractor also count as gone —
+	// live postings always carry a title.
+	hits := []SearchHit{
+		{URL: "https://jobs.ashbyhq.com/co/1", Title: "Search title", BoardURL: "https://jobs.ashbyhq.com/co", Provider: "ashby"},
 	}
-	if got[0].BoardURL == "" || got[0].Provider == "" {
-		t.Errorf("BoardURL/Provider should carry through fallback: %+v", got[0])
+	atsFake := &fakeATS{
+		supports: map[string]bool{"https://jobs.ashbyhq.com/co/1": true},
+		posting:  ats.Posting{Title: ""},
 	}
-	if !got[0].PostedAt.Equal(publishedAt) {
-		t.Errorf("fallback should preserve PublishedAt as PostedAt: got %v want %v", got[0].PostedAt, publishedAt)
+	got, dead := extractPostings(context.Background(), hits, atsFake, newGoneCache(), 5)
+	if len(got) != 0 {
+		t.Fatalf("expected 0 postings (empty title dropped), got %d: %+v", len(got), got)
+	}
+	if dead != 1 {
+		t.Errorf("expected dead=1, got %d", dead)
 	}
 }
 

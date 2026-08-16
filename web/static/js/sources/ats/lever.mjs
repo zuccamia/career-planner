@@ -1,6 +1,8 @@
 // Lever posting fetcher. Ports internal/sources/ats/lever.go — hits Lever's
 // public postings API directly from the browser (CORS-open).
 
+import { prettifySlug } from '../../ui/format.mjs';
+
 const API_BASE = 'https://api.lever.co';
 
 const parseURL = (raw) => {
@@ -49,7 +51,7 @@ export const fetchPosting = async (rawURL, { timeoutMs = 15_000 } = {}) => {
     return {
       title: (payload.text || '').trim(),
       url: (payload.applyUrl || payload.hostedUrl || rawURL).trim(),
-      company: '',
+      company: prettifySlug(parsed.company),
       location: (payload.categories?.location || '').trim(),
       department,
       team,

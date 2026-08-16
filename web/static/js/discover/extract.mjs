@@ -9,12 +9,19 @@
 import { fetchPosting as greenhouseFetch, supports as greenhouseSupports } from '../sources/ats/greenhouse.mjs';
 import { fetchPosting as leverFetch, supports as leverSupports } from '../sources/ats/lever.mjs';
 import { fetchPosting as ashbyFetch, supports as ashbySupports } from '../sources/ats/ashby.mjs';
+import { fetchPosting as eightfoldFetch, supports as eightfoldSupports } from '../sources/ats/eightfold.mjs';
+import { fetchPosting as smartRecruitersFetch, supports as smartRecruitersSupports } from '../sources/ats/smartrecruiters.mjs';
+import { fetchPosting as workableFetch, supports as workableSupports } from '../sources/ats/workable.mjs';
 import { fetchPosting as genericFetch } from '../sources/ats/generic.mjs';
+import { deadMarkersForURL } from '../ats-lookup.mjs';
 
 const pickExtractor = (url) => {
-  if (greenhouseSupports(url)) return { fetch: greenhouseFetch, provider: 'greenhouse' };
-  if (leverSupports(url))      return { fetch: leverFetch,      provider: 'lever' };
-  if (ashbySupports(url))      return { fetch: ashbyFetch,      provider: 'ashby' };
+  if (greenhouseSupports(url))      return { fetch: greenhouseFetch,      provider: 'greenhouse' };
+  if (leverSupports(url))           return { fetch: leverFetch,           provider: 'lever' };
+  if (ashbySupports(url))           return { fetch: ashbyFetch,           provider: 'ashby' };
+  if (eightfoldSupports(url))       return { fetch: eightfoldFetch,       provider: 'eightfold' };
+  if (smartRecruitersSupports(url)) return { fetch: smartRecruitersFetch, provider: 'smartrecruiters' };
+  if (workableSupports(url))        return { fetch: workableFetch,        provider: 'workable' };
   return { fetch: genericFetch, provider: 'generic' };
 };
 
@@ -38,8 +45,10 @@ const buildPosting = (source, hit, posting, pickedProv) => ({
   posted_at: posting?.postedAt || hit.published_at || '',
 });
 
-// { gone: true } → drop and remember; null → degrade to search snippet;
-// object → structured posting.
+// { gone: true } → drop and remember; null → drop-as-gone on supporting
+// hosts (structured extractor is the source of truth; falling back to the
+// search snippet manufactures bogus recommendations) or degrade to search
+// snippet for generic hosts; object → structured posting.
 const extractPosting = async (hit, gone) => {
   const picked = pickExtractor(hit.url);
   const posting = await picked.fetch(hit.url).catch(() => null);
@@ -47,8 +56,23 @@ const extractPosting = async (hit, gone) => {
     gone?.add(hit.url);
     return { dropped: 'gone' };
   }
-  if (posting) return { posting: buildPosting(posting.provider || picked.provider, hit, posting, picked.provider) };
-  return { posting: buildPosting('search', hit, null, picked.provider === 'generic' ? '' : picked.provider) };
+  // Post-fetch dead-marker scan mirrors probeSPADeadPage on the Go side.
+  // Kicks in on SPA hosts (startup.jobs etc.) that return 200 with a
+  // "job removed" banner instead of a real 404.
+  if (posting) {
+    const markers = await deadMarkersForURL(hit.url);
+    const body = `${posting.title || ''}\n${posting.snippet || ''}`;
+    if (markers.some(m => body.includes(m))) {
+      gone?.add(hit.url);
+      return { dropped: 'gone' };
+    }
+    return { posting: buildPosting(posting.provider || picked.provider, hit, posting, picked.provider) };
+  }
+  if (picked.provider !== 'generic') {
+    gone?.add(hit.url);
+    return { dropped: 'gone' };
+  }
+  return { posting: buildPosting('search', hit, null, '') };
 };
 
 // budget targets SURVIVORS, not attempts: gone URLs cost a fetch slot but

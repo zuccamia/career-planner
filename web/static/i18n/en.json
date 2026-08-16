@@ -876,7 +876,7 @@
   "discover.diagnostic.server_search_missing": "Server search is not configured and no browser_hits were provided.",
   "discover.diagnostic.all_searches_failed": "All web searches failed against the ATS hosts.",
   "progress.step.ats_fetch": "Reading job posting",
-  "discover.saved.error.missing_company": "Missing company name on recommendation",
+  "discover.saved.error.missing_company": "Couldn't read structured details from this posting — the page may sit behind a cookie banner or require JavaScript to render. Open the posting and save it manually via the Applications page.",
   "discover.state.empty.prefix": "No matching postings. Try",
   "discover.state.empty.link": "adding a target company",
   "discover.state.empty.suffix": " or filling out more of your profile."

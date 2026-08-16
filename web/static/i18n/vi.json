@@ -876,7 +876,7 @@
   "discover.diagnostic.server_search_missing": "Máy chủ chưa cấu hình tìm kiếm và không có kết quả tìm kiếm từ trình duyệt.",
   "discover.diagnostic.all_searches_failed": "Tất cả các truy vấn tới các trang tuyển dụng đều thất bại.",
   "progress.step.ats_fetch": "Đang đọc tin từ trang tuyển dụng",
-  "discover.saved.error.missing_company": "Chưa có tên công ty cho tin này",
+  "discover.saved.error.missing_company": "Không đọc được thông tin có cấu trúc từ tin này — trang có thể đang bị chặn bởi cookie banner hoặc cần JavaScript để hiển thị. Hãy mở tin và tự lưu qua trang Đơn ứng tuyển.",
   "discover.state.empty.prefix": "Không tìm thấy tin phù hợp. Hãy thử",
   "discover.state.empty.link": "thêm công ty mục tiêu",
   "discover.state.empty.suffix": " hoặc bổ sung thêm chi tiết cho hồ sơ của bạn."

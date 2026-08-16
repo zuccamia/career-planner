@@ -95,6 +95,7 @@ func (l *Lever) Fetch(ctx context.Context, rawURL string) (Posting, error) {
 	return Posting{
 		Provider:        "lever",
 		Title:           strings.TrimSpace(payload.Text),
+		Company:         PrettifySlug(company),
 		Location:        strings.TrimSpace(payload.Categories.Location),
 		Department:      util.FirstNonEmpty(payload.Categories.Department, payload.Categories.Team),
 		Team:            strings.TrimSpace(payload.Categories.Team),

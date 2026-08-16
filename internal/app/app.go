@@ -58,7 +58,7 @@ func New() App {
 	// last. When a server-side scraper is configured, applications.Service
 	// prefers it over Generic for unknown-host URLs (see its routing switch)
 	// — it isn't plugged in here.
-	atsRegistry := ats.NewRegistry(ats.NewGeneric(), ats.NewGreenhouse(), ats.NewLever(), ats.NewAshby())
+	atsRegistry := ats.NewRegistry(ats.NewGeneric(), ats.NewGreenhouse(), ats.NewLever(), ats.NewAshby(), ats.NewEightfold(), ats.NewSmartRecruiters(), ats.NewWorkable())
 
 	// Discover service is always non-nil; CanRunServerPipeline reports whether
 	// the server-side path (LLM + search) is usable. The frontend polls

@@ -7,6 +7,7 @@ package ats
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -92,9 +93,15 @@ func (r *Registry) HasSupportingProvider(rawURL string) bool {
 	return false
 }
 
-// IsLandingPage reports true when the URL's host matches a structured
-// provider's host_pattern but no provider's Supports() matches — e.g.
-// boards.greenhouse.io/acme (tenant landing) vs .../acme/jobs/123.
+// IsLandingPage reports true when the URL points at a tenant landing page
+// rather than a specific posting. Two cases:
+//   - Host matches a structured provider (e.g. greenhouse/lever/ashby) but
+//     no Supports() matches — e.g. boards.greenhouse.io/acme.
+//   - Host matches a registered slug_in_path provider (e.g. workable) and
+//     the URL path has fewer than 2 non-empty segments — e.g.
+//     apply.workable.com/acme/ vs .../acme/j/CODE. Live postings for these
+//     hosts always carry a slug beyond the tenant, so 0–1 segments = landing.
+//
 // Pre-filters use this to skip URLs that would only fetch a 404.
 func (r *Registry) IsLandingPage(rawURL string) bool {
 	if r == nil {
@@ -115,25 +122,67 @@ func (r *Registry) IsLandingPage(rawURL string) bool {
 			structured[p.Name()] = struct{}{}
 		}
 	}
-	hostKnown := false
-	for _, hp := range hostPatterns() {
-		if _, ok := structured[hp.provider]; !ok {
-			continue
-		}
+	var matched *compiledHostPattern
+	for i := range hostPatterns() {
+		hp := &hostPatterns()[i]
 		if hp.rx.MatchString(host) {
-			hostKnown = true
+			matched = hp
 			break
 		}
 	}
-	if !hostKnown {
+	if matched == nil {
 		return false
 	}
-	for _, p := range r.providers {
-		if p != nil && p.Supports(canonical) {
-			return false
+	if _, isStructured := structured[matched.provider]; isStructured {
+		for _, p := range r.providers {
+			if p != nil && p.Supports(canonical) {
+				return false
+			}
+		}
+		return true
+	}
+	// Non-structured registered host: fall back to a path-shape heuristic
+	// when slug_in_path is set. Fewer than 2 non-empty path segments (just
+	// the tenant, or nothing) → landing.
+	if !matched.slugInPath {
+		return false
+	}
+	segments := 0
+	for _, s := range strings.Split(parsed.Path, "/") {
+		if s != "" {
+			segments++
 		}
 	}
-	return true
+	return segments < 2
+}
+
+// resolveRedirectTimeout caps the HEAD probe used by ResolvesToLandingPage.
+const resolveRedirectTimeout = 3 * time.Second
+
+// ResolvesToLandingPage follows HTTP redirects and re-runs IsLandingPage on
+// the final URL. Catches hosts (Workable) that 302 removed postings to a
+// tenant landing page. Best-effort — network failures return false so the
+// caller keeps the URL and lets downstream extraction decide.
+func (r *Registry) ResolvesToLandingPage(ctx context.Context, rawURL string) bool {
+	if r == nil {
+		return false
+	}
+	client := &http.Client{Timeout: resolveRedirectTimeout}
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, rawURL, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; career-planner-discover/1.0)")
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	final := resp.Request.URL
+	if final == nil {
+		return false
+	}
+	return r.IsLandingPage(final.String())
 }
 
 // Fetch picks the first supporting provider and delegates. If no provider

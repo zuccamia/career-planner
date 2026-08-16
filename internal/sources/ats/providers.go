@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync/atomic"
 )
 
@@ -40,6 +41,7 @@ type compiledHostPattern struct {
 	provider    string
 	rx          *regexp.Regexp
 	deadMarkers []string
+	slugInPath  bool
 }
 
 // providersCache is the derived view of the loaded ProviderConfig list.
@@ -94,7 +96,7 @@ func buildHostPatterns(cfgs []ProviderConfig) []compiledHostPattern {
 			log.Printf("ats: skipping provider %q — invalid host_pattern %q: %v", p.Provider, p.HostPattern, err)
 			continue
 		}
-		out = append(out, compiledHostPattern{provider: p.Provider, rx: rx, deadMarkers: p.DeadMarkers})
+		out = append(out, compiledHostPattern{provider: p.Provider, rx: rx, deadMarkers: p.DeadMarkers, slugInPath: p.SlugInPath})
 	}
 	return out
 }
@@ -139,4 +141,34 @@ func DeadMarkersForHost(host string) []string {
 		}
 	}
 	return nil
+}
+
+// LookupHost returns (providerName, slugInPath, matched) for the first
+// host_pattern that matches. Piggy-backs on the compiled cache built by
+// LoadProviders so callers don't recompile regexes.
+func LookupHost(host string) (provider string, slugInPath, matched bool) {
+	for _, hp := range hostPatterns() {
+		if hp.rx.MatchString(host) {
+			return hp.provider, hp.slugInPath, true
+		}
+	}
+	return "", false, false
+}
+
+// PrettifySlug turns "high-agency-labs" into "High Agency Labs"; leaves
+// already-capitalized slugs (Visa, WesternDigital) alone so acronyms stay
+// upper. Shared between extractors that derive Company from a URL slug and
+// discover's URL-tenant fallback.
+func PrettifySlug(s string) string {
+	s = strings.TrimSpace(strings.NewReplacer("-", " ", "_", " ").Replace(s))
+	if s == "" {
+		return ""
+	}
+	words := strings.Fields(s)
+	for i, w := range words {
+		if len(w) > 0 && strings.ToLower(w) == w {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }

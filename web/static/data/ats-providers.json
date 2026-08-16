@@ -58,7 +58,8 @@
     "provider": "startup-jobs",
     "search_hosts": ["startup.jobs"],
     "host_pattern": "^startup\\.jobs$",
-    "slug_in_path": false
+    "slug_in_path": false,
+    "dead_markers": ["This job is no longer available"]
   },
   {
     "provider": "jobright",

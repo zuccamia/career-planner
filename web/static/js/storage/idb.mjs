@@ -7,7 +7,14 @@ const IDB_STORE = 'kv';
 const openMetaDb = () => new Promise((resolve, reject) => {
   const req = indexedDB.open(IDB_NAME, 1);
   req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
-  req.onsuccess = () => resolve(req.result);
+  req.onsuccess = () => {
+    const db = req.result;
+    // Close on demand so a concurrent deleteDatabase (idbWipe here, or a
+    // wipe in another tab) doesn't hit onblocked while this connection
+    // finishes releasing.
+    db.onversionchange = () => db.close();
+    resolve(db);
+  };
   req.onerror = () => reject(req.error);
 });
 
