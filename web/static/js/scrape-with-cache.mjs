@@ -7,26 +7,7 @@
 import { getByokScraperConfig } from './storage/byok-scraper.mjs';
 import { getCachedScrape, putCachedScrape } from './storage/scrape-cache.mjs';
 import { scrape as browserScrape } from './scrape-client.mjs';
-
-// Default onStep so scrape helpers can invoke the callback unconditionally
-// without guarding on undefined. Callers that want progress reporting pass
-// a real callback (see ui/progress.mjs).
-const noopStep = () => {};
-
-// Emit running → done/failed around fn. Same contract as rpc.mjs' `stepped`
-// but duplicated here to keep this module independent of rpc.mjs (avoids the
-// import cycle when rpc.mjs imports this module).
-const withStep = async (onStep, name, fn) => {
-  onStep({ name, status: 'running' });
-  try {
-    const out = await fn();
-    onStep({ name, status: 'done' });
-    return out;
-  } catch (err) {
-    onStep({ name, status: 'failed', error: err && (err.message || String(err)) });
-    throw err;
-  }
-};
+import { stepped, noopStep } from './ui/progress.mjs';
 
 // resolveProvider reads the saved scraper config and returns the provider id.
 // Callers are expected to have gated on isByokScraperActive() upstream, so cfg
@@ -48,14 +29,14 @@ export const scrapeWithCache = async (url, opts = {}) => {
   const { ttlSeconds, stepName, onStep = noopStep } = opts;
   if (!url) return '';
   const provider = opts.provider || await resolveProvider();
-  return withStep(onStep, stepName || 'scrape', async () => {
+  return stepped(onStep, stepName || 'scrape', async () => {
     const cached = await getCachedScrape(url, provider, ttlSeconds);
     if (cached) return cached;
     const res = await browserScrape(url, { onlyMainContent: true });
     const md = res.markdown || '';
     if (md) await putCachedScrape(url, provider, md, ttlSeconds);
     return md;
-  });
+  }, { emptyIf: (md) => !md });
 };
 
 // scrapeInParallel: run scrapeWithCache for each target concurrently, with

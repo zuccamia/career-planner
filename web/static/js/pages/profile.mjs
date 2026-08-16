@@ -194,13 +194,16 @@ const seedWizardStateFrom = async (overview) => {
   state.wizardValuesCustom = [];
   const progress = await getWizardProgress();
   if (progress && typeof progress === 'object') {
-    if (progress.name != null) state.wizardOverview.name = progress.name;
-    if (progress.headline != null) state.wizardOverview.headline = progress.headline;
-    if (progress.summary != null) state.wizardOverview.summary = progress.summary;
-    if (progress.looking_for != null) state.wizardOverview.looking_for = progress.looking_for;
-    if (Array.isArray(progress.locations)) state.wizardOverview.locations = progress.locations;
-    if (progress.workplace_type != null) state.wizardOverview.workplace_type = progress.workplace_type;
-    if (Array.isArray(progress.tools)) state.wizardOverview.tools = progress.tools;
+    // Only override the DB-seeded value when progress has a non-empty value:
+    // persistProgress snapshots empties for untouched fields, and the DB is
+    // already authoritative (captureTextField commits on input).
+    if (progress.name) state.wizardOverview.name = progress.name;
+    if (progress.headline) state.wizardOverview.headline = progress.headline;
+    if (progress.summary) state.wizardOverview.summary = progress.summary;
+    if (progress.looking_for) state.wizardOverview.looking_for = progress.looking_for;
+    if (progress.workplace_type) state.wizardOverview.workplace_type = progress.workplace_type;
+    if (Array.isArray(progress.locations) && progress.locations.length) state.wizardOverview.locations = progress.locations;
+    if (Array.isArray(progress.tools) && progress.tools.length) state.wizardOverview.tools = progress.tools;
     if (Array.isArray(progress.valuesSparkIds)) state.wizardValuesSparkIds = progress.valuesSparkIds;
     if (Array.isArray(progress.valuesCustom)) state.wizardValuesCustom = progress.valuesCustom;
     state.wizardStep = Math.min(Math.max(1, Number(progress.step) || 1), WIZARD_STEPS);

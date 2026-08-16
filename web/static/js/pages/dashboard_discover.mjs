@@ -180,7 +180,7 @@ const cardHtml = (rec, idx) => {
       ${rec.rationale ? `<p class="${CLS.bodyText}">${escapeHtml(rec.rationale)}</p>` : ''}
       ${recommendationMetaHtml(rec)}
       <div class="${CLS.actionRowEnd}">
-        ${button({ variant: 'linkMuted', icon: 'eyeSlash', iconOnly: true, ariaLabel: t('discover.action.dismiss'), dataset: { 'discover-dismiss': String(idx) } })}
+        ${button({ variant: 'dangerIcon', icon: 'eyeSlash', iconOnly: true, ariaLabel: t('discover.action.dismiss'), dataset: { 'discover-dismiss': String(idx) } })}
         <a class="${CLS.btnSecondaryCompact}" href="${escapeHtml(rec.url)}" target="_blank" rel="noreferrer noopener">
           ${icon('link')}<span>${escapeHtml(t('discover.action.open'))}</span>
         </a>

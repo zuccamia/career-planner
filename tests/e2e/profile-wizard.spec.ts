@@ -226,6 +226,55 @@ test.describe('local profile page — wizard', () => {
     await expect(page.locator('#wiz-values-max')).toBeVisible();
   });
 
+  // Regression: mid-wizard Import → Extract overview → Apply must leave the
+  // wizard resumed with the extracted values. Clicking any nav (Next/Back)
+  // on the wizard snapshots the whole state into wizard_progress with '' for
+  // untouched scalars. That non-null empty in progress used to clobber the
+  // freshly-persisted overview values in seedWizardStateFrom, so the wizard
+  // reappeared blank after Apply.
+  test('mid-wizard import overview → Apply pre-fills the resumed wizard', async ({ page }) => {
+    await page.route('**/api/llm/server-status', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ available: true, provider: 'stub', model: 'stub' }) }),
+    );
+    await page.route('**/api/profile/extract-overview-from-resume', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+        name: 'Ada Lovelace',
+        headline: 'Analytical Engineer',
+        summary: 'Wrote the first algorithm.',
+        workplace_type: 'remote',
+        skills: [{ name: 'Analytics' }],
+        tools: ['Difference Engine'],
+      }) }),
+    );
+
+    await gotoProfile(page);
+
+    // Land on the wizard, then click Next without typing to persist an
+    // empty snapshot into wizard_progress. Back returns to step 1 so the
+    // post-Apply resume lands where we can assert the name field.
+    await expect(page.getByRole('heading', { name: 'Your name' })).toBeVisible();
+    await page.locator('#btn-wizard-next').click();
+    await expect(page.getByRole('heading', { name: 'Your one-line pitch' })).toBeVisible();
+    await page.locator('#btn-wizard-back').click();
+    await expect(page.getByRole('heading', { name: 'Your name' })).toBeVisible();
+
+    // Import → extract → Apply. Leaves default (all-checked) selection so
+    // every extracted field lands in the DB via updateOverview.
+    await page.getByRole('button', { name: 'Import from file' }).click();
+    await page.locator('#ri-result').evaluate((el) => el.classList.remove('hidden'));
+    await page.locator('#ri-markdown').fill('# Ada Lovelace\n\nAnalytical engineer.\n');
+    await page.getByRole('button', { name: 'Extract profile overview' }).click();
+    await expect(page.getByRole('button', { name: 'Apply selected' })).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: 'Apply selected' }).click();
+
+    // Redirected back to the wizard (progress != null → isFirstRun true).
+    // Step 1's name input must show the extracted name, not the empty
+    // snapshot that persistProgress wrote earlier.
+    await expect(page.getByRole('heading', { name: 'Your name' })).toBeVisible();
+    await expect(page.locator('#wiz-input')).toHaveValue('Ada Lovelace');
+  });
+
   test('resumes at the same step after a reload', async ({ page }) => {
     await gotoProfile(page);
 

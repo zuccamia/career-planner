@@ -5,7 +5,7 @@
 import { isByokLLMActive, getByokLLMConfig } from './storage/byok-llm.mjs';
 import { isByokScraperActive } from './storage/byok-scraper.mjs';
 import { scrapeWithCache, scrapeInParallel } from './scrape-with-cache.mjs';
-import { lookupATSURL, fetchATSPosting } from './ats-lookup.mjs';
+import { lookupATSURL, fetchATSPosting, hasBrowserATSFetcher } from './ats-lookup.mjs';
 import { callOpenAICompatible, getServerLLMStatus } from './llm-client.mjs';
 import { getServerScraperStatus } from './scrape-client.mjs';
 import { currentLocale, t } from './i18n.mjs';
@@ -69,12 +69,24 @@ export const extractJobDescription = async (input, outputLanguage, onStep = noop
   if (rawEmpty && url) {
     // Preferred client-side path for known ATS URLs: Greenhouse and Lever
     // expose CORS-open APIs; a success populates posting for LLM overlay.
-    // Ashby's HTML is CORS-blocked so this call returns null and we fall
-    // through to the scraper paths below.
-    const atsPosting = await stepped(onStep, 'ats_fetch', () => fetchATSPosting(url)).catch(() => null);
-    if (atsPosting?.snippet) {
-      payload.job_description_raw = atsPosting.snippet;
-      payload.posting = atsPosting;
+    // Ashby's HTML is CORS-blocked so the call typically returns null and we
+    // fall through to the scraper. Gate the progress step on
+    // hasBrowserATSFetcher so URLs without an extractor don't render a
+    // misleading "ATS fetch ✓"; and on a real error (network / provider API
+    // change) let stepped emit `failed` while we still fall through.
+    if (hasBrowserATSFetcher(url)) {
+      try {
+        const atsPosting = await stepped(onStep, 'ats_fetch',
+          () => fetchATSPosting(url),
+          { emptyIf: (r) => !r?.snippet },
+        );
+        if (atsPosting?.snippet) {
+          payload.job_description_raw = atsPosting.snippet;
+          payload.posting = atsPosting;
+        }
+      } catch (err) {
+        console.warn('extractJobDescription: ats_fetch failed, falling through to scraper:', err);
+      }
     }
 
     if (!payload.job_description_raw) {

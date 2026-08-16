@@ -242,15 +242,18 @@ const overlayATSPosting = (structured, posting = {}) => {
 };
 
 // parse decodes the LLM raw response and finalizes it into the structured JD
-// the caller consumes: sanitize + overlay ATS-authoritative fields.
+// the caller consumes: sanitize + overlay ATS-authoritative fields. Wrapped
+// as { structured, job_description_raw } to mirror the server response shape
+// that pages/applications.mjs consumes.
 export const parse = (raw, { input = {}, enriched_raw, posting } = {}) => {
   const decoded = decodeJSONResponse(raw);
-  const structured = sanitizeJobDescriptionStructured(decoded, {
+  const sanitized = sanitizeJobDescriptionStructured(decoded, {
     companyName:       input.company_name,
     roleTitle:         input.role_title,
     jobDescriptionRaw: enriched_raw,
   });
-  return overlayATSPosting(structured, posting);
+  const structured = overlayATSPosting(sanitized, posting);
+  return { structured, job_description_raw: enriched_raw || '' };
 };
 
 // buildATSHintsBlock renders ATS-returned fields into a "known facts" block

@@ -9,9 +9,9 @@ import { hostOf } from './fetch-helpers.mjs';
 import { fetchPosting as greenhouseFetch, supports as greenhouseSupports } from './sources/ats/greenhouse.mjs';
 import { fetchPosting as leverFetch, supports as leverSupports } from './sources/ats/lever.mjs';
 import { fetchPosting as ashbyFetch, supports as ashbySupports } from './sources/ats/ashby.mjs';
-import { supports as eightfoldSupports } from './sources/ats/eightfold.mjs';
-import { supports as smartRecruitersSupports } from './sources/ats/smartrecruiters.mjs';
-import { supports as workableSupports } from './sources/ats/workable.mjs';
+import { fetchPosting as eightfoldFetch, supports as eightfoldSupports } from './sources/ats/eightfold.mjs';
+import { fetchPosting as smartRecruitersFetch, supports as smartRecruitersSupports } from './sources/ats/smartrecruiters.mjs';
+import { fetchPosting as workableFetch, supports as workableSupports } from './sources/ats/workable.mjs';
 
 const PROVIDERS_URL = `${STATIC_ROOT}data/ats-providers.json`;
 
@@ -96,13 +96,25 @@ export const inferATSFromPostingURL = async (postingURL) => {
 // fetchATSPosting tries the browser-directly ATS extractors for the URL and
 // returns the first that succeeds with a structured posting object, or null.
 // Greenhouse and Lever expose CORS-open public APIs; Ashby's HTML is
-// cross-origin blocked and typically falls through here.
+// cross-origin blocked and typically falls through here. Extractor order
+// mirrors discover/extract.mjs::pickExtractor so both paths triage the
+// same URL consistently.
 export const fetchATSPosting = async (url) => {
-  if (greenhouseSupports(url)) return await greenhouseFetch(url);
-  if (leverSupports(url))      return await leverFetch(url);
-  if (ashbySupports(url))      return await ashbyFetch(url);
+  if (greenhouseSupports(url))      return await greenhouseFetch(url);
+  if (leverSupports(url))           return await leverFetch(url);
+  if (ashbySupports(url))           return await ashbyFetch(url);
+  if (eightfoldSupports(url))       return await eightfoldFetch(url);
+  if (smartRecruitersSupports(url)) return await smartRecruitersFetch(url);
+  if (workableSupports(url))        return await workableFetch(url);
   return null;
 };
+
+// hasBrowserATSFetcher reports whether fetchATSPosting has an extractor for
+// the URL. Callers gate the ats_fetch progress step on this so unsupported
+// URLs don't show a misleading "ATS fetch ✓" for a call that never ran.
+export const hasBrowserATSFetcher = (url) =>
+  greenhouseSupports(url) || leverSupports(url) || ashbySupports(url)
+  || eightfoldSupports(url) || smartRecruitersSupports(url) || workableSupports(url);
 
 // Providers that ship a browser-side structured extractor. Anything else
 // in ats-providers.json has host_pattern but no fetcher, so we can't

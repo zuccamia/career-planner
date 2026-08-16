@@ -96,12 +96,18 @@ export const createProgress = (el) => {
 
 // stepped wraps an async block with running/done/failed emissions on
 // onStep. Shared by rpc.mjs and discover-client.mjs so every pipeline
-// speaks the same event contract to createProgress.
-export const stepped = async (onStep, name, fn, hintKey) => {
+// speaks the same event contract to createProgress. Opts:
+//   hintKey  — sub-label rendered under the running step
+//   emptyIf  — (out) => bool; when true, emit 'skipped' (row hides) instead
+//              of 'done'. Use so a step that runs cleanly but produces no
+//              usable output doesn't leave a misleading green check.
+// Legacy: passing a string as the 4th arg is treated as hintKey.
+export const stepped = async (onStep, name, fn, opts = {}) => {
+  const { hintKey, emptyIf } = typeof opts === 'string' ? { hintKey: opts } : opts;
   onStep({ name, status: 'running', hintKey });
   try {
     const out = await fn();
-    onStep({ name, status: 'done' });
+    onStep({ name, status: emptyIf?.(out) ? 'skipped' : 'done' });
     return out;
   } catch (err) {
     onStep({ name, status: 'failed', error: err && (err.message || String(err)) });
