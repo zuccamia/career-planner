@@ -44,14 +44,14 @@ export const fetchPosting = async (rawURL, { timeoutMs = 15_000 } = {}) => {
     if (!(payload.title || '').trim()) return null;
     const postedAt = payload.first_published || payload.updated_at || '';
     return {
+      provider: 'greenhouse',
       title: (payload.title || '').trim(),
-      url: (payload.absolute_url || rawURL).trim(),
       company: (payload.company_name || '').trim(),
       location: (payload.location?.name || '').trim(),
       department: (payload.departments?.[0]?.name || '').trim(),
-      snippet: desc,
-      postedAt: postedAt ? new Date(postedAt).toISOString() : '',
-      provider: 'greenhouse',
+      apply_url: (payload.absolute_url || rawURL).trim(),
+      description_text: desc,
+      posted_at: postedAt ? new Date(postedAt).toISOString() : '',
     };
   } catch {
     return null;

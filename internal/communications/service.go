@@ -43,9 +43,7 @@ type MessageResult struct {
 
 // SummarizeThreadContext runs the summary prompt and returns the summary text.
 func (s *Service) SummarizeThreadContext(ctx context.Context, detail ThreadDetail, outputLanguage string) (string, error) {
-	if s.client == nil {
-		return "", fmt.Errorf("llm client is not configured")
-	}
+	if err := llm.RequireClient(s.client); err != nil { return "", err }
 	set := llm.PickPromptSet(summarizePrompts(), outputLanguage)
 	prompt := llm.Prompt{
 		System: set.System,
@@ -69,9 +67,7 @@ func (s *Service) GenerateMessageFromContext(ctx context.Context, detail ThreadD
 	if _, ok := MessageGoals[goal]; !ok {
 		return "", ErrInvalidGoal
 	}
-	if s.client == nil {
-		return "", fmt.Errorf("llm client is not configured")
-	}
+	if err := llm.RequireClient(s.client); err != nil { return "", err }
 	set := llm.PickPromptSet(messagePrompts(), outputLanguage)
 	prompt := llm.Prompt{
 		System: set.System,

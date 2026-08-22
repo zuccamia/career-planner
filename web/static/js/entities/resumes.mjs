@@ -17,22 +17,46 @@ const sanitizeResumeFields = (data) => {
   };
 };
 
+// application_id is set at insert only; updateResume leaves it alone.
+
 // Coerces SQLite's 0/1 int to a real boolean so callers can `=== true` /
 // truthy-check without silent mismatches.
 const hydrateResume = (row) => (row ? { ...row, is_primary: !!row.is_primary } : row);
 
-export const listResumes = async () => {
-  const rows = await exec(
-    `SELECT id, title, format, is_primary, created_at, updated_at
-     FROM resumes
-     ORDER BY is_primary DESC, datetime(updated_at) DESC, id DESC`,
-  );
+// listResumes accepts an optional { applicationId } filter — used by the
+// Profile → Résumés tab when navigated to with ?application_id=… so the list
+// shows only résumés tailored for that posting. Ordering is unchanged.
+export const listResumes = async ({ applicationId } = {}) => {
+  const filterId = Number(applicationId) || null;
+  const rows = filterId
+    ? await exec(
+        `SELECT id, title, format, is_primary, application_id, created_at, updated_at
+         FROM resumes
+         WHERE application_id = ?
+         ORDER BY is_primary DESC, datetime(updated_at) DESC, id DESC`,
+        [filterId],
+      )
+    : await exec(
+        `SELECT id, title, format, is_primary, application_id, created_at, updated_at
+         FROM resumes
+         ORDER BY is_primary DESC, datetime(updated_at) DESC, id DESC`,
+      );
   return rows.map(hydrateResume);
 };
 
 export const countResumes = async () => {
-  const rows = await exec('SELECT COUNT(*) AS n FROM resumes');
-  return Number(rows[0]?.n ?? 0);
+  const rows = await exec('SELECT COUNT(*) AS resume_count FROM resumes');
+  return Number(rows[0]?.resume_count ?? 0);
+};
+
+export const countResumesByApplication = async (applicationId) => {
+  const filterId = Number(applicationId) || null;
+  if (!filterId) return 0;
+  const rows = await exec(
+    'SELECT COUNT(*) AS resume_count FROM resumes WHERE application_id = ?',
+    [filterId],
+  );
+  return Number(rows[0]?.resume_count ?? 0);
 };
 
 export const getResume = async (id) => {
@@ -45,12 +69,16 @@ export const getPrimaryResume = async () => {
   return hydrateResume(rows[0] || null);
 };
 
+// createResume accepts an optional applicationId to link the row to the job
+// posting it was tailored for. Left NULL for ordinary "stock" résumés.
 export const createResume = async (data) => {
-  const n = sanitizeResumeFields(data);
-  const values = EDITABLE_COLS.map(c => n[c]);
+  const fields = sanitizeResumeFields(data);
+  const applicationId = Number(data.applicationId) || null;
+  const columns = [...EDITABLE_COLS, 'application_id'];
+  const values = [...EDITABLE_COLS.map((col) => fields[col]), applicationId];
   await exec(
-    `INSERT INTO resumes (${EDITABLE_COLS.join(', ')})
-     VALUES (${EDITABLE_COLS.map(() => '?').join(', ')})`,
+    `INSERT INTO resumes (${columns.join(', ')})
+     VALUES (${columns.map(() => '?').join(', ')})`,
     values,
   );
   const rows = await exec('SELECT last_insert_rowid() AS id');

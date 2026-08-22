@@ -34,15 +34,15 @@ const pickExtractor = (url) => {
 //   pickedProv — provider label from pickExtractor, used when posting is null
 const buildPosting = (source, hit, posting, pickedProv) => ({
   title: posting?.title || hit.title || '',
-  url: posting?.url || hit.url,
+  url: posting?.apply_url || hit.url,
   company: posting?.company || '',
   source,
-  snippet: posting?.snippet || hit.snippet || '',
+  snippet: posting?.description_text || hit.snippet || '',
   location: posting?.location || '',
-  employment_type: posting?.employmentType || '',
+  employment_type: posting?.employment_type || '',
   board_url: hit.board_url || '',
   provider: posting?.provider || hit.provider || pickedProv,
-  posted_at: posting?.postedAt || hit.published_at || '',
+  posted_at: posting?.posted_at || hit.published_at || '',
 });
 
 // { gone: true } → drop and remember; null → drop-as-gone on supporting
@@ -61,7 +61,7 @@ const extractPosting = async (hit, gone) => {
   // "job removed" banner instead of a real 404.
   if (posting) {
     const markers = await deadMarkersForURL(hit.url);
-    const body = `${posting.title || ''}\n${posting.snippet || ''}`;
+    const body = `${posting.title || ''}\n${posting.description_text || ''}`;
     if (markers.some(m => body.includes(m))) {
       gone?.add(hit.url);
       return { dropped: 'gone' };

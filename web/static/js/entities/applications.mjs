@@ -13,10 +13,22 @@
 import { exec, transaction } from '../db/client.mjs';
 import { APPLICATION_STATUSES } from '../db/schema.mjs';
 import { sanitizeURL } from '../ui/dom.mjs';
+import { getCompany, dossierForPrompt } from './companies.mjs';
+import { analyzeRoleSignals } from '../rpc.mjs';
 import { t } from '../i18n.mjs';
 import { deleteAttachmentsByEntity } from './attachments.mjs';
 
 export { APPLICATION_STATUSES };
+
+// parsedJD returns the parsed job_description_extracted_json blob, or null
+// when the blob is empty / '{}' / unparseable. Used by tailor + role-signals
+// panels to gate LLM calls on a JD being present.
+export const parsedJD = (app) => {
+  const trimmed = (app?.job_description_extracted_json || '').trim();
+  if (!trimmed || trimmed === '{}') return null;
+  try { return JSON.parse(trimmed); }
+  catch { return null; }
+};
 
 const EDITABLE_COLS = [
   'company_id', 'person_id',
@@ -27,13 +39,30 @@ const EDITABLE_COLS = [
 
 const ALLOWED_EVENT_TYPES = new Set(['created', 'status_changed', 'note', 'artifact_added']);
 
+// SQL for "when did this row enter its current status" — the most recent
+// status_changed event whose to_status matches the row's current status,
+// falling back to created_at for freshly-created rows. Selected as
+// `status_since` by list queries; render code reads it via statusSince().
+const STATUS_SINCE_EXPR = `COALESCE((
+  SELECT MAX(occurred_at) FROM application_events
+  WHERE application_id = a.id
+    AND type = 'status_changed'
+    AND to_status = a.status
+), a.created_at) AS status_since`;
+
+// statusSince returns the timestamp the application entered its current
+// status. 'lead' rows are exempt — their status_since is always created_at
+// since no status change has fired yet.
+export const statusSince = (a) => (a.status === 'lead' ? a.created_at : (a.status_since || a.created_at));
+
 // Joins companies so callers can render the company name without a second
 // round-trip. person_id/person_name deferred until the people module lands.
 export const listApplications = () => exec(`
   SELECT a.id, a.company_id, c.official_name AS company_name,
          a.person_id, p.full_name AS person_name,
          a.role_title, a.job_posting_url, a.status,
-         a.created_at, a.updated_at
+         a.created_at, a.updated_at,
+         ${STATUS_SINCE_EXPR}
   FROM applications a
   LEFT JOIN companies c ON c.id = a.company_id
   LEFT JOIN people p ON p.id = a.person_id
@@ -45,10 +74,11 @@ export const listApplications = () => exec(`
 // (below) DOES join because "person → applications" spans multiple
 // companies.
 export const listApplicationsByCompany = (companyID) => exec(`
-  SELECT id, company_id, role_title, status, created_at, updated_at
-  FROM applications
-  WHERE company_id = ?
-  ORDER BY datetime(updated_at) DESC, id DESC
+  SELECT a.id, a.company_id, a.role_title, a.status, a.created_at, a.updated_at,
+         ${STATUS_SINCE_EXPR}
+  FROM applications a
+  WHERE a.company_id = ?
+  ORDER BY datetime(a.updated_at) DESC, a.id DESC
 `, [companyID]);
 
 export const listApplicationsByPerson = (personID) => exec(`
@@ -201,10 +231,61 @@ export const updateApplicationExtraction = async (id, { structuredJson, jobDescr
   );
 };
 
-// Deletes the application + its attachment rows. Timeline events cascade
-// via FK; attachments have no FK on the polymorphic entity_id, so manual
-// cleanup via deleteAttachmentsByEntity. Paired resume-side rows and on-disk
-// blobs stay (still referenced).
+// Persistence envelope for tailor_signals: the analyze-role-signals response
+// carries markdown (`signals`) AND a machine-readable ATS keyword array
+// (`ats_keywords`). We serialize both into the single TEXT column as JSON.
+// Empty envelope clears the cache.
+export const updateApplicationTailorSignals = async (id, envelope) => {
+  const payload = envelope && (envelope.signals || envelope.ats_keywords?.length)
+    ? JSON.stringify({
+        signals: envelope.signals || '',
+        ats_keywords: envelope.ats_keywords || [],
+      })
+    : '';
+  await exec(
+    `UPDATE applications
+     SET tailor_signals = ?, updated_at = datetime('now')
+     WHERE id = ?`,
+    [payload, id],
+  );
+};
+
+// analyzeAndCacheRoleSignals runs the analyze-role-signals LLM call for the
+// application, persists the envelope on tailor_signals, and mutates
+// `application.tailor_signals` in place so callers reuse the same row.
+export const analyzeAndCacheRoleSignals = async (application, jd, locale) => {
+  const dossier = application.company_id
+    ? dossierForPrompt(await getCompany(application.company_id))
+    : null;
+  const { signals, ats_keywords } = await analyzeRoleSignals(
+    { jd_structured: jd, company_dossier: dossier }, locale,
+  );
+  const envelope = { signals: (signals || '').trim(), ats_keywords: ats_keywords || [] };
+  if (envelope.signals || envelope.ats_keywords.length) {
+    await updateApplicationTailorSignals(application.id, envelope);
+    application.tailor_signals = JSON.stringify(envelope);
+  }
+  return envelope;
+};
+
+// parseTailorSignals reads the persisted envelope written by
+// updateApplicationTailorSignals.
+export const parseTailorSignals = (raw) => {
+  const s = (raw ?? '').trim();
+  if (!s) return { signals: '', ats_keywords: [] };
+  try {
+    const obj = JSON.parse(s);
+    return {
+      signals: typeof obj.signals === 'string' ? obj.signals : '',
+      ats_keywords: Array.isArray(obj.ats_keywords) ? obj.ats_keywords : [],
+    };
+  } catch {
+    return { signals: '', ats_keywords: [] };
+  }
+};
+
+// Delete the app + its attachment rows (polymorphic entity_id, no FK cascade).
+// Paired resume rows and on-disk blobs stay (still referenced).
 export const deleteApplication = async (id) => {
   await transaction(async () => {
     await deleteAttachmentsByEntity('application', id);
@@ -212,14 +293,9 @@ export const deleteApplication = async (id) => {
   });
 };
 
-// Wipe every application from the local DB while leaving companies, people,
-// and communications intact. Meant for starting a new time-period snapshot
-// on top of the same longer-lived reference data. Order:
-//   1. attachments rows for entity_type='application' — polymorphic, no FK
-//      cascade would delete these on their own.
-//   2. applications — application_events cascades via ON DELETE CASCADE.
-// Attachment blob files on disk/Drive are not touched; they become orphaned
-// and will be swept by the (still-deferred) blob GC pass.
+// Wipe applications for a fresh snapshot; companies/people/comms stay.
+// Deletes polymorphic attachments rows first, then applications (events
+// cascade). Blob files orphaned — swept by (deferred) blob GC.
 export const clearAllApplications = async () => {
   const before = await countApplications();
   await exec(`DELETE FROM attachments WHERE entity_type = 'application'`);

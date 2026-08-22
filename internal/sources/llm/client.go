@@ -14,9 +14,13 @@ import (
 )
 
 // Prompt contains the system and user instructions sent to the LLM provider.
+// Persona is optional and only populated for flows whose system template has
+// a leading `%s` slot for a caller-provided persona (tailor/ranker today).
+// Other flows leave it empty.
 type Prompt struct {
-	System string
-	User   string
+	System  string
+	User    string
+	Persona string
 }
 
 // Client generates structured JSON from prompts.

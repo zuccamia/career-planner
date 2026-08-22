@@ -4,7 +4,8 @@
 
 import { CLS } from '../ui/classes.mjs';
 import { escapeHtml, formatDate } from '../ui/dom.mjs';
-import { button, pageHeader, formField, emptyState, fileRow, helpText, inlineError, inlineNote, setInlineError, badge, tab, removablePill } from '../ui/components.mjs';
+import { button, pageHeader, formField, emptyState, fileRow, helpText, inlineError, inlineNote, setInlineError, badge, tab, removablePill, filterBanner } from '../ui/components.mjs';
+import { urlFor } from '../host.mjs';
 import { collectionRowsHtml } from '../ui/collection_list.mjs';
 import { relativeAge } from '../ui/format.mjs';
 import { toast } from '../ui/toast.mjs';
@@ -17,8 +18,10 @@ import {
   listSparks, createSpark, deleteSpark, countSparks,
 } from '../entities/career-sparks.mjs';
 import { listResumes, countResumes } from '../entities/resumes.mjs';
+import { getApplication } from '../entities/applications.mjs';
 import {
   listBragEntries, createBragEntry, updateBragEntry, deleteBragEntry, countBragEntries, getBragEntry,
+  BRAG_CATEGORIES,
 } from '../entities/brag-entries.mjs';
 import { listCompanies } from '../entities/companies.mjs';
 import { generateBragTags } from '../rpc.mjs';
@@ -66,6 +69,9 @@ const state = {
   bragDraftTags: [],
   bragPendingTagsGeneratedAt: null,
 };
+
+// Résumés-tab scope set by ?application_id=…; shape { id, label } | null.
+let resumesApplicationFilter = null;
 
 // ---------- shell ----------
 
@@ -615,18 +621,40 @@ const renderWizard = async (mountEl) => renderWizardModule({
   skillsEditorHtml,
   wireSkillsEditor,
   toolsListHtml,
+  onImport: () => setTab(IMPORT_TAB),
 });
 
 // ============================================================================
 // RESUMES TAB
 // ============================================================================
 
+const resumesFilterBannerHtml = () => resumesApplicationFilter
+  ? filterBanner({
+      label: t('common.filter.by_application'),
+      name: resumesApplicationFilter.label,
+      clearHref: urlFor('profile?tab=resumes'),
+      clearLabel: t('common.filter.clear'),
+    })
+  : '';
+
 const renderResumesTab = async (el) => {
   el.innerHTML = `${helpText(t('app.loading'))}`;
   refreshProfileTabCounts();
-  const resumes = await listResumes();
+  let resumes = await listResumes({ applicationId: resumesApplicationFilter?.id });
+  // Filter set but zero matches → fall back to unfiltered list + inline note.
+  // Skip the note if the unfiltered list is also empty (plain empty state is clearer).
+  let filterFallbackNote = null;
+  if (resumesApplicationFilter && resumes.length === 0) {
+    const label = resumesApplicationFilter.label;
+    resumesApplicationFilter = null;
+    resumes = await listResumes();
+    if (resumes.length > 0) {
+      filterFallbackNote = t('profile.resumes.toast.no_matches_for_application', { name: label });
+    }
+  }
   el.innerHTML = `
     <div class="space-y-6">
+      ${filterFallbackNote ? inlineNote({ id: 'resumes-filter-note', message: filterFallbackNote }) : resumesFilterBannerHtml()}
       <section class="flex items-center justify-between">
         ${helpText(t('profile.resumes.help'))}
         ${button({ id: 'btn-new-resume', variant: 'primaryCompact', icon: 'plus', label: t('profile.resumes.action.new'), ariaLabel: t('profile.resumes.aria.add') })}
@@ -712,6 +740,23 @@ const renderBragTab = async (el) => {
   }
 };
 
+// Icon + color per brag category; used by the list-row badge.
+const BRAG_CATEGORY_STYLE = {
+  experience: { icon: 'applications', color: 'brass' },
+  project:    { icon: 'beaker',       color: 'blue' },
+  activity:   { icon: 'bookOpen',     color: 'emerald' },
+};
+
+const bragCategoryBadge = (category) => {
+  const style = BRAG_CATEGORY_STYLE[category] || BRAG_CATEGORY_STYLE.experience;
+  return badge({
+    label: t(`profile.brags.category.short.${category || 'experience'}`),
+    color: style.color,
+    icon: style.icon,
+    size: 'xs',
+  });
+};
+
 const bragListHtml = (entries) => `
   <ul class="space-y-3">
     ${entries.map(e => `
@@ -720,6 +765,7 @@ const bragListHtml = (entries) => `
           <div class="${CLS.textCol}">
             <div class="${CLS.chipRowInline}">
               <p class="font-semibold text-ink">${escapeHtml(e.title || t('profile.brags.untitled'))}</p>
+              ${bragCategoryBadge(e.category)}
               ${e.entry_year ? badge({ label: String(e.entry_year), color: 'violet', size: 'xs' }) : ''}
             </div>
             <p class="line-clamp-1 ${CLS.bodyText}">${escapeHtml(e.body)}</p>
@@ -770,7 +816,7 @@ const mountBragEditor = async (companies) => {
   const editorEl = document.getElementById('brag-editor');
   const entry = state.bragEditorId ? await getBragEntry(state.bragEditorId) : null;
   const isNew = !entry;
-  const e = entry || { title: '', body: '', impact: '', tags: [], tags_generated_at: null, company_id: null, entry_year: null };
+  const e = entry || { title: '', body: '', impact: '', tags: [], tags_generated_at: null, company_id: null, entry_year: null, category: 'experience' };
   if (!state.bragDraftTags.length) state.bragDraftTags = [...(e.tags || [])];
   editorEl.innerHTML = `
     <div class="${CLS.card}">
@@ -792,6 +838,17 @@ const mountBragEditor = async (companies) => {
         ${formField({ type: 'text', name: 'brag-impact', label: t('profile.brags.field.impact.label'),
                       value: e.impact || '',
                       placeholder: t('profile.brags.field.impact.placeholder') })}
+        ${formField({
+          type: 'select',
+          name: 'brag-category',
+          label: t('profile.brags.field.category.label'),
+          hint: t('profile.brags.field.category.hint'),
+          options: BRAG_CATEGORIES.map((code) => ({
+            value: code,
+            label: t(`profile.brags.field.category.option.${code}`),
+            selected: e.category === code,
+          })),
+        })}
         <div class="${CLS.gridTwoCol} gap-4">
           ${formField({ type: 'select', name: 'brag-company', label: t('profile.brags.field.company.label'),
                         options: [
@@ -891,6 +948,7 @@ const mountBragEditor = async (companies) => {
       })(),
       tags: state.bragDraftTags,
       tags_generated_at: state.bragPendingTagsGeneratedAt || e.tags_generated_at || null,
+      category: document.getElementById('brag-category').value,
     };
     try {
       if (state.bragEditorId) {
@@ -917,9 +975,24 @@ const mountBragEditor = async (companies) => {
 // ============================================================================
 
 export const mountProfile = async (appEl) => {
-  // Optional deep-link: /profile?tab=resumes | ?tab=import
+  // Deep-links: ?tab=resumes|import, ?application_id=… (defaults tab to resumes).
   const params = new URLSearchParams(window.location.search);
   const initialTab = params.get('tab');
+  const rawApplicationId = Number(params.get('application_id'));
+  let pendingFilterToast = null;
+  if (rawApplicationId) {
+    const application = await getApplication(rawApplicationId);
+    if (application) {
+      const role = application.role_title || t('applications.role_untitled');
+      const label = application.company_name
+        ? `${application.company_name} — ${role}`
+        : role;
+      resumesApplicationFilter = { id: application.id, label };
+      if (!initialTab) state.tab = 'resumes';
+    } else {
+      pendingFilterToast = t('profile.resumes.toast.application_missing_filter', { id: rawApplicationId });
+    }
+  }
   if (initialTab && VALID_TABS.includes(initialTab)) state.tab = initialTab;
 
   appEl.innerHTML = shellHtml();
@@ -927,4 +1000,5 @@ export const mountProfile = async (appEl) => {
   document.getElementById('btn-import')?.addEventListener('click', () => setTab(IMPORT_TAB));
   refreshProfileTabCounts();
   renderTab();
+  if (pendingFilterToast) toast(pendingFilterToast, 'warning');
 };

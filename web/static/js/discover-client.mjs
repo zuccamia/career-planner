@@ -61,9 +61,11 @@ export const discoverOnServer = async (body, { timeoutMs = 90_000, onStep = noop
 const searchInBrowser = async (signals, req) => {
   const hosts = await atsHosts();
   const employmentType = req.profile?.employment_type || '';
-  // Freshness window matches the Go pipeline's siteScopedTimeRange: 1 day for
-  // full-time roles, 30 days for scarce (intern/new-grad) cycle-posted roles.
-  const freshnessDays = isScarceEmployment(employmentType) ? 30 : 1;
+  // Scarce (intern/new-grad) roles get a wider freshness window and Tavily's
+  // `advanced` depth — cycle-posted pool is small and niche.
+  const scarce = isScarceEmployment(employmentType);
+  const timeRange = scarce ? 'month' : 'day';
+  const searchDepth = scarce ? 'advanced' : 'basic';
   const groups = [];
   for (let i = 0; i < hosts.length; i += SEARCH_HOST_CONCURRENCY) {
     const batch = hosts.slice(i, i + SEARCH_HOST_CONCURRENCY);
@@ -80,9 +82,9 @@ const searchInBrowser = async (signals, req) => {
       try {
         const hits = await browserSearch(q, {
           maxResults: SEARCH_PER_HOST,
-          // Tavily needs explicit domain scope; Brave honors site: in the query.
           includeDomains: [host.host],
-          days: freshnessDays,
+          timeRange,
+          searchDepth,
         });
         return {
           host: host.host,

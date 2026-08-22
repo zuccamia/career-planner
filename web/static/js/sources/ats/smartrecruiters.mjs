@@ -59,16 +59,16 @@ export const fetchPosting = async (rawURL, { timeoutMs = 15_000 } = {}) => {
     const desc = htmlToText(parts.join('\n'));
     if (!desc) return null;
     return {
+      provider: 'smartrecruiters',
       title,
-      url: (payload.applyUrl || rawURL).trim(),
       company: (payload.company?.name || '').trim(),
       location: formatLocation(payload.location),
       department: '',
       team: '',
-      snippet: desc,
-      postedAt: (payload.releasedDate || '').trim(),
-      provider: 'smartrecruiters',
-      employmentType: (payload.typeOfEmployment?.label || '').trim(),
+      apply_url: (payload.applyUrl || rawURL).trim(),
+      description_text: desc,
+      posted_at: (payload.releasedDate || '').trim(),
+      employment_type: (payload.typeOfEmployment?.label || '').trim(),
     };
   } catch {
     return null;

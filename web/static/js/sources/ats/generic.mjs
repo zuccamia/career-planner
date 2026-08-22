@@ -54,17 +54,17 @@ export const fetchPosting = async (rawURL, { timeoutMs = 30_000 } = {}) => {
       const body = await fetchJSON('/api/applications/scrape', { body: { job_posting_url: rawURL } });
       const posting = body.posting || {};
       return {
+        provider: (posting.provider || '').trim(),
         title: (posting.title || '').trim(),
-        url: (posting.apply_url || rawURL).trim(),
         company: (posting.company || '').trim(),
         location: (posting.location || '').trim(),
         department: (posting.department || '').trim(),
         team: (posting.team || '').trim(),
-        snippet: (body.enriched_raw || '').trim(),
-        postedAt: posting.posted_at || '',
-        provider: (posting.provider || '').trim(),
-        employmentType: (posting.employment_type || '').trim(),
         compensation: (posting.compensation || '').trim(),
+        apply_url: (posting.apply_url || rawURL).trim(),
+        description_text: (body.enriched_raw || '').trim(),
+        posted_at: posting.posted_at || '',
+        employment_type: (posting.employment_type || '').trim(),
       };
     } catch {
       return null;
@@ -85,17 +85,17 @@ export const fetchPosting = async (rawURL, { timeoutMs = 30_000 } = {}) => {
   const { title, text } = html ? htmlToText(html) : { title: '', text: markdown.replace(/\s+/g, ' ').trim() };
   if (!text) return null;
   return {
+    provider: 'generic',
     title,
-    url: rawURL,
     company: '',
     location: '',
     department: '',
     team: '',
-    snippet: text.slice(0, 4000),
-    postedAt: '',
-    provider: 'generic',
-    employmentType: '',
     compensation: '',
+    apply_url: rawURL,
+    description_text: text.slice(0, 4000),
+    posted_at: '',
+    employment_type: '',
   };
 };
 

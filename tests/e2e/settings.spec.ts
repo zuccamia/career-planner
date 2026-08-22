@@ -197,4 +197,37 @@ test.describe('local settings page', () => {
 
     expect(result.readBack).toBe('regression-value');
   });
+
+  // Regression for "idbWipe rejected on onblocked before the versionchange
+  // handlers could close the pending connections." Fix: onblocked is
+  // informational — idbWipe now waits for onsuccess/onerror. This test
+  // forces an open connection at wipe time to exercise that path.
+  test('idbWipe survives onblocked when a stale connection is open', async ({ page }) => {
+    await gotoSettings(page);
+
+    const result = await page.evaluate(async () => {
+      const { idbSet, idbWipe } = await import('/static/js/storage/idb.mjs');
+      await idbSet('regression-key', 'regression-value');
+
+      // Open a raw connection to the meta DB and keep it alive. Mirror the
+      // idb.mjs pattern: close on versionchange so the pending delete
+      // eventually unblocks. Pre-fix, idbWipe would reject on onblocked
+      // before versionchange fired; post-fix, it waits for onsuccess.
+      const openReq = indexedDB.open('career-planner-meta', 1);
+      const openDb: IDBDatabase = await new Promise((resolve, reject) => {
+        openReq.onsuccess = () => resolve(openReq.result);
+        openReq.onerror = () => reject(openReq.error);
+      });
+      openDb.onversionchange = () => openDb.close();
+
+      const wipe = idbWipe();
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('idbWipe timed out (blocked forever)')), 3000),
+      );
+      await Promise.race([wipe, timeout]);
+      return { ok: true };
+    });
+
+    expect(result.ok).toBe(true);
+  });
 });

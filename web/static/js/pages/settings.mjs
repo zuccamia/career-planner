@@ -133,7 +133,7 @@ const render = (root) => {
         </label>
       </section>
 
-      <section id="ai-provider" class="${CLS.card}">
+      <section id="ai-panel" class="${CLS.card}">
         ${byokSectionHeader({ domPrefix: 'llm', i18nPrefix: 'settings.ai' })}
         <div id="llm-fields" class="space-y-3">
           ${byokBaseURLRow({ domPrefix: 'llm', i18nPrefix: 'settings.ai', placeholder: DEFAULT_LLM_BASE_URL })}
@@ -150,7 +150,7 @@ const render = (root) => {
         </div>
       </section>
 
-      <section id="scraper-provider" class="${CLS.card}">
+      <section id="scraper-panel" class="${CLS.card}">
         ${byokSectionHeader({ domPrefix: 'scraper', i18nPrefix: 'settings.scraper' })}
         <div id="scraper-fields" class="space-y-3">
           ${byokProviderRow({ domPrefix: 'scraper', i18nPrefix: 'settings.scraper', options: SCRAPER_PROVIDER_KEYS })}
@@ -161,7 +161,7 @@ const render = (root) => {
         </div>
       </section>
 
-      <section id="search-provider" class="${CLS.card}">
+      <section id="search-panel" class="${CLS.card}">
         ${byokSectionHeader({ domPrefix: 'search', i18nPrefix: 'settings.search' })}
         <div id="search-fields" class="space-y-3">
           ${byokProviderRow({ domPrefix: 'search', i18nPrefix: 'settings.search', options: SEARCH_PROVIDER_KEYS })}
@@ -683,6 +683,13 @@ export const mountSettings = async (root) => {
   wireLocalDisk();
   wireDrive();
   wireSnapshotActions();
+
+  // Cross-page nav to #anchor: the browser scrolled before render() ran, so
+  // re-scroll now that the section exists.
+  if (window.location.hash) {
+    const target = document.getElementById(window.location.hash.slice(1));
+    if (target) target.scrollIntoView({ block: 'start' });
+  }
 
   // Backends were already restored in main.mjs during boot — just paint status.
   refreshLocalDisk();

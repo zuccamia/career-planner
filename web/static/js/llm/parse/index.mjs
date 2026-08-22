@@ -15,10 +15,14 @@ import * as buildDossier                  from './build-dossier.mjs';
 import * as generateBragTags              from './generate-brag-tags.mjs';
 import * as extractBragsFromResume        from './extract-brags-from-resume.mjs';
 import * as extractOverviewFromResume     from './extract-overview-from-resume.mjs';
-import * as extractStructuredResumeFromMd from './extract-structured-resume-from-md.mjs';
+import * as extractStructuredResumeFromSource from './extract-structured-resume-from-source.mjs';
 import * as summarizeThread               from './summarize-thread.mjs';
 import * as generateMessage               from './generate-message.mjs';
 import * as extractJobDescription         from './extract-job-description.mjs';
+import * as analyzeRoleSignals               from './analyze-role-signals.mjs';
+
+// tailor-rank-brags + tailor-draft-resume are composed by tailor-client.mjs
+// (not dispatched via llmCall) — see web/static/js/tailor/{rank,draft}.mjs.
 
 const modules = {
   'guess-candidate':                   guessCandidate,
@@ -26,10 +30,11 @@ const modules = {
   'generate-brag-tags':                generateBragTags,
   'extract-brags-from-resume':         extractBragsFromResume,
   'extract-overview-from-resume':      extractOverviewFromResume,
-  'extract-structured-resume-from-md': extractStructuredResumeFromMd,
+  'extract-structured-resume-from-source': extractStructuredResumeFromSource,
   'summarize-thread':                  summarizeThread,
   'generate-message':                  generateMessage,
   'extract-job-description':           extractJobDescription,
+  'analyze-role-signals':                 analyzeRoleSignals,
 };
 
 export const parsers  = Object.fromEntries(Object.entries(modules).map(([n, m]) => [n, m.parse]));

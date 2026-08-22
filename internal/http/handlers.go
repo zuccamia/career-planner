@@ -33,7 +33,7 @@ type pageData struct {
 var StaticHost bool
 
 // urlForPage maps a page identifier (like "dashboard" or "companies?new=1"
-// or "settings#ai-provider") to the right relative URL for the current host
+// or "settings#ai-panel") to the right relative URL for the current host
 // mode. All pages live at the root (or /{locale}/ on static), so a bare
 // relative href resolves correctly from any other page — no leading `/` or
 // `./` needed. Static builds add `.html` before any query/hash suffix.

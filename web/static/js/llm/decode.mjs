@@ -26,3 +26,11 @@ export const decodeJSONResponse = (raw) => {
     throw new Error(`decode JSON response: ${err.message}`);
   }
 };
+
+// nonNegInt coerces a raw LLM field to an integer ≥ min, or null. Guards
+// against floats and negatives that bare Number() would silently accept.
+export const nonNegInt = (raw, min = 0) => {
+  if (raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= min ? n : null;
+};

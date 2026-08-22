@@ -33,9 +33,8 @@ const tavilySearch = async (cfg, query, opts) => {
   // Tavily doesn't parse `site:` operators in the query; scope must come
   // through include_domains. Callers (Discover) pass the ATS host list here.
   if (opts?.includeDomains?.length) body.include_domains = opts.includeDomains;
-  // Freshness cutoff, e.g. 1 for "past day". Mirrors the Go pipeline's
-  // siteScopedTimeRange config on the SearXNG side.
-  if (opts?.days > 0) body.days = opts.days;
+  // topic=general ignores `days`; freshness must go through `time_range`.
+  if (opts?.timeRange) body.time_range = opts.timeRange;
   if (searchDepth === 'advanced' && opts?.chunksPerSource > 0) {
     body.chunks_per_source = opts.chunksPerSource;
   }
@@ -52,9 +51,19 @@ const tavilySearch = async (cfg, query, opts) => {
 
 // --- Brave ---------------------------------------------------------------
 
+// Brave freshness param values: past day/week/month/year.
+const BRAVE_FRESHNESS = { day: 'pd', week: 'pw', month: 'pm', year: 'py' };
+
 const braveSearch = async (cfg, query, opts) => {
   const maxResults = opts?.maxResults ?? cfg.maxResults ?? DEFAULT_MAX_RESULTS;
-  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${maxResults}`;
+  // Brave has no include_domains param; scope via `site:` operator in query.
+  const scoped = opts?.includeDomains?.length
+    ? `${opts.includeDomains.map((d) => `site:${d}`).join(' OR ')} ${query}`
+    : query;
+  const params = new URLSearchParams({ q: scoped, count: String(maxResults) });
+  const freshness = BRAVE_FRESHNESS[opts?.timeRange];
+  if (freshness) params.set('freshness', freshness);
+  const url = `https://api.search.brave.com/res/v1/web/search?${params.toString()}`;
   const payload = await fetchJSON(url, searchOpts({
     method: 'GET',
     headers: {

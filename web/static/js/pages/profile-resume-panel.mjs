@@ -300,8 +300,12 @@ const saveResume = async () => {
       }
       toast(t('profile.resumes.toast.saved'), 'ok');
     } else {
-      const id = await createResume({ title, format, body });
-      currentResume = { id, title, format, body, is_primary: 0 };
+      // A prefilled draft (e.g. from the tailored-résumé flow) carries an
+      // application_id on currentResume — persist it so the new row is
+      // linked to the posting it was drafted for.
+      const applicationId = currentResume?.application_id ?? null;
+      const id = await createResume({ title, format, body, applicationId });
+      currentResume = { id, title, format, body, is_primary: 0, application_id: applicationId };
       if (isPrimary) await setPrimaryResume(id);
       toast(t('profile.resumes.toast.created', { id }), 'ok');
     }
@@ -414,13 +418,33 @@ const wire = () => {
 // null. `triggerEl` is the click origin (kept by openSlideOver for focus
 // restore). `onClose` receives a report — { saved, deleted, attached } —
 // so the caller can refresh selectively.
-export const openResumePanel = async ({ resumeId = null, triggerEl = null, onClose } = {}) => {
+//
+// `initialResume` prefills the create flow with a draft the caller has
+// already prepared (e.g. the tailored-résumé orchestrator emits Typst source
+// + suggested title + application_id and hands them off here). Ignored when
+// `resumeId` is set — editing an existing row always re-reads it from DB.
+// Recognized fields: { title, format, body, applicationId }.
+export const openResumePanel = async ({
+  resumeId = null,
+  initialResume = null,
+  triggerEl = null,
+  onClose,
+} = {}) => {
   const panel = document.getElementById(PANEL_ID);
   if (!panel) return;
   if (isSlideOverOpen(PANEL_ID)) closeSlideOver(PANEL_ID);
+  const blankResume = { id: null, title: '', format: 'typ', body: '', is_primary: 0, application_id: null };
   const resume = resumeId
     ? await getResume(resumeId)
-    : { id: null, title: '', format: 'typ', body: '', is_primary: 0 };
+    : {
+        ...blankResume,
+        ...(initialResume ? {
+          title: initialResume.title ?? '',
+          format: initialResume.format ?? 'typ',
+          body: initialResume.body ?? '',
+          application_id: initialResume.applicationId ?? null,
+        } : {}),
+      };
   if (!resume) {
     toast(t('profile.resumes.error.not_found', { id: resumeId }), 'error');
     return;

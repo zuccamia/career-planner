@@ -1,17 +1,31 @@
 package profile
 
+import (
+	"fmt"
+	"strings"
+)
+
 // ResumeStructured is the decoded LLM response for structured-resume
-// extraction — the shape the browser hands to a Typst renderer to produce
-// a house-format .typ file. Fields the résumé doesn't clearly express are
-// left empty rather than invented.
+// extraction — the shape the browser hands to a Typst renderer.
 type ResumeStructured struct {
 	Contact    ResumeContact         `json:"contact"`
-	Summary    string                `json:"summary,omitempty"`
 	Education  []ResumeEducation     `json:"education,omitempty"`
 	Skills     []ResumeSkillGroup    `json:"skills,omitempty"`
 	Experience []ResumeExperience    `json:"experience,omitempty"`
 	Projects   []ResumeNamedEntry    `json:"projects,omitempty"`
 	Activities []ResumeNamedEntry    `json:"activities,omitempty"`
+}
+
+// Section namespaces the résumé section tokens the tailor pipeline routes
+// changes into. Matches ResumeStructured JSON tags.
+var Section = struct {
+	Experience string
+	Projects   string
+	Activities string
+}{
+	Experience: "experience",
+	Projects:   "projects",
+	Activities: "activities",
 }
 
 // ResumeContact is the header block — name plus outward-facing links and
@@ -68,4 +82,58 @@ type ResumeNamedEntry struct {
 	URL         string `json:"url,omitempty"`
 	Subtitle    string `json:"subtitle,omitempty"`
 	Description string `json:"description,omitempty"`
+}
+
+// FlattenBaseResume returns a lossless text projection with `[N]` index
+// anchors so ranker output can point at role/bullet/entry positions.
+// Contact excluded. Mirrors flattenBaseResume in
+// web/static/js/llm/parse/extract-structured-resume-from-source.mjs.
+func FlattenBaseResume(r ResumeStructured) string {
+	var b strings.Builder
+	writeln := func(s string) { b.WriteString(s); b.WriteByte('\n') }
+	join := func(sep string, parts ...string) string {
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if strings.TrimSpace(p) != "" { out = append(out, p) }
+		}
+		return strings.Join(out, sep)
+	}
+
+	if len(r.Experience) > 0 {
+		writeln("EXPERIENCE")
+		for i, role := range r.Experience {
+			writeln(fmt.Sprintf("[%d] %s", i, join(" | ", role.Company, role.Title, role.Dates)))
+			for j, bl := range role.Bullets {
+				text := bl.Description
+				if bl.LeadIn != "" { text = bl.LeadIn + ": " + bl.Description }
+				writeln(fmt.Sprintf("  [%d] %s", j, text))
+			}
+		}
+		writeln("")
+	}
+	if len(r.Skills) > 0 {
+		writeln("SKILLS")
+		for _, g := range r.Skills {
+			writeln("- " + g.Label + ": " + strings.Join(g.Items, ", "))
+		}
+		writeln("")
+	}
+	for _, sec := range []struct {
+		label   string
+		entries []ResumeNamedEntry
+	}{{"PROJECTS", r.Projects}, {"ACTIVITIES", r.Activities}} {
+		if len(sec.entries) == 0 { continue }
+		writeln(sec.label)
+		for i, e := range sec.entries {
+			writeln(fmt.Sprintf("[%d] %s", i, join(" — ", e.Name, e.Description)))
+		}
+		writeln("")
+	}
+	if len(r.Education) > 0 {
+		writeln("EDUCATION")
+		for _, ed := range r.Education {
+			writeln("- " + join(", ", ed.School, ed.Degree, ed.Dates))
+		}
+	}
+	return strings.TrimSpace(b.String())
 }

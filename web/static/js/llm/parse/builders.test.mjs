@@ -8,6 +8,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { builders } from './index.mjs';
+import { build as buildRank } from './tailor-rank-brags.mjs';
+import { build as buildDraft } from './tailor-draft-resume.mjs';
 import { _resetPromptCacheForTests } from '../prompts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -40,7 +42,7 @@ const MINIMUM_INPUT = {
   'generate-brag-tags':                { body: 'Shipped feature flags to production.' },
   'extract-brags-from-resume':         { markdown: '# CV\n- did stuff' },
   'extract-overview-from-resume':      { markdown: '# CV\n- did stuff' },
-  'extract-structured-resume-from-md': { markdown: '# CV\n- did stuff' },
+  'extract-structured-resume-from-source': { markdown: '# CV\n- did stuff' },
   'summarize-thread': {
     thread:  { person_name: 'Jane', channel: 'email', subject: 'hi', status: 'open', summary: '' },
     entries: [{ direction: 'inbound', content: 'hi there', occurred_at: '2026-01-02T03:04:05Z' }],
@@ -53,6 +55,10 @@ const MINIMUM_INPUT = {
   'extract-job-description': {
     company_name: 'Acme', role_title: 'Engineer',
     job_description_raw: 'We are hiring an engineer to build things.',
+  },
+  'analyze-role-signals': {
+    jd_structured: { role_title: 'Engineer', must_have_skills: ['Go'] },
+    company_dossier: null,
   },
 };
 
@@ -77,6 +83,44 @@ describe('builders smoke', () => {
         if (name === 'summarize-thread')     expect(out.user).toContain('Person: Jane');
         if (name === 'generate-message')     expect(out.user).toContain('outreach');
       }
+    });
+  }
+});
+
+// Rank + draft flows aren't in the registry (composed by tailor-client.mjs
+// directly), but their persona rendering — the leading %s slot in system,
+// resolved from JD.function with a "professional" fallback — is worth
+// pinning here since the fetch stub is already set up.
+describe('tailor persona rendering', () => {
+  const cases = [
+    { name: 'rank',  build: buildRank,  probe: 'résumé strategist',
+      min: {
+        jd_structured:          { role_title: 'Engineer' },
+        profile:                { name: 'Alex' },
+        base_resume_structured: { contact: { name: 'Alex' }, experience: [{ company: 'A', bullets: [{ description: 'X' }] }] },
+        brags:                  [{ id: 1, title: 'X', body: 'Y', tags: [] }],
+      } },
+    { name: 'draft', build: buildDraft, probe: 'senior hiring manager',
+      min: {
+        jd_structured:          { role_title: 'Engineer' },
+        profile:                { name: 'Alex' },
+        base_resume_structured: { contact: { name: 'Alex' }, experience: [] },
+        experience_brags: [], project_brags: [], activity_brags: [],
+      } },
+  ];
+
+  for (const { name, build, probe, min } of cases) {
+    it(`${name} interpolates jd.function`, async () => {
+      const input = { ...min, jd_structured: { ...min.jd_structured, function: 'product management' } };
+      const { system } = await build(input, 'en');
+      expect(system).toContain(probe);
+      expect(system).toContain('product management');
+      expect(system).not.toContain('professional');
+    });
+    it(`${name} falls back to "professional" when jd.function is empty`, async () => {
+      const { system } = await build(min, 'en');
+      expect(system).toContain(probe);
+      expect(system).toContain('professional');
     });
   }
 });

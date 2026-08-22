@@ -156,10 +156,12 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.Handle("POST /api/companies/guess-candidate", llm(server.rpcGuessCompanyCandidate))
 	mux.Handle("POST /api/dossiers/build", llm(server.rpcBuildDossier))
 	mux.Handle("POST /api/applications/extract-job-description", llm(server.rpcExtractJobDescription))
+	mux.Handle("POST /api/applications/analyze-role-signals", llm(server.rpcAnalyzeRoleSignals))
+	mux.Handle("POST /api/applications/tailor", llm(server.rpcTailor))
 	mux.Handle("POST /api/profile/generate-brag-tags", llm(server.rpcGenerateBragTags))
 	mux.Handle("POST /api/profile/extract-brags-from-resume", llm(server.rpcExtractBragsFromResume))
 	mux.Handle("POST /api/profile/extract-overview-from-resume", llm(server.rpcExtractOverviewFromResume))
-	mux.Handle("POST /api/profile/extract-structured-resume-from-md", llm(server.rpcExtractStructuredResumeFromMd))
+	mux.Handle("POST /api/profile/extract-structured-resume-from-source", llm(server.rpcExtractStructuredResumeFromSource))
 	mux.Handle("POST /api/communications/summarize-thread", llm(server.rpcSummarizeThread))
 	mux.Handle("POST /api/communications/generate-message", llm(server.rpcGenerateMessage))
 	// Subsystem-only endpoints for BYOK-LLM callers with no BYOK scrape/search

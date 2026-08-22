@@ -10,3 +10,15 @@ import "github.com/zuccamia/career-planner/internal/sources/llm"
 func extractJobDescriptionPrompts() llm.PromptSets {
 	return llm.PromptSet("extract-job-description")
 }
+
+func tailorRankBragsPrompts() llm.PromptSets {
+	return llm.PromptSet("tailor-rank-brags")
+}
+
+func tailorDraftResumePrompts() llm.PromptSets {
+	return llm.PromptSet("tailor-draft-resume")
+}
+
+func analyzeRoleSignalsPrompts() llm.PromptSets {
+	return llm.PromptSet("analyze-role-signals")
+}

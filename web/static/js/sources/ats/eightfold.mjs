@@ -51,16 +51,16 @@ export const fetchPosting = async (rawURL, { timeoutMs = 15_000 } = {}) => {
       ? new Date(payload.t_create * 1000).toISOString()
       : '';
     return {
+      provider: 'eightfold',
       title,
-      url: (payload.canonicalPositionUrl || rawURL).trim(),
       company: prettifySlug(parsed.tenant),
       location: locations,
       department: (payload.department || '').trim(),
       team: (payload.business_unit || '').trim(),
-      snippet: desc,
-      postedAt,
-      provider: 'eightfold',
-      employmentType: (payload.type || '').trim(),
+      apply_url: (payload.canonicalPositionUrl || rawURL).trim(),
+      description_text: desc,
+      posted_at: postedAt,
+      employment_type: (payload.type || '').trim(),
     };
   } catch {
     return null;

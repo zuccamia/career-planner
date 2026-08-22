@@ -11,5 +11,9 @@
   "010_profile_wizard_fields.sql",
   "011_brag_entry_year.sql",
   "012_profile_looking_for_and_locations.sql",
-  "013_rename_environment_to_workplace_type.sql"
+  "013_rename_environment_to_workplace_type.sql",
+  "014_resume_application_link.sql",
+  "015_brag_entry_category.sql",
+  "016_application_tailor_signals.sql",
+  "017_application_events_status_since_index.sql"
 ]

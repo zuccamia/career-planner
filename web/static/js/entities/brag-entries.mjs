@@ -5,7 +5,19 @@
 
 import { exec, decodeJSON } from '../db/client.mjs';
 
-const EDITABLE_COLS = ['title', 'body', 'impact', 'tags_json', 'tags_generated_at', 'company_id', 'entry_year'];
+const EDITABLE_COLS = ['title', 'body', 'impact', 'tags_json', 'tags_generated_at', 'company_id', 'entry_year', 'category'];
+
+// Category routes the brag into the matching résumé section on tailor.
+// 'experience' — professional work (default; matches historical rows).
+// 'project'    — hobby, school, or side projects → résumé Projects section.
+// 'activity'   — interests, volunteering, clubs → résumé Activities section.
+export const BRAG_CATEGORIES = ['experience', 'project', 'activity'];
+
+// Normalize a brag category to a canonical enum token. Unknown/empty → experience.
+export const coerceCategory = (raw) => {
+  const value = String(raw ?? '').trim().toLowerCase();
+  return BRAG_CATEGORIES.includes(value) ? value : 'experience';
+};
 
 // Callers may pass `tags` (array) or `tags_json` (string). Prefer the array
 // form; fall back to decoding the string via the shared decodeJSON helper so
@@ -22,6 +34,7 @@ const sanitizeBragEntryFields = (data) => {
     tags_generated_at: data.tags_generated_at || null,
     company_id: data.company_id ? Number(data.company_id) : null,
     entry_year: data.entry_year ? Number(data.entry_year) : null,
+    category: coerceCategory(data.category),
   };
 };
 

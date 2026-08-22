@@ -66,13 +66,13 @@ describe('urlFor', () => {
     setMeta('false');
     expect(urlFor('dashboard')).toBe('dashboard');
     expect(urlFor('companies?new=1')).toBe('companies?new=1');
-    expect(urlFor('settings#ai-provider')).toBe('settings#ai-provider');
+    expect(urlFor('settings#ai-panel')).toBe('settings#ai-panel');
   });
 
   it('appends .html on static, preserving query/hash', () => {
     setMeta('true');
     expect(urlFor('dashboard')).toBe('dashboard.html');
     expect(urlFor('companies?new=1')).toBe('companies.html?new=1');
-    expect(urlFor('settings#ai-provider')).toBe('settings.html#ai-provider');
+    expect(urlFor('settings#ai-panel')).toBe('settings.html#ai-panel');
   });
 });

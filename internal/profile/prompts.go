@@ -8,4 +8,4 @@ import "github.com/zuccamia/career-planner/internal/sources/llm"
 // Wrapped as functions (not vars) to defer the PromptSet lookup until request
 // time; a package-var init would resolve before LoadPrompts has run.
 func extractOverviewPrompts() llm.PromptSets         { return llm.PromptSet("extract-overview-from-resume") }
-func extractStructuredResumePrompts() llm.PromptSets { return llm.PromptSet("extract-structured-resume-from-md") }
+func extractStructuredResumePrompts() llm.PromptSets { return llm.PromptSet("extract-structured-resume-from-source") }

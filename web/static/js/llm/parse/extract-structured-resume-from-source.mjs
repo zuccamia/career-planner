@@ -6,6 +6,7 @@
 import { decodeJSONResponse } from '../decode.mjs';
 import { isSuspiciousText } from '../safety.mjs';
 import { buildFromField } from '../prompts.mjs';
+import { t } from '../../i18n.mjs';
 
 const cleanScalar = (s) => {
   const t = (s ?? '').trim();
@@ -48,9 +49,6 @@ const finalizeNamedEntries = (in_) => {
 
 export const finalizeStructuredResume = (out = {}) => {
   const result = { contact: finalizeContact(out.contact) };
-
-  const summary = cleanScalar(out.summary);
-  if (summary) result.summary = summary;
 
   const edu = [];
   for (const e of out.education ?? []) {
@@ -110,4 +108,49 @@ export const finalizeStructuredResume = (out = {}) => {
 
 export const parse = (raw) => finalizeStructuredResume(decodeJSONResponse(raw));
 
-export const build = async (input, locale) => buildFromField('extract-structured-resume-from-md', input, 'markdown', locale);
+// Lossless text projection with `[N]` index anchors so ranker output can
+// point at role/bullet/entry positions. Contact excluded.
+const nonEmpty = (parts) => parts.filter((p) => p && String(p).trim());
+
+export const flattenBaseResume = (resume) => {
+  if (!resume) return '';
+  const lines = [];
+  const exp = resume.experience ?? [];
+  if (exp.length) {
+    lines.push('EXPERIENCE');
+    exp.forEach((role, i) => {
+      lines.push(`[${i}] ${nonEmpty([role?.company, role?.title, role?.dates]).join(' | ')}`);
+      (role?.bullets ?? []).forEach((b, j) => {
+        const text = b?.lead_in ? `${b.lead_in}: ${b.description ?? ''}` : (b?.description ?? '');
+        lines.push(`  [${j}] ${text}`);
+      });
+    });
+    lines.push('');
+  }
+  const skills = resume.skills ?? [];
+  if (skills.length) {
+    lines.push('SKILLS');
+    for (const grp of skills) lines.push(`- ${grp?.label ?? ''}: ${(grp?.items ?? []).join(', ')}`);
+    lines.push('');
+  }
+  for (const [key, label] of [['projects', 'PROJECTS'], ['activities', 'ACTIVITIES']]) {
+    const entries = resume[key] ?? [];
+    if (!entries.length) continue;
+    lines.push(label);
+    entries.forEach((e, i) => lines.push(`[${i}] ${nonEmpty([e?.name, e?.description]).join(' — ')}`));
+    lines.push('');
+  }
+  const education = resume.education ?? [];
+  if (education.length) {
+    lines.push('EDUCATION');
+    for (const ed of education) lines.push(`- ${nonEmpty([ed?.school, ed?.degree, ed?.dates]).join(', ')}`);
+  }
+  return lines.join('\n').trim();
+};
+
+// Accepts either input.markdown or input.typst — same prompt, format-neutral.
+export const build = async (input, locale) => {
+  const source = (input?.markdown ?? '').trim() || (input?.typst ?? '').trim();
+  if (!source) throw new Error(t('profile.resumes.error.source_required'));
+  return buildFromField('extract-structured-resume-from-source', { source }, 'source', locale);
+};

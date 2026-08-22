@@ -139,6 +139,16 @@ test.describe('local settings — AI provider (BYOK-only server)', () => {
     // available, so the badge nudges the user toward Settings.
     await page.goto('/dashboard');
     await expect(page.locator('#ai-mode-badge')).toContainText(/setup needed/i);
+    // Sidebar is a drawer — off-canvas until the hamburger opens it. Open
+    // it first so the badge is on-screen and clickable.
+    await page.locator('#sidebar-toggle').click();
+    // Clicking the badge lands on the right panel and scrolls it into view.
+    // Guards against (a) settings sections rendering async in mountSettings,
+    // so a cross-page #hash arrives before the section exists, and (b) the
+    // section id re-colliding with the <select id="X-provider"> inside.
+    await page.locator('#ai-mode-badge').click();
+    await expect(page).toHaveURL(/settings#ai-panel$/);
+    await expect(page.locator('section#ai-panel')).toBeInViewport();
   });
 });
 

@@ -209,6 +209,15 @@ export const metaText = (text, { extraClass = '', id = '' } = {}) => {
   return `<p class="${cls}"${idAttr}>${escapeHtml(text)}</p>`;
 };
 
+// orDivider renders a horizontal line with a centered "or" label — for
+// "primary path OR alternate path" affordances.
+export const orDivider = () => `
+  <div class="flex items-center gap-3">
+    <span class="h-px flex-1 bg-line-strong"></span>
+    <span class="text-xs font-medium uppercase tracking-wider text-ink-faint">${escapeHtml(t('common.or'))}</span>
+    <span class="h-px flex-1 bg-line-strong"></span>
+  </div>`;
+
 // hintLink renders a small help line with an inline link — the "Need a new X?
 // Add one" pattern below select dropdowns. Optional `suffix` extends the
 // sentence past the link ("Try <link> or update your profile."). All text is
@@ -264,7 +273,7 @@ export const pageHeader = ({ page = '', title, tagline, countId = '' } = {}) => 
   <div class="space-y-2">
     ${eyebrow}
     <h1 class="font-display text-3xl font-semibold text-ink">${escapeHtml(title)}</h1>
-    ${line ? `<p class="text-sm text-ink-faint"${countId ? ` id="${countId}-tagline"` : ''}>${escapeHtml(line)}</p>` : ''}
+    ${line ? `<p class="${CLS.tagline}"${countId ? ` id="${countId}-tagline"` : ''}>${escapeHtml(line)}</p>` : ''}
     ${countId ? `<p class="font-mono text-sm tabular-nums text-ink-faint" id="${countId}">${t('app.loading')}</p>` : ''}
   </div>
 `;

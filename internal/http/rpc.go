@@ -18,6 +18,7 @@ import (
 	"github.com/zuccamia/career-planner/internal/i18n"
 	"github.com/zuccamia/career-planner/internal/people"
 	"github.com/zuccamia/career-planner/internal/sources/ats"
+	"github.com/zuccamia/career-planner/internal/sources/llm"
 	"github.com/zuccamia/career-planner/internal/sources/scrape"
 )
 
@@ -35,6 +36,22 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// writeServiceErr logs the service-layer failure and writes the response.
+// llm.ErrClientNotConfigured and llm.InputError map to 400; else 502.
+func writeServiceErr(w http.ResponseWriter, r *http.Request, name string, err error) {
+	if errors.Is(err, llm.ErrClientNotConfigured) {
+		writeErr(w, http.StatusBadRequest, i18n.T(i18n.Resolve(r), "settings.ai.error.no_llm_configured"))
+		return
+	}
+	var inputErr *llm.InputError
+	if errors.As(err, &inputErr) {
+		writeErr(w, http.StatusBadRequest, inputErr.Msg)
+		return
+	}
+	log.Printf("rpc %s: %v", name, err)
+	writeErr(w, http.StatusBadGateway, err.Error())
 }
 
 // decodeJSON reads r.Body into dst. On decode failure it writes a 400 with a
@@ -190,8 +207,7 @@ func (s *Server) rpcGenerateBragTags(w http.ResponseWriter, r *http.Request) {
 	}
 	tags, err := s.brags.GenerateTags(r.Context(), body.Body, body.OutputLanguage)
 	if err != nil {
-		log.Printf("rpc generate-brag-tags: %v", err)
-		writeErr(w, http.StatusBadGateway, err.Error())
+		writeServiceErr(w, r, "generate-brag-tags", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, brags.TagResult{Tags: tags})
@@ -215,8 +231,7 @@ func (s *Server) rpcExtractBragsFromResume(w http.ResponseWriter, r *http.Reques
 	}
 	entries, err := s.brags.ExtractFromResume(r.Context(), body.Markdown, body.OutputLanguage)
 	if err != nil {
-		log.Printf("rpc extract-brags-from-resume: %v", err)
-		writeErr(w, http.StatusBadGateway, err.Error())
+		writeServiceErr(w, r, "extract-brags-from-resume", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, brags.ExtractResumeResult{Brags: entries})
@@ -241,36 +256,64 @@ func (s *Server) rpcExtractOverviewFromResume(w http.ResponseWriter, r *http.Req
 	}
 	overview, err := s.profile.ExtractFromResume(r.Context(), body.Markdown, body.OutputLanguage)
 	if err != nil {
-		log.Printf("rpc extract-overview-from-resume: %v", err)
-		writeErr(w, http.StatusBadGateway, err.Error())
+		writeServiceErr(w, r, "extract-overview-from-resume", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, overview)
 }
 
-// rpcExtractStructuredResumeFromMd wraps profile.Service.ExtractStructuredResume.
-// Input: {"markdown":"...","output_language":"en|vi"}.
-// Output: the profile.ResumeStructured struct — the browser hands it to a
-// deterministic Typst renderer to produce a .typ file.
-func (s *Server) rpcExtractStructuredResumeFromMd(w http.ResponseWriter, r *http.Request) {
+// rpcExtractStructuredResumeFromSource wraps profile.Service.ExtractStructuredResume.
+// Input: {"source":"<markdown or typst>","output_language":"en|vi"}. Prompt
+// is format-neutral so a single field suffices.
+func (s *Server) rpcExtractStructuredResumeFromSource(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Markdown       string `json:"markdown"`
+		Source         string `json:"source"`
 		OutputLanguage string `json:"output_language"`
 	}
 	if !decodeJSON(r, w, &body) {
 		return
 	}
-	if strings.TrimSpace(body.Markdown) == "" {
-		writeErr(w, http.StatusBadRequest, "markdown is required")
+	source := strings.TrimSpace(body.Source)
+	if source == "" {
+		writeErr(w, http.StatusBadRequest, i18n.T(body.OutputLanguage, "profile.resumes.error.source_required"))
 		return
 	}
-	resume, err := s.profile.ExtractStructuredResume(r.Context(), body.Markdown, body.OutputLanguage)
+	resume, err := s.profile.ExtractStructuredResume(r.Context(), source, body.OutputLanguage)
 	if err != nil {
-		log.Printf("rpc extract-structured-resume-from-md: %v", err)
-		writeErr(w, http.StatusBadGateway, err.Error())
+		writeServiceErr(w, r, "extract-structured-resume-from-source", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, resume)
+}
+
+// rpcAnalyzeRoleSignals analyzes JD + optional company dossier into a role brief
+// the tailor pipeline uses as a rubric. Response: { brief: "<markdown>" }.
+func (s *Server) rpcAnalyzeRoleSignals(w http.ResponseWriter, r *http.Request) {
+	var in applications.AnalyzeRoleSignalsInput
+	if !decodeJSON(r, w, &in) {
+		return
+	}
+	out, err := s.applications.AnalyzeRoleSignals(r.Context(), in)
+	if err != nil {
+		writeServiceErr(w, r, "analyze-role-signals", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// rpcTailor runs the composite tailor pipeline: rank per category, take
+// top-N, draft the résumé.
+func (s *Server) rpcTailor(w http.ResponseWriter, r *http.Request) {
+	var in applications.TailorInput
+	if !decodeJSON(r, w, &in) {
+		return
+	}
+	out, err := s.applications.Tailor(r.Context(), in)
+	if err != nil {
+		writeServiceErr(w, r, "tailor", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // threadDetailPayload matches the JSON shape the browser sends when calling
@@ -388,8 +431,7 @@ func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request
 		OutputLanguage:    body.OutputLanguage,
 	})
 	if err != nil {
-		log.Printf("rpc extract-job-description: %v", err)
-		writeErr(w, http.StatusBadGateway, err.Error())
+		writeServiceErr(w, r, "extract-job-description", err)
 		return
 	}
 	// ExtractJD already logs the suspicious-input warning internally; just

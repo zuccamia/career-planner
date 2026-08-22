@@ -16,7 +16,9 @@ export const listPeople = () => exec(`
   SELECT p.id, p.full_name, p.title, p.company_id,
          c.official_name AS company_name,
          p.social_url, p.notes,
-         p.created_at, p.updated_at
+         p.created_at, p.updated_at,
+         (SELECT MAX(last_activity_at) FROM communication_threads
+            WHERE person_id = p.id) AS last_activity_at
   FROM people p
   LEFT JOIN companies c ON c.id = p.company_id
   ORDER BY p.full_name COLLATE NOCASE

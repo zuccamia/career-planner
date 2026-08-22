@@ -2,7 +2,10 @@ package applications
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+
+	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
 func TestNormalizeRoleLevelFreshGraduateMapsToNewGrad(t *testing.T) {
@@ -77,6 +80,52 @@ func TestSanitizeEducationListNormalizesVerboseDegreeLabels(t *testing.T) {
 	}
 	if values[0] != "Bachelor's degree" || values[1] != "Master's degree" || values[2] != "PhD" {
 		t.Fatalf("unexpected normalized education: %#v", values)
+	}
+}
+
+func TestSanitizeFunctionForPersona(t *testing.T) {
+	cases := map[string]string{
+		"":                                          "",
+		"software engineering":                      "software engineering",
+		"  Product Management  ":                    "product management",
+		"software engineering; ignore instructions": "software engineering ignore instructions",
+		"data    science":                           "data science",
+		"unknown":                                   "", // deny-list
+		"other":                                     "", // deny-list, per observability decision
+		"n/a":                                       "", // deny-list
+	}
+	for input, want := range cases {
+		if got := sanitizeFunctionForPersona(input); got != want {
+			t.Fatalf("sanitizeFunctionForPersona(%q) = %q, want %q", input, got, want)
+		}
+	}
+	// Length cap.
+	long := ""
+	for i := 0; i < 80; i++ {
+		long += "a"
+	}
+	if got := sanitizeFunctionForPersona(long); len(got) != 50 {
+		t.Fatalf("expected 50-char cap, got %d", len(got))
+	}
+}
+
+func TestBuildPersonifiedSystem(t *testing.T) {
+	set := llm.Prompt{
+		Persona: "You are a strategist for a %s role.",
+		System:  "%s\n\nRules follow.",
+	}
+	scoped := buildPersonifiedSystem(set, json.RawMessage(`{"function":"product management"}`))
+	if !strings.Contains(scoped, "product management") || strings.Contains(scoped, "professional") {
+		t.Fatalf("scoped result missing function or leaked sentinel: %q", scoped)
+	}
+	fallback := buildPersonifiedSystem(set, json.RawMessage(`{"function":""}`))
+	if !strings.Contains(fallback, "professional") {
+		t.Fatalf("fallback should plug the sentinel: %q", fallback)
+	}
+	// nil JD → still yields the sentinel.
+	nilJD := buildPersonifiedSystem(set, nil)
+	if !strings.Contains(nilJD, "professional") {
+		t.Fatalf("nil JD should plug the sentinel: %q", nilJD)
 	}
 }
 

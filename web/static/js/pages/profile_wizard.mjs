@@ -19,7 +19,7 @@ import { CLS } from '../ui/classes.mjs';
 import { LOOKING_FOR_VALUES } from '../db/schema.mjs';
 import { escapeHtml } from '../ui/dom.mjs';
 import { icon } from '../ui/icons.mjs';
-import { button, subheadTitle, inlineError, setInlineError } from '../ui/components.mjs';
+import { button, subheadTitle, inlineError, setInlineError, orDivider } from '../ui/components.mjs';
 import { t } from '../i18n.mjs';
 import {
   updateOverview, markOnboarded, hydrateCareerSparks, hydrateTools, hydrateLocations,
@@ -133,6 +133,13 @@ export const renderWizard = async (ctx) => {
             ? button({ id: 'btn-wizard-next', variant: 'primaryCompact', label: t('profile.wizard.action.next') })
             : button({ id: 'btn-wizard-done', variant: 'primaryCompact', icon: 'check', label: t('profile.wizard.action.finish') })}
         </div>
+      </div>
+    </div>
+    <div class="${CLS.wizardFootnote} space-y-3">
+      ${orDivider()}
+      <p class="${CLS.tagline}">${escapeHtml(t('profile.wizard.import.hint'))}</p>
+      <div class="flex justify-center">
+        ${button({ id: 'btn-wizard-import', variant: 'subtle', icon: 'sparkles', label: t('profile.action.import') })}
       </div>
     </div>
   `;
@@ -380,6 +387,8 @@ const wireWizard = (ctx) => {
   const { state, mountEl } = ctx;
   const step = state.wizardStep;
   document.getElementById('wiz-input')?.focus();
+
+  document.getElementById('btn-wizard-import')?.addEventListener('click', () => ctx.onImport?.());
 
   document.getElementById('wiz-input')?.addEventListener('input', async (ev) => {
     // Update state + Next/Skip button state SYNCHRONOUSLY on input so a

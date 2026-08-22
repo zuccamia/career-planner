@@ -55,6 +55,24 @@ const normalizeSeason = (v) => {
   return ['spring', 'summer', 'fall', 'winter'].includes(s) ? s : '';
 };
 
+// Values that trigger the unscoped-persona fallback (checked post-clean;
+// mirrors emptyFunctionSynonyms in internal/applications/extraction.go).
+const EMPTY_FUNCTION_SYNONYMS = new Set([
+  '', 'unknown', 'none', 'na', 'other', 'various', 'general',
+]);
+
+// sanitizeFunctionForPersona lowercases, keeps only [a-z\s-], caps at 50,
+// deny-lists common empties. Blunts prompt injection through persona.
+const sanitizeFunctionForPersona = (v) => {
+  const cleaned = String(v ?? '')
+    .toLowerCase()
+    .replace(/[^a-z\s\-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 50);
+  return EMPTY_FUNCTION_SYNONYMS.has(cleaned) ? '' : cleaned;
+};
+
 // inferRoleLevel walks a combined lower-cased text corpus for heuristic
 // matches. Kept in Go-order so the first match wins.
 const inferRoleLevel = (...parts) => {
@@ -158,6 +176,7 @@ const sanitizeJobDescriptionStructured = (result, ctx) => {
     role_title:      (result.role_title ?? '').trim()   || (ctx.roleTitle ?? '').trim(),
     role_level:      normalizeRoleLevel(result.role_level),
     employment_type: normalizeEmploymentType(result.employment_type),
+    function:        sanitizeFunctionForPersona(result.function),
     season:          normalizeSeason(result.season),
     year:            typeof result.year === 'number' && result.year >= 0 ? result.year : 0,
     locations:       sanitizeStringList(coerceStringList(result.locations)),
@@ -210,6 +229,9 @@ const sanitizeJobDescriptionStructured = (result, ctx) => {
       (out.responsibilities ?? []).join(' '),
     );
   }
+  // Log for later drift-debugging — cheap now, invaluable when tailoring
+  // output looks off across near-identical JDs.
+  console.log('[jd extract]', { role: out.role_title, function: out.function });
   return out;
 };
 
@@ -235,7 +257,7 @@ const overlayATSPosting = (structured, posting = {}) => {
   // INTERN, which we track as role_level instead) leave the LLM's inference
   // intact. Mirrors Go's overlayATSPosting.
   if (!structured.employment_type) {
-    const et = normalizeEmploymentType(posting.employment_type ?? posting.employmentType ?? '');
+    const et = normalizeEmploymentType(posting.employment_type ?? '');
     if (et) structured.employment_type = et;
   }
   return structured;

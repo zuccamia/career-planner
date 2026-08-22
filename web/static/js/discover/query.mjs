@@ -1,9 +1,6 @@
-// JS port of internal/discover/query.go. Kept in sync one-for-one so the
-// BYOK pipeline generates the same site-scoped queries the server does.
-//
-// Single-rung strict query only — no fallback ladder here. Broader rungs
-// on the server exist to widen recall via paid engines; the browser path
-// spends the user's paid Tavily/Brave quota per host and shouldn't retry.
+// JS port of internal/discover/query.go for the BYOK pipeline. Diverges from
+// Go in one place: no `site:` operator (Tavily ignores it; caller passes
+// include_domains). Single-rung — no fallback ladder, to protect BYOK quota.
 
 import { targetHireMonth, isScarceEmployment, employmentTitleKeywords } from './helpers.mjs';
 
@@ -29,9 +26,9 @@ const composeORGroup = (terms) => {
   return `(${cleaned.map((v) => `"${v}"`).join(' OR ')})`;
 };
 
-// buildSiteScopedQuery composes: site:{host} (roleGroup) (signalGroup)
-// (locationGroup) (empGroup). Empty groups drop. Matches Go behavior for
-// scarce employment types — role collapses to broadRole and signals drop.
+// buildSiteScopedQuery composes (roleGroup) (signalGroup) (locationGroup)
+// (empGroup); empty groups drop. Scarce employment collapses role to
+// broadRole and drops signals, mirroring query.go.
 export const buildSiteScopedQuery = (host, roles, broadRole, signals, locations, employmentType) => {
   if (!host || !host.host) return '';
   if (isScarceEmployment(employmentType)) {
@@ -39,14 +36,9 @@ export const buildSiteScopedQuery = (host, roles, broadRole, signals, locations,
     else if (roles?.length > 0) roles = roles.slice(0, 1);
     signals = null;
   }
-  const parts = [`site:${host.host}`];
   const groups = [roles, signals, locations, employmentTitleKeywords[employmentType]];
   if (isScarceEmployment(employmentType)) groups.push(seasonalYears());
-  for (const group of groups) {
-    const g = composeORGroup(group);
-    if (g) parts.push(g);
-  }
-  return parts.join(' ');
+  return groups.map(composeORGroup).filter(Boolean).join(' ');
 };
 
 // deriveLocationContext splits user locations into (mode, physical, remote?).

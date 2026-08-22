@@ -22,7 +22,7 @@ export const sanitizeURL = (s) => {
 // convention, no tz marker) and full ISO strings from `new Date().toISOString()`
 // (already carry Z or an offset). Naive strings get 'Z' appended; ISO ones
 // pass through untouched. Returns '' for falsy input.
-const toLocalDate = (s) => {
+export const toLocalDate = (s) => {
   if (!s) return null;
   const raw = String(s).replace(' ', 'T');
   const hasTz = /Z$|[+-]\d{2}:?\d{2}$/.test(raw);

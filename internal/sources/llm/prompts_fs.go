@@ -12,10 +12,11 @@ import (
 // web/static/i18n/prompts/{name}.{locale}.json — the same files the browser
 // fetches. Keep in sync with web/static/js/llm/prompts loader.
 type promptFile struct {
-	Name   string `json:"name"`
-	Locale string `json:"locale"`
-	System string `json:"system"`
-	User   string `json:"user"`
+	Name    string `json:"name"`
+	Locale  string `json:"locale"`
+	System  string `json:"system"`
+	User    string `json:"user"`
+	Persona string `json:"persona,omitempty"`
 }
 
 // Package state populated by LoadPrompts, then treated as read-only. Same
@@ -56,7 +57,11 @@ func LoadPrompts(dir string) error {
 		if loaded[pf.Name] == nil {
 			loaded[pf.Name] = PromptSets{}
 		}
-		loaded[pf.Name][pf.Locale] = Prompt{System: pf.System, User: pf.User}
+		loaded[pf.Name][pf.Locale] = Prompt{
+			System:  pf.System,
+			User:    pf.User,
+			Persona: pf.Persona,
+		}
 	}
 	promptSets = loaded
 	return nil

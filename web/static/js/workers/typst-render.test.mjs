@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { structuredToTypst } from './profile-import-typst.mjs';
+import { structuredToTypst } from './typst-render.mjs';
 
 describe('structuredToTypst', () => {
   it('emits the house preamble even for an empty payload', () => {

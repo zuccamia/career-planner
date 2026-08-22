@@ -42,7 +42,8 @@ export const CLS = {
   // Action-button row anchored to the right edge of the section (e.g. the
   // Save / Re-render pair below a source textarea).
   actionRowEnd:         'flex flex-wrap items-center justify-end gap-2',
-  // Filename-on-left, buttons-on-right row (e.g. preview headers).
+  // Filename-on-left, buttons-on-right row (e.g. preview headers, section
+  // titles with a trailing link).
   actionRowBetween:     'flex flex-wrap items-center justify-between gap-2',
   // A wide field + narrow field on one row on ≥sm screens; stacks on
   // mobile. Used for "title + format" and similar pairings.
@@ -56,6 +57,10 @@ export const CLS = {
   // ≥sm screens for denser desktop layouts.
   responsiveRow:            'flex flex-col items-stretch gap-2 sm:flex-row sm:items-center',
   gridTwoCol:           'grid sm:grid-cols-2',
+  // Label + value stacked with a tight gap. min-w-0 lets it shrink below
+  // intrinsic width when placed inside gridTwoCol / other row grids so long
+  // chip rows wrap instead of overflowing.
+  fieldStack:           'grid gap-1 min-w-0',
   checkbox:             'h-4 w-4 rounded border-line-strong text-brand focus:ring-brand',
   warningBanner:        'rounded-2xl border border-brass/30 bg-brass-tint px-4 py-3 text-sm text-brass',
   tagPill:              'rounded-full border border-line bg-paper px-2 py-0.5 font-mono text-[11px] text-ink-soft',
@@ -64,11 +69,13 @@ export const CLS = {
   tinyLink:             'text-xs font-medium text-brand hover:text-brand-deep',
   linkAction:           'text-sm font-semibold text-brand hover:text-brand-deep',
   helpText:             'text-xs text-ink-faint',
+  tagline:              'text-sm text-ink-faint',
   bodyText:             'text-sm text-ink-soft',
   softRow:              'rounded-2xl bg-paper px-4 py-3',
   entryRow:             'flex items-start gap-3 rounded-xl bg-paper px-3 py-2',
   formHeadRow:          'flex items-baseline justify-between',
   rowInline:            'flex items-center gap-2',
+  rowInlineEnd:         'flex items-end gap-2',
   eyebrowFaint:         'text-xs font-semibold uppercase tracking-[0.14em] text-ink-faint',
   divider:              'divide-y divide-line',
   chipRow:              'flex flex-wrap gap-2',
@@ -124,6 +131,7 @@ export const CLS = {
   wizardPhaseSegment:   'relative h-1.5 flex-1 overflow-hidden rounded-full bg-line',
   wizardPhaseFill:      'absolute inset-y-0 left-0 bg-brand',
   wizardPhaseLabel:     'font-mono text-xs font-medium uppercase tracking-[0.14em] text-brand',
+  wizardFootnote:       'max-w-2xl mx-auto mt-6 text-center',
   // Profile-ready screen — the "you're done" card shown after the wizard
   // finishes. Centered layout, generous vertical breathing room.
   readyCard:            'max-w-2xl mx-auto text-center flex flex-col items-center gap-4 py-10',

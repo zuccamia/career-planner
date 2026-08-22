@@ -3,6 +3,7 @@
 import { decodeJSONResponse } from '../decode.mjs';
 import { isSuspiciousText } from '../safety.mjs';
 import { buildFromField } from '../prompts.mjs';
+import { coerceCategory } from '../../entities/brag-entries.mjs';
 import { finalizeTags } from './generate-brag-tags.mjs';
 
 const clampConfidence = (v) => {
@@ -29,16 +30,17 @@ export const finalizeExtracted = (out) => {
     if (typeof raw.entry_year === 'number' && raw.entry_year >= 1970 && raw.entry_year <= 2100) {
       entryYear = raw.entry_year;
     }
+    const category = coerceCategory(raw.category);
     const key = (title + ' ' + body).trim().split(/\s+/).join(' ').toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    // company + entry_year use omitempty on the Go side — mirror that so
-    // the shape matches the /parse endpoint response.
+    // company + entry_year use omitempty on the Go side — mirror that.
     const entry = {
       title,
       body,
       impact,
       tags: finalizeTags({ tags: raw.tags ?? [] }),
+      category,
       confidence: clampConfidence(raw.confidence),
     };
     if (company) entry.company = company;

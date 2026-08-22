@@ -400,11 +400,11 @@ func TestRPCExtractOverviewFromResumeEmptyMarkdown(t *testing.T) {
 	}
 }
 
-// ---------- rpcExtractStructuredResumeFromMd ----------
+// ---------- rpcExtractStructuredResumeFromSource ----------
 
 func TestRPCExtractStructuredResumeBadJSON(t *testing.T) {
 	s := newTestServer(t, nil, nil, nil, nil, nil)
-	rr := doJSON(t, s.rpcExtractStructuredResumeFromMd, `nope`)
+	rr := doJSON(t, s.rpcExtractStructuredResumeFromSource, `nope`)
 	if rr.Code != nethttp.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
 	}
@@ -412,7 +412,15 @@ func TestRPCExtractStructuredResumeBadJSON(t *testing.T) {
 
 func TestRPCExtractStructuredResumeEmptyMarkdown(t *testing.T) {
 	s := newTestServer(t, nil, nil, nil, nil, nil)
-	rr := doJSON(t, s.rpcExtractStructuredResumeFromMd, `{"markdown":"   "}`)
+	rr := doJSON(t, s.rpcExtractStructuredResumeFromSource, `{"markdown":"   "}`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCExtractStructuredResumeEmptyTypst(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcExtractStructuredResumeFromSource, `{"typst":""}`)
 	if rr.Code != nethttp.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rr.Code)
 	}
@@ -532,3 +540,92 @@ func TestToThreadDetailUnparseableTimestampIsZero(t *testing.T) {
 
 // Sanity: reader is drained even on 400 so httptest doesn't leak.
 var _ = io.Discard
+
+// ---------- rpcAnalyzeRoleSignals ----------
+
+func TestRPCAnalyzeRoleSignalsBadJSON(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcAnalyzeRoleSignals, `{not json`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCAnalyzeRoleSignalsEmptyJD(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcAnalyzeRoleSignals, `{"jd_structured":{}}`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCAnalyzeRoleSignalsHappyPath(t *testing.T) {
+	s := newTestServer(t, nil, nil, &fakeLLM{payload: `{"signals":"### Skills\n- Go"}`}, nil, nil)
+	rr := doJSON(t, s.rpcAnalyzeRoleSignals, `{"jd_structured":`+tailorValidJD+`}`)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	var out applications.AnalyzeRoleSignalsResponse
+	decodeBody(t, rr, &out)
+	if out.Signals == "" {
+		t.Fatalf("signals empty: %#v", out)
+	}
+}
+
+// ---------- rpcTailor ----------
+
+const tailorValidJD = `{"role_title":"Engineer","skills":["Go"]}`
+const tailorValidBrag = `{"id":1,"title":"Shipped X","body":"Cut latency 40%","category":"experience"}`
+const tailorValidBase = `{"contact":{"name":"Alex"},"experience":[{"company":"Acme","bullets":[{"description":"Shipped X"}]}]}`
+
+func TestRPCTailorBadJSON(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcTailor, `{not json`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCTailorEmptyJD(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcTailor, `{"jd_structured":{},"base_resume_structured":`+tailorValidBase+`,"brags":[`+tailorValidBrag+`]}`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCTailorNoBrags(t *testing.T) {
+	s := newTestServer(t, nil, nil, nil, nil, nil)
+	rr := doJSON(t, s.rpcTailor, `{"jd_structured":`+tailorValidJD+`,"base_resume_structured":`+tailorValidBase+`,"brags":[]}`)
+	if rr.Code != nethttp.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rr.Code)
+	}
+}
+
+func TestRPCTailorServiceError(t *testing.T) {
+	s := newTestServer(t, nil, nil, &fakeLLM{err: errors.New("boom")}, nil, nil)
+	rr := doJSON(t, s.rpcTailor, `{"jd_structured":`+tailorValidJD+`,"base_resume_structured":`+tailorValidBase+`,"brags":[`+tailorValidBrag+`]}`)
+	if rr.Code != nethttp.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rr.Code)
+	}
+}
+
+func TestRPCTailorHappyPath(t *testing.T) {
+	// Compound payload: rank pass reads `ranked`, tailor pass reads `changes`+`resume`.
+	// Same fakeLLM instance serves both calls in the composite pipeline.
+	payload := `{
+		"ranked":[{"brag_id":1,"relevance":0.92,"swap_priority":0.7}],
+		"changes":[{"section":"experience","entry_index":0,"bullet_index":0,"before":"Shipped X","after":"Cut checkout latency 40%.","brag_id":1,"citations":["latency"]}],
+		"resume":{"contact":{"name":"Alex"},"experience":[{"company":"Acme","bullets":[{"description":"Cut checkout latency 40%."}]}]}
+	}`
+	s := newTestServer(t, nil, nil, &fakeLLM{payload: payload}, nil, nil)
+	rr := doJSON(t, s.rpcTailor, `{"jd_structured":`+tailorValidJD+`,"base_resume_structured":`+tailorValidBase+`,"brags":[`+tailorValidBrag+`]}`)
+	if rr.Code != nethttp.StatusOK {
+		t.Fatalf("status = %d, want 200 (body=%s)", rr.Code, rr.Body.String())
+	}
+	var out applications.TailorResumeResponse
+	decodeBody(t, rr, &out)
+	if len(out.Changes) != 1 || out.Resume.Contact.Name != "Alex" {
+		t.Fatalf("unexpected response: %#v", out)
+	}
+}

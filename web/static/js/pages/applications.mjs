@@ -11,7 +11,7 @@ import {
   createApplication, updateApplication, updateApplicationStatus,
   deleteApplication, updateApplicationExtraction,
   listEventsByApplication, clearAllApplications,
-  headlineStatus,
+  headlineStatus, statusSince,
 } from '../entities/applications.mjs';
 import { relativeAge } from '../ui/format.mjs';
 import { collectionListPanel, filterPillsHtml as collectionFilterPillsHtml, collectionRowsHtml } from '../ui/collection_list.mjs';
@@ -23,7 +23,10 @@ import {
 } from '../storage/attachments.mjs';
 import { listCompanies, getCompany } from '../entities/companies.mjs';
 import { getPerson, listPeopleByCompanyID } from '../entities/people.mjs';
-import { escapeHtml, formatDate, formatBytes } from '../ui/dom.mjs';
+import { listResumes, countResumesByApplication } from '../entities/resumes.mjs';
+import { openTailorResumePanel } from './tailor-resume-panel.mjs';
+import { openRoleSignalsPanel } from './role-signals-panel.mjs';
+import { escapeHtml, formatDate, formatDateTime, formatBytes } from '../ui/dom.mjs';
 import { CLS } from '../ui/classes.mjs';
 import { toast } from '../ui/toast.mjs';
 import { badge, badgeClasses, bulletList, button, codeBlock, collapsible, dtLabel, emptyState, faintSpan, fileRow, fileStamp, filterBanner, helpSpan, helpText, hintLink, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, outputLanguageSelect, pageHeader, panelTitle, readOutputLanguage, sectionTitle, setPageCount, subsectionTitle, uploadButton } from '../ui/components.mjs';
@@ -36,7 +39,7 @@ import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../ui/slide_over
 import { refreshSidebarCounts } from '../ui/sidebar_counts.mjs';
 import { t } from '../i18n.mjs';
 
-const PANEL_IDS = ['editor-panel', 'details-panel'];
+const PANEL_IDS = ['editor-panel', 'details-panel', 'role-signals-panel', 'tailor-resume-panel', 'resume-panel'];
 
 // "online_assessment" -> "Online assessment"
 const humanize = (s) =>
@@ -124,6 +127,9 @@ const shellHtml = () => `
 
     <section id="editor-panel" class="hidden"></section>
     <section id="details-panel" class="hidden"></section>
+    <section id="role-signals-panel" class="hidden"></section>
+    <section id="tailor-resume-panel" class="hidden"></section>
+    <section id="resume-panel" class="hidden"></section>
 
     ${collectionListPanel({
       searchId: 'apps-search',
@@ -158,11 +164,13 @@ const personOptions = (people, selectedID) => [
     </option>`),
 ].join('');
 
-const editorHtml = (app, companies, people) => {
+const editorHtml = (app, companies, people, initialCompanyID = null) => {
   const isNew = !app;
   const a = app || {};
   const status = a.status || 'lead';
-  const selectedCompany = isNew ? '' : String(a.company_id ?? '');
+  const selectedCompany = isNew
+    ? (initialCompanyID ? String(initialCompanyID) : '')
+    : String(a.company_id ?? '');
   const companyOptions = [
     `<option value="" disabled ${selectedCompany ? '' : 'selected'}>${t('applications.field.company.placeholder')}</option>`,
     ...companies.map(c => `
@@ -263,7 +271,8 @@ const rowMeta = (a) => {
   const ageKey = a.status === 'lead'
     ? 'companies.dossier.applications.added'
     : 'companies.dossier.applications.applied';
-  if (a.created_at) parts.push(t(ageKey, { age: relativeAge(a.created_at) }));
+  const since = statusSince(a);
+  if (since) parts.push(t(ageKey, { age: relativeAge(since) }));
   return parts.join('  ·  ');
 };
 
@@ -432,11 +441,43 @@ const attachmentCardHtml = (att) => {
   `;
 };
 
+// Rollup of résumés drafted against this application. Static rows (no
+// per-row click) + a single "View" link to Profile → Résumés scoped by
+// application_id. Mirrors companies.mjs's Applications rollup.
+const tailoredResumesSectionHtml = (a, tailored) => {
+  const heading = sectionTitle(t('applications.tailor.section.title'));
+  const viewLink = tailored.length
+    ? `<a href="${urlFor(`profile?tab=resumes&application_id=${a.id}`)}" class="${CLS.linkAction}">${t('applications.tailor.section.view')}</a>`
+    : '';
+  const summaryLine = tailored.length
+    ? (tailored.length === 1
+        ? t('applications.tailor.section.count_one')
+        : t('applications.tailor.section.count_many', { n: tailored.length }))
+    : t('applications.tailor.section.empty');
+  const rows = tailored.map((r) => `
+    <div class="${CLS.staticRow}">
+      <div class="${CLS.flexTextCol}">
+        <p class="${CLS.rowTitle}">${escapeHtml(r.title || t('profile.resumes.untitled'))}</p>
+        <p class="${CLS.fileRowMeta}">${escapeHtml(t('common.updated_at', { date: relativeAge(r.updated_at) }))}</p>
+      </div>
+    </div>`).join('');
+  return `
+    <div class="space-y-3">
+      <div class="${CLS.formRow}">
+        ${heading}
+        ${viewLink}
+      </div>
+      ${tailored.length ? `<div class="${CLS.divider}">${rows}</div>` : helpText(summaryLine)}
+      ${tailored.length ? helpText(summaryLine) : ''}
+    </div>
+  `;
+};
+
 const attachmentsSectionHtml = (a, attachments) => {
   const folderPreview = sanitizeFolder(a.company_name);
   return `
     <div class="space-y-3">
-      <div class="flex items-center justify-between gap-2">
+      <div class="${CLS.actionRowBetween}">
         ${sectionTitle(t('applications.details.attachments'))}
       </div>
       ${inlineError({ id: 'attachment-upload-error' })}
@@ -476,7 +517,7 @@ const timelineHtml = (events) => {
   `;
 };
 
-const detailsHtml = (a, events, attachments, { editing = false, companies = [], people = [] } = {}) => {
+const detailsHtml = (a, events, attachments, tailored = [], { editing = false, companies = [], people = [] } = {}) => {
   const status = a.status || 'lead';
   const pillClass = badgeClasses(STATUS_BADGE_COLOR[status] || 'slate');
   const url = escapeHtml(a.job_posting_url || '');
@@ -511,9 +552,26 @@ const detailsHtml = (a, events, attachments, { editing = false, companies = [], 
 
       ${editing ? editorHtml(a, companies, people) : `
       ${hasRaw || hasURL ? `
-      <div class="flex flex-wrap items-center justify-end gap-2">
-        ${outputLanguageSelect('out-lang-extract-jd')}
-        ${button({ id: 'btn-details-extract', icon: 'sparkles', label: t('applications.action.extract_description') })}
+      <div class="${CLS.actionRowEnd}">
+        <div class="${CLS.rowInlineEnd}">
+          ${outputLanguageSelect('out-lang-extract-jd')}
+          ${button({ id: 'btn-details-extract', icon: 'sparkles', label: t('applications.action.extract_description') })}
+        </div>
+        ${button({
+          id: 'btn-details-analyze',
+          variant: 'secondary',
+          icon: 'sparkles',
+          label: t('applications.action.analyze_role'),
+          disabled: !parsed.data,
+          ariaLabel: parsed.data ? undefined : t('applications.tailor.needs_jd'),
+        })}
+        ${button({
+          id: 'btn-details-tailor',
+          icon: 'sparkles',
+          label: t('applications.action.tailor_resume'),
+          disabled: !parsed.data,
+          ariaLabel: parsed.data ? undefined : t('applications.tailor.needs_jd'),
+        })}
       </div>` : ''}
       <form id="quick-status-form" class="${CLS.paperCard} grid gap-3 pt-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.5fr)_auto] sm:items-end">
         <div class="grid gap-2">
@@ -526,7 +584,7 @@ const detailsHtml = (a, events, attachments, { editing = false, companies = [], 
         </div>
         <div class="grid gap-2">
           <label class="${CLS.label}" for="quick-occurred-at">${t('applications.quickstatus.date.label')}</label>
-          <input class="${CLS.input}" id="quick-occurred-at" name="occurred_at" type="date">
+          <input class="${CLS.input}" id="quick-occurred-at" name="occurred_at" type="datetime-local" value="${formatDateTime(new Date().toISOString()).replace(' ', 'T')}">
         </div>
         <div class="grid gap-2">
           <label class="${CLS.label}" for="quick-notes">${t('applications.quickstatus.short_notes.label')}</label>
@@ -554,6 +612,8 @@ const detailsHtml = (a, events, attachments, { editing = false, companies = [], 
         ${sectionTitle(t('applications.details.jd_section'))}
         ${structuredHtml(parsed)}
       </div>
+
+      ${tailoredResumesSectionHtml(a, tailored)}
 
       <div class="grid gap-4 lg:grid-cols-2">
         <div class="space-y-3">
@@ -688,7 +748,7 @@ const deleteApplicationFromList = async (id, label, errorID = 'list-error') => {
   }
 };
 
-const openEditor = async (mode) => {
+const openEditor = async (mode, opts = {}) => {
   closeDetails();
   editorMode = mode;
   const panel = document.getElementById('editor-panel');
@@ -711,9 +771,9 @@ const openEditor = async (mode) => {
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
-  const initialCompanyID = app?.company_id ?? null;
+  const initialCompanyID = app?.company_id ?? opts.companyID ?? null;
   const people = initialCompanyID ? await listPeopleByCompanyID(initialCompanyID) : [];
-  panel.innerHTML = editorHtml(app, companies, people);
+  panel.innerHTML = editorHtml(app, companies, people, initialCompanyID);
   wireEditor();
 
   mountInlinePanel('editor-panel', mode === 'new' ? null : mode.id);
@@ -810,9 +870,10 @@ const renderDetails = async () => {
     closeDetails();
     return;
   }
-  const [events, attachments] = await Promise.all([
+  const [events, attachments, tailored] = await Promise.all([
     listEventsByApplication(detailsID),
     listAttachmentsByEntity('application', detailsID),
+    listResumes({ applicationId: detailsID }),
   ]);
   let companies = [];
   let people = [];
@@ -825,7 +886,7 @@ const renderDetails = async () => {
     editorSubject = app;
   }
   const panel = document.getElementById('details-panel');
-  panel.innerHTML = detailsHtml(app, events, attachments, { editing: applicationEditing, companies, people });
+  panel.innerHTML = detailsHtml(app, events, attachments, tailored, { editing: applicationEditing, companies, people });
   wireDetails(app);
   if (applicationEditing) {
     wireEditor({
@@ -873,20 +934,33 @@ const wireDetails = (app) => {
     if (!detailsID) return;
     deleteApplicationFromList(detailsID, app.role_title || `#${detailsID}`, 'details-error');
   });
+  document.getElementById('btn-details-analyze')?.addEventListener('click', (ev) => {
+    if (!detailsID) return;
+    openRoleSignalsPanel({
+      applicationId: detailsID,
+      triggerEl: ev.currentTarget,
+      onClose: (report) => { if (report?.derived) renderDetails(); },
+    });
+  });
+  document.getElementById('btn-details-tailor')?.addEventListener('click', (ev) => {
+    if (!detailsID) return;
+    openTailorResumePanel({
+      applicationId: detailsID,
+      triggerEl: ev.currentTarget,
+      onClose: () => renderDetails(),
+    });
+  });
 
   document.getElementById('quick-status-form')?.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const fd = new FormData(ev.currentTarget);
     const status = fd.get('status')?.toString() || '';
     const notes = fd.get('notes')?.toString().trim() || '';
-    const dateStr = fd.get('occurred_at')?.toString() || '';
-    // "YYYY-MM-DD" → local midnight, then ISO. new Date("YYYY-MM-DD")
-    // would treat the input as UTC and shift the day for negative offsets.
-    let occurred_at = null;
-    if (dateStr) {
-      const [y, m, d] = dateStr.split('-').map(Number);
-      occurred_at = new Date(y, m - 1, d).toISOString();
-    }
+    // <input type="datetime-local"> returns "YYYY-MM-DDTHH:MM" in the user's
+    // local wall time. `new Date(str)` on that shape is spec'd as local → the
+    // resulting toISOString() is the correct UTC point-in-time to persist.
+    const dtStr = fd.get('occurred_at')?.toString() || '';
+    const occurred_at = dtStr ? new Date(dtStr).toISOString() : null;
     setInlineError('details-error', '');
     try {
       const before = app.status;
@@ -1019,8 +1093,7 @@ export const mountApplications = async (root) => {
     renderList();
   });
 
-  // Resolve ?company_id=… before the first list render so the banner and
-  // count reflect the filter from the very first paint.
+  // Resolve ?company_id / ?person_id before first render so banners paint correctly.
   const params = new URLSearchParams(location.search);
   const rawCompanyID = Number(params.get('company_id'));
   if (rawCompanyID) {
@@ -1037,5 +1110,5 @@ export const mountApplications = async (root) => {
   await refreshList();
 
   // Auto-open the new-application editor if arriving via a quick-action link.
-  if (params.get('new') === '1') openEditor('new');
+  if (params.get('new') === '1') openEditor('new', { companyID: companyFilter?.id ?? null });
 };

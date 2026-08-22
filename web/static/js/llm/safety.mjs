@@ -45,7 +45,15 @@ export const isSuspiciousText = (raw) => {
   const trimmed = (raw ?? '').trim();
   if (!trimmed) return false;
   const lower = trimmed.toLowerCase();
-  return suspiciousTextMarkers.some((m) => lower.includes(m));
+  const marker = suspiciousTextMarkers.find((m) => lower.includes(m));
+  if (marker) {
+    // Every direct caller of isSuspiciousText drops the value on true; warn
+    // once at detection so BYOK browsers surface prompt-injection signals in
+    // devtools. Snippet capped to keep the log readable.
+    console.warn('sanitize: suspicious LLM output detected — dropping.', { marker, snippet: trimmed.slice(0, 120) });
+    return true;
+  }
+  return false;
 };
 
 export const sanitizeText = (raw) => {

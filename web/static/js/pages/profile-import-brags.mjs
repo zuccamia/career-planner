@@ -10,7 +10,7 @@ import { t, currentLocale } from '../i18n.mjs';
 import { toast } from '../ui/toast.mjs';
 import { extractBragsFromResume } from '../rpc.mjs';
 import { urlFor } from '../host.mjs';
-import { listBragEntries, createBragEntry } from '../entities/brag-entries.mjs';
+import { listBragEntries, createBragEntry, BRAG_CATEGORIES, coerceCategory } from '../entities/brag-entries.mjs';
 import { listCompanies } from '../entities/companies.mjs';
 import {
   getCachedExtraction, setCachedExtraction,
@@ -61,6 +61,10 @@ const candidateCardHtml = (candidate, idx, similar, companies) => {
     ),
   ].join('');
   const yearValue = candidate.entry_year ? String(candidate.entry_year) : '';
+  const currentCategory = coerceCategory(candidate.category);
+  const categoryOptions = BRAG_CATEGORIES.map((cat) =>
+    `<option value="${cat}"${cat === currentCategory ? ' selected' : ''}>${escapeHtml(t(`profile.brags.field.category.option.${cat}`))}</option>`,
+  ).join('');
   return `
     <article class="${CLS.card}" data-brag-idx="${idx}">
       <label class="${CLS.responsiveRow}">
@@ -89,6 +93,10 @@ const candidateCardHtml = (candidate, idx, similar, companies) => {
                  min="1970" step="1" class="${CLS.input}">
         </label>
       </div>
+      <label class="space-y-1">
+        <span class="${CLS.label}">${escapeHtml(t('profile.brags.field.category.label'))}</span>
+        <select data-brag-field="category" class="${CLS.select}">${categoryOptions}</select>
+      </label>
       ${tags ? `<div class="${CLS.chipRow}">${tags}</div>` : ''}
       ${meta.length ? `<div class="${CLS.chipRow}">${meta.join('')}</div>` : ''}
       ${hint}
@@ -136,6 +144,7 @@ const readCandidateEdits = (candidates) => {
       impact: card.querySelector('[data-brag-field="impact"]')?.value?.trim() || '',
       company_id: companySel ? Number(companySel) : null,
       entry_year: /^\d{4}$/.test(yearRaw) ? Number(yearRaw) : null,
+      category: card.querySelector('[data-brag-field="category"]')?.value || 'experience',
     });
   }
   return kept;
@@ -164,6 +173,7 @@ const applySelected = async (candidates, existing, onExit) => {
         tags: c.tags || [],
         company_id: c.company_id,
         entry_year: c.entry_year,
+        category: c.category,
       });
       added++;
     } catch (err) {

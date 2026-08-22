@@ -49,16 +49,16 @@ export const fetchPosting = async (rawURL, { timeoutMs = 15_000 } = {}) => {
     const team = (payload.categories?.team || '').trim();
     const department = (payload.categories?.department || '').trim() || team;
     return {
+      provider: 'lever',
       title: (payload.text || '').trim(),
-      url: (payload.applyUrl || payload.hostedUrl || rawURL).trim(),
       company: prettifySlug(parsed.company),
       location: (payload.categories?.location || '').trim(),
       department,
       team,
-      snippet: desc,
-      postedAt,
-      provider: 'lever',
-      employmentType: (payload.categories?.commitment || '').trim(),
+      apply_url: (payload.applyUrl || payload.hostedUrl || rawURL).trim(),
+      description_text: desc,
+      posted_at: postedAt,
+      employment_type: (payload.categories?.commitment || '').trim(),
     };
   } catch {
     return null;

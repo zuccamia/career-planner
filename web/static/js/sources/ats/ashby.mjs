@@ -87,15 +87,15 @@ export const extractFromHTML = (html, sourceURL) => {
   const title = (jp.title || '').trim();
   if (!title) return null;
   return {
+    provider: 'ashby',
     title,
-    url: sourceURL,
     company: (jp.hiringOrganization?.name || '').trim(),
     location: formatLocation(jp.jobLocation),
-    snippet: htmlToText(jp.description || ''),
-    postedAt: jp.datePosted ? new Date(jp.datePosted).toISOString() : '',
-    provider: 'ashby',
-    employmentType: (jp.employmentType || '').trim(),
     compensation: formatSalary(jp.baseSalary),
+    apply_url: sourceURL,
+    description_text: htmlToText(jp.description || ''),
+    posted_at: jp.datePosted ? new Date(jp.datePosted).toISOString() : '',
+    employment_type: (jp.employmentType || '').trim(),
   };
 };
 

@@ -3,6 +3,7 @@ package brags
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -13,9 +14,7 @@ import (
 // outputLanguage selects the locale-specific prompt template; missing locales
 // fall back to English.
 func (s *Service) GenerateTags(ctx context.Context, body, outputLanguage string) ([]string, error) {
-	if s.client == nil {
-		return nil, fmt.Errorf("llm client is not configured")
-	}
+	if err := llm.RequireClient(s.client); err != nil { return nil, err }
 	set := llm.PickPromptSet(generateTagsPrompts(), outputLanguage)
 	prompt := llm.Prompt{
 		System: set.System,
@@ -58,9 +57,7 @@ func finalizeTags(out TagResult) []string {
 // and returns candidate brag entries for the browser to review. The DB writes
 // happen in the browser after the user picks which entries to keep.
 func (s *Service) ExtractFromResume(ctx context.Context, markdown, outputLanguage string) ([]ExtractedBrag, error) {
-	if s.client == nil {
-		return nil, fmt.Errorf("llm client is not configured")
-	}
+	if err := llm.RequireClient(s.client); err != nil { return nil, err }
 	set := llm.PickPromptSet(extractFromResumePrompts(), outputLanguage)
 	prompt := llm.Prompt{
 		System: set.System,
@@ -111,6 +108,10 @@ func finalizeExtracted(out ExtractResumeResult) []ExtractedBrag {
 			continue
 		}
 		seen[key] = struct{}{}
+		category := strings.ToLower(strings.TrimSpace(raw.Category))
+		if !slices.Contains(CategoryOrder, category) {
+			category = Category.Experience
+		}
 		entries = append(entries, ExtractedBrag{
 			Title:      title,
 			Body:       body,
@@ -118,6 +119,7 @@ func finalizeExtracted(out ExtractResumeResult) []ExtractedBrag {
 			Tags:       finalizeTags(TagResult{Tags: raw.Tags}),
 			Company:    companyHint,
 			EntryYear:  entryYear,
+			Category:   category,
 			Confidence: conf,
 		})
 	}

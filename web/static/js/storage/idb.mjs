@@ -26,8 +26,10 @@ export const idbGet = async (key) => {
     return await new Promise((resolve, reject) => {
       const tx = db.transaction(IDB_STORE, 'readonly');
       const req = tx.objectStore(IDB_STORE).get(key);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+      // Wait for tx.oncomplete (not req.onsuccess) so db.close() below runs
+      // after the tx has fully committed. Prevents idbWipe onblocked races.
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = () => reject(tx.error);
     });
   } finally {
     db.close();
@@ -49,11 +51,15 @@ export const idbSet = async (key, value) => {
 };
 
 // Delete the entire meta database (used by the wipe-all-data action).
+// `onblocked` is informational, not terminal: the delete keeps waiting while
+// open connections release. Our openMetaDb sets versionchange → close, so a
+// blocked delete typically resolves on its own once the pending tx settles.
+// Callers wrap in a timeout if they need a hard give-up (see settings.mjs).
 export const idbWipe = () => new Promise((resolve, reject) => {
   const req = indexedDB.deleteDatabase(IDB_NAME);
   req.onsuccess = () => resolve();
   req.onerror = () => reject(req.error);
-  req.onblocked = () => reject(new Error('deleteDatabase blocked — close other tabs'));
+  req.onblocked = () => console.warn('idbWipe: waiting for open connections to release (onblocked)');
 });
 
 export const idbDel = async (key) => {

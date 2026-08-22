@@ -13,6 +13,28 @@ import { sanitizeURL } from '../ui/dom.mjs';
 
 const EDITABLE_COLS = ['official_name', 'website', 'blog_url', 'ats_url', 'ats_provider'];
 
+// dossierForPrompt slims a company row to the whitelist of dossier fields the
+// role-signals + tailor prompts read. Returns null when every field is empty
+// so callers can skip sending an empty payload.
+export const dossierForPrompt = (company) => {
+  if (!company) return null;
+  const slim = {
+    name: company.official_name || '',
+    industry: company.industry || '',
+    company_summary: company.company_summary || '',
+    what_the_company_does: company.what_the_company_does || '',
+    target_customers: company.target_customers || [],
+    product_areas: company.product_areas || [],
+    business_model_clues: company.business_model_clues || [],
+    company_culture_notes: company.company_culture_notes || [],
+    tech_stack_notes: company.tech_stack_notes || '',
+  };
+  const has = Object.values(slim).some((v) =>
+    (Array.isArray(v) && v.length > 0) || (typeof v === 'string' && v.trim()),
+  );
+  return has ? slim : null;
+};
+
 const DOSSIER_JSON_COLS = {
   target_customers_json: [],
   product_areas_json: [],

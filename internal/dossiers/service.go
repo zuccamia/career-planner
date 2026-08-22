@@ -15,9 +15,7 @@ import (
 // it. `pages` carries optional pre-scraped markdown for the website/blog/
 // careers URLs — empty fields are omitted from the prompt.
 func (s *Service) Build(ctx context.Context, company companies.Company, outputLanguage string, pages Pages) (Dossier, error) {
-	if s.client == nil {
-		return Dossier{}, fmt.Errorf("llm client is not configured")
-	}
+	if err := llm.RequireClient(s.client); err != nil { return Dossier{}, err }
 	set := llm.PickPromptSet(dossierPrompts(), outputLanguage)
 	prompt := llm.Prompt{
 		System: set.System,

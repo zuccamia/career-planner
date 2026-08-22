@@ -77,6 +77,11 @@ test.describe('local companies page', () => {
     // renders in-place inside the same panel.
     await card.getByRole('button', { name: /Open Stripe Local Co\./ }).click();
     const dossier = page.locator('#dossier-panel');
+    // Regression: the "+ Application" quick-action must render as a link
+    // (button component's kind:'link') — otherwise href is dropped and the
+    // click is a no-op. Guard by role + href shape.
+    await expect(dossier.getByRole('link', { name: 'Add application' }))
+      .toHaveAttribute('href', /applications(?:\.html)?\?new=1&company_id=\d+/);
     await dossier.getByRole('button', { name: 'Edit company' }).click();
     await expect(dossier.getByText('Edit', { exact: true })).toBeVisible();
     await fillEditor(page, { officialName: 'Stripe Local Co. Updated', atsProvider: 'Ashby' });

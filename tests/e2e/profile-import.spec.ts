@@ -93,7 +93,7 @@ test.describe('profile import', () => {
       experience: [{ company: 'Difference Engine Co', title: 'Programmer',
         bullets: [{ lead_in: 'Notes', description: 'Wrote the first algorithm.' }] }],
     };
-    await page.route('**/api/profile/extract-structured-resume-from-md', (route) =>
+    await page.route('**/api/profile/extract-structured-resume-from-source', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(canned) }),
     );
 

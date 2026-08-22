@@ -30,6 +30,21 @@ describe('extract-brags-from-resume finalizeExtracted', () => {
   });
 });
 
+describe('extract-brags-from-resume category coercion', () => {
+  it('normalizes category to a canonical token; unknown/missing → experience', () => {
+    const got = finalizeExtracted({ brags: [
+      { title: 'Shipped API',       body: 'Owned it.',         category: 'Experience' },
+      { title: 'Static site',       body: 'Weekend hack.',     category: 'project' },
+      { title: 'Mentored bootcamp', body: 'Office hours.',     category: 'activity' },
+      { title: 'Missing category',  body: 'No category field.' },
+      { title: 'Bogus category',    body: 'Hallucinated.',     category: 'personal' },
+    ] });
+    expect(got.map((e) => e.category)).toEqual([
+      'experience', 'project', 'activity', 'experience', 'experience',
+    ]);
+  });
+});
+
 describe('extract-brags-from-resume parse', () => {
   it('parses raw JSON and drops entries with empty title', () => {
     const raw = JSON.stringify({ brags: [

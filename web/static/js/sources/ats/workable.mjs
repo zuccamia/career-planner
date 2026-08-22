@@ -30,16 +30,16 @@ const parseMarkdown = (md, applyURL) => {
   const title = titleM ? titleM[1].trim() : '';
   if (!title) return null;
   const posting = {
+    provider: 'workable',
     title,
-    url: applyURL,
     company: '',
     location: '',
     department: '',
     team: '',
-    snippet: '',
-    postedAt: '',
-    provider: 'workable',
-    employmentType: '',
+    apply_url: applyURL,
+    description_text: '',
+    posted_at: '',
+    employment_type: '',
   };
 
   const bqM = BLOCKQUOTE_RE.exec(md);
@@ -49,8 +49,8 @@ const parseMarkdown = (md, applyURL) => {
     const locParts = [];
     for (const part of parts.slice(1)) {
       const pM = POSTED_RE.exec(part);
-      if (pM) { posting.postedAt = pM[1]; continue; }
-      if (CONTRACT_TYPES.has(part)) { posting.employmentType = part; continue; }
+      if (pM) { posting.posted_at = pM[1]; continue; }
+      if (CONTRACT_TYPES.has(part)) { posting.employment_type = part; continue; }
       locParts.push(part);
     }
     posting.location = locParts.join(', ');
@@ -68,8 +68,8 @@ const parseMarkdown = (md, applyURL) => {
   }
 
   const descM = DESC_RE.exec(md);
-  posting.snippet = (descM ? descM[1] : md).trim();
-  if (!posting.snippet) return null;
+  posting.description_text = (descM ? descM[1] : md).trim();
+  if (!posting.description_text) return null;
   return posting;
 };
 

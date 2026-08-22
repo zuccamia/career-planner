@@ -60,9 +60,7 @@ func scrapeAsPosting(ctx context.Context, scraper markdownScraper, rawURL string
 // ExtractJD fetches the posting (if raw is empty), assembles the LLM prompt,
 // calls the LLM, and returns the sanitized result plus the raw text used.
 func (s *Service) ExtractJD(ctx context.Context, input JDExtractionInput) (JobDescriptionStructured, string, error) {
-	if s.client == nil {
-		return JobDescriptionStructured{}, "", fmt.Errorf("llm client is not configured")
-	}
+	if err := llm.RequireClient(s.client); err != nil { return JobDescriptionStructured{}, "", err }
 	raw, posting, err := s.FetchPosting(ctx, input.posting())
 	if err != nil {
 		return JobDescriptionStructured{}, "", err
@@ -151,10 +149,10 @@ func suspiciousJDWarning(raw string) string {
 	return "Job description text appears to contain prompt-like or internal-instruction language. Results may be less reliable; review extracted fields carefully."
 }
 
-// enrichRawWithATSMetadata prepends a "Job details" preamble to the raw
-// description so structured ATS facts survive being saved and re-extracted.
-func enrichRawWithATSMetadata(p ats.Posting, sourceURL, description string) string {
-	pairs := [][2]string{
+// atsFactPairs returns the (label, value) pairs the LLM and re-extract paths
+// both surface from an ATS posting. Single source of truth for the field set.
+func atsFactPairs(p ats.Posting) [][2]string {
+	return [][2]string{
 		{"Role title", p.Title},
 		{"Company", p.Company},
 		{"Location", p.Location},
@@ -163,6 +161,22 @@ func enrichRawWithATSMetadata(p ats.Posting, sourceURL, description string) stri
 		{"Compensation", p.Compensation},
 		{"Employment type", p.EmploymentType},
 	}
+}
+
+// formatFactLines renders non-empty pairs as "- label: value" bullets.
+func formatFactLines(pairs [][2]string) []string {
+	var lines []string
+	for _, kv := range pairs {
+		if v := strings.TrimSpace(kv[1]); v != "" {
+			lines = append(lines, "- "+kv[0]+": "+v)
+		}
+	}
+	return lines
+}
+
+// enrichRawWithATSMetadata prepends a "Job details" preamble to the raw
+// description so structured ATS facts survive being saved and re-extracted.
+func enrichRawWithATSMetadata(p ats.Posting, sourceURL, description string) string {
 	var lines []string
 	if src := strings.TrimSpace(sourceURL); src != "" {
 		sourceLine := "- Source: " + src
@@ -171,11 +185,7 @@ func enrichRawWithATSMetadata(p ats.Posting, sourceURL, description string) stri
 		}
 		lines = append(lines, sourceLine)
 	}
-	for _, kv := range pairs {
-		if v := strings.TrimSpace(kv[1]); v != "" {
-			lines = append(lines, "- "+kv[0]+": "+v)
-		}
-	}
+	lines = append(lines, formatFactLines(atsFactPairs(p))...)
 	if len(lines) == 0 {
 		return description
 	}
@@ -185,21 +195,7 @@ func enrichRawWithATSMetadata(p ats.Posting, sourceURL, description string) stri
 // buildATSHintsBlock renders ATS-returned fields as a "known facts" block the
 // LLM is told to trust verbatim. Returns "" when the ATS gave us nothing.
 func buildATSHintsBlock(p ats.Posting) string {
-	pairs := [][2]string{
-		{"Role title", p.Title},
-		{"Company", p.Company},
-		{"Location", p.Location},
-		{"Department", p.Department},
-		{"Team", p.Team},
-		{"Compensation", p.Compensation},
-		{"Employment type", p.EmploymentType},
-	}
-	var lines []string
-	for _, kv := range pairs {
-		if v := strings.TrimSpace(kv[1]); v != "" {
-			lines = append(lines, "- "+kv[0]+": "+v)
-		}
-	}
+	lines := formatFactLines(atsFactPairs(p))
 	if len(lines) == 0 {
 		return ""
 	}

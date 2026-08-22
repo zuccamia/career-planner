@@ -187,7 +187,9 @@ const rowMeta = (p) => {
   const parts = [];
   if (p.title) parts.push(p.title);
   if (p.company_name) parts.push(p.company_name);
-  parts.push(t('common.updated_at', { date: formatDate(p.updated_at) }));
+  parts.push(p.last_activity_at
+    ? t('people.list.last_activity', { date: formatDate(p.last_activity_at) })
+    : t('people.list.no_activity'));
   return parts.join('  ·  ');
 };
 
@@ -356,7 +358,7 @@ const threadDetailHtml = (thread, entries) => `
         ${button({ id: 'btn-new-entry', variant: 'primaryCompact', icon: 'plus', label: t('people.action.new_entry'), ariaLabel: t('people.aria.add_entry') })}
         ${button({ id: 'btn-generate-outreach', variant: 'secondaryCompact', icon: 'sparkles', label: t('people.action.draft_outreach') })}
         ${button({ id: 'btn-generate-reply', variant: 'secondaryCompact', icon: 'sparkles', label: t('people.action.draft_reply') })}
-        <div class="${CLS.rowInline}">
+        <div class="${CLS.rowInlineEnd}">
           ${outputLanguageSelect('out-lang-summary')}
           ${button({ id: 'btn-summarize', variant: 'secondaryCompact', icon: 'sparkles', label: thread.summary ? t('people.action.resummarize') : t('people.action.summarize') })}
         </div>
@@ -1027,8 +1029,7 @@ export const mountPeople = async (root) => {
     renderList();
   });
 
-  // Resolve ?company_id=… before the first list render so the banner and
-  // count reflect the filter from the very first paint.
+  // Resolve ?company_id before first render so banner paints correctly.
   const params = new URLSearchParams(location.search);
   const rawCompanyID = Number(params.get('company_id'));
   if (rawCompanyID) {

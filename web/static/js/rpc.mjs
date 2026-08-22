@@ -55,64 +55,64 @@ const llmCall = async (name, input, serverPath, outputLanguage, onStep = noopSte
 export const guessCompanyCandidate = (name, outputLanguage, onStep) =>
   llmCall('guess-candidate', { name }, '/api/companies/guess-candidate', outputLanguage, onStep);
 
-// Extract structured facts from raw JD text. When job_description_raw is
-// empty and job_posting_url is set, the source is fetched: browser BYOK
-// scraper first, else /api/applications/scrape when BYOK LLM is active, else
-// let the server-side /api/applications/extract-job-description flow do it.
-// Static host with no BYOK scraper is a hard error surfaced via the scrape step.
+// Extract structured JD. Routing (BYOK LLM × static host):
+//   BYOK + non-static  → server /scrape + browser LLM (posting forwards).
+//   BYOK + static      → browser CORS-ATS or BYOK scraper.
+//   no BYOK            → server /extract-job-description (ATS + LLM in one shot).
 export const extractJobDescription = async (input, outputLanguage, onStep = noopStep) => {
   const payload = { ...input };
   const url = (input.job_posting_url || '').trim();
   const rawEmpty = !(input.job_description_raw || '').trim();
   if (rawEmpty && !url) throw new Error(t('applications.error.jd_input_required'));
 
-  if (rawEmpty && url) {
-    // Preferred client-side path for known ATS URLs: Greenhouse and Lever
-    // expose CORS-open APIs; a success populates posting for LLM overlay.
-    // Ashby's HTML is CORS-blocked so the call typically returns null and we
-    // fall through to the scraper. Gate the progress step on
-    // hasBrowserATSFetcher so URLs without an extractor don't render a
-    // misleading "ATS fetch ✓"; and on a real error (network / provider API
-    // change) let stepped emit `failed` while we still fall through.
-    if (hasBrowserATSFetcher(url)) {
-      try {
-        const atsPosting = await stepped(onStep, 'ats_fetch',
-          () => fetchATSPosting(url),
-          { emptyIf: (r) => !r?.snippet },
-        );
-        if (atsPosting?.snippet) {
-          payload.job_description_raw = atsPosting.snippet;
-          payload.posting = atsPosting;
-        }
-      } catch (err) {
-        console.warn('extractJobDescription: ats_fetch failed, falling through to scraper:', err);
-      }
-    }
+  const byokLLMActive = await isByokLLMActive();
 
-    if (!payload.job_description_raw) {
-      if (await isByokScraperActive()) {
-        const md = await scrapeWithCache(url, { ttlSeconds: JD_SCRAPE_TTL_SECONDS, stepName: 'scrape', onStep });
-        if (md) payload.job_description_raw = md;
-      } else if (await isByokLLMActive() && !isStaticHost() && (await getServerScraperStatus()).available) {
-        const scraped = await stepped(onStep, 'scrape', () => post('/api/applications/scrape', {
+  if (rawEmpty && url && byokLLMActive) {
+    if (!isStaticHost()) {
+      // Server owns the fetch ladder — same Greenhouse/Lever/Ashby-aware
+      // registry plus its own scraper. Metadata forwards into the BYOK LLM
+      // call via payload.posting.
+      const scraped = await stepped(onStep, 'fetch_posting',
+        () => post('/api/applications/scrape', {
           job_posting_url: url,
           output_language: outputLanguage || currentLocale(),
-        }), 'progress.hint.server_scrape');
-        payload.job_description_raw = scraped.enriched_raw || '';
-        payload.posting = scraped.posting || {};
-      } else if (isStaticHost()) {
-        onStep({ name: 'scrape', status: 'failed', error: t('applications.error.jd_scraper_required_static') });
+        }),
+        'progress.hint.server_scrape',
+      );
+      payload.job_description_raw = scraped.enriched_raw || '';
+      payload.posting = scraped.posting || {};
+    } else {
+      // Static host + BYOK LLM: no server available. Browser must fetch.
+      if (hasBrowserATSFetcher(url)) {
+        try {
+          const atsPosting = await stepped(onStep, 'ats_fetch',
+            () => fetchATSPosting(url),
+            { emptyIf: (r) => !r?.description_text },
+          );
+          if (atsPosting?.description_text) {
+            payload.job_description_raw = atsPosting.description_text;
+            payload.posting = atsPosting;
+          }
+        } catch (err) {
+          console.warn('extractJobDescription: ats_fetch failed, falling through to scraper:', err);
+        }
+      }
+      if (!payload.job_description_raw) {
+        if (await isByokScraperActive()) {
+          const md = await scrapeWithCache(url, { ttlSeconds: JD_SCRAPE_TTL_SECONDS, stepName: 'scrape', onStep });
+          if (md) payload.job_description_raw = md;
+        } else {
+          onStep({ name: 'scrape', status: 'failed', error: t('applications.error.jd_scraper_required_static') });
+        }
       }
     }
   }
+  // no BYOK: server endpoint does ATS + LLM in one shot.
   return llmCall('extract-job-description', payload, '/api/applications/extract-job-description', outputLanguage, onStep);
 };
 
-// Build a dossier. Scrape preference: BYOK browser scraper (best; also runs
-// ATS look-up from the domain map), else /api/dossiers/scrape when BYOK
-// LLM is active, else no enrichment (a thinner dossier, surface a warning).
-// Failures at any step are non-fatal; the dossier builds from whatever
-// succeeded plus the structured fields.
+// Build a dossier. Scrape preference: BYOK browser → server /scrape → skip.
+// Per-step failures non-fatal; dossier builds from whatever succeeded.
 export const buildDossier = async (company, outputLanguage, onStep = noopStep) => {
   const payload = { ...company };
   const website = (company.website || '').trim();
@@ -172,11 +172,19 @@ export const extractBragsFromResume = (markdown, outputLanguage, onStep) =>
 export const extractOverviewFromResume = (markdown, outputLanguage, onStep) =>
   llmCall('extract-overview-from-resume', { markdown }, '/api/profile/extract-overview-from-resume', outputLanguage, onStep);
 
-// Extract a full structured résumé from Markdown, ready to render into the
-// house Typst template. Response is the profile.ResumeStructured shape:
-// { contact, summary, education[], skills[], experience[], projects[], activities[] }.
-export const extractStructuredResumeFromMd = (markdown, outputLanguage, onStep) =>
-  llmCall('extract-structured-resume-from-md', { markdown }, '/api/profile/extract-structured-resume-from-md', outputLanguage, onStep);
+// Extract a full structured résumé from Markdown or Typst source. Response
+// is the profile.ResumeStructured shape. `format` is 'markdown' or 'typst'
+// and just signals the payload field to the server; the prompt itself is
+// format-neutral.
+// Extract a structured résumé from a source string (markdown or typst — the
+// prompt handles either).
+export const extractStructuredResumeFromSource = (source, outputLanguage, onStep) =>
+  llmCall('extract-structured-resume-from-source', { source }, '/api/profile/extract-structured-resume-from-source', outputLanguage, onStep);
+
+// Analyze JD + optional company dossier into a markdown role signals used as
+// rubric by rank + tailor. Response: { signals: "<markdown>" }.
+export const analyzeRoleSignals = (payload, outputLanguage, onStep) =>
+  llmCall('analyze-role-signals', payload, '/api/applications/analyze-role-signals', outputLanguage, onStep);
 
 // Ask the LLM to summarize one communication thread. Caller ships the full
 // thread + entries context (the server is stateless for local-first data) and

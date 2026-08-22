@@ -12,9 +12,7 @@ import (
 // résumé and returns candidate overview fields for the browser to review.
 // DB writes are the browser's job — this service only sanitizes.
 func (s *Service) ExtractFromResume(ctx context.Context, markdown, outputLanguage string) (ExtractedOverview, error) {
-	if s.client == nil {
-		return ExtractedOverview{}, fmt.Errorf("llm client is not configured")
-	}
+	if err := llm.RequireClient(s.client); err != nil { return ExtractedOverview{}, err }
 	set := llm.PickPromptSet(extractOverviewPrompts(), outputLanguage)
 	prompt := llm.Prompt{
 		System: set.System,
@@ -49,7 +47,7 @@ func finalizeExtracted(out ExtractedOverview) ExtractedOverview {
 		}
 		seenSkill[key] = struct{}{}
 		sk := Skill{Name: name}
-		if raw.Years != nil && *raw.Years > 0 && *raw.Years < 100 {
+		if raw.Years != nil && *raw.Years > 0 && *raw.Years <= 50 {
 			y := *raw.Years
 			sk.Years = &y
 		}
@@ -106,9 +104,7 @@ func cleanScalar(s string) string {
 // hand to a Typst renderer. Nothing hits the database — the caller decides
 // whether to save the generated .typ source.
 func (s *Service) ExtractStructuredResume(ctx context.Context, markdown, outputLanguage string) (ResumeStructured, error) {
-	if s.client == nil {
-		return ResumeStructured{}, fmt.Errorf("llm client is not configured")
-	}
+	if err := llm.RequireClient(s.client); err != nil { return ResumeStructured{}, err }
 	set := llm.PickPromptSet(extractStructuredResumePrompts(), outputLanguage)
 	prompt := llm.Prompt{
 		System: set.System,
@@ -118,15 +114,16 @@ func (s *Service) ExtractStructuredResume(ctx context.Context, markdown, outputL
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return ResumeStructured{}, err
 	}
-	return finalizeStructuredResume(out), nil
+	return FinalizeStructuredResume(out), nil
 }
 
-// finalizeStructuredResume trims and sanitises the LLM output. Suspicious
+// FinalizeStructuredResume trims and sanitises the LLM output. Suspicious
 // text (prompt-injection artifacts) is dropped rather than fixed; empty
 // slices stay omitted so downstream renderers can skip whole sections.
-func finalizeStructuredResume(out ResumeStructured) ResumeStructured {
+// Exported so cross-package callers (applications.TailorResumeStructured)
+// can reuse the same sanitizer.
+func FinalizeStructuredResume(out ResumeStructured) ResumeStructured {
 	out.Contact = finalizeContact(out.Contact)
-	out.Summary = cleanScalar(out.Summary)
 
 	edu := make([]ResumeEducation, 0, len(out.Education))
 	for _, e := range out.Education {

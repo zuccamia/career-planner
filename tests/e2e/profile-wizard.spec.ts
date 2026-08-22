@@ -261,7 +261,7 @@ test.describe('local profile page — wizard', () => {
 
     // Import → extract → Apply. Leaves default (all-checked) selection so
     // every extracted field lands in the DB via updateOverview.
-    await page.getByRole('button', { name: 'Import from file' }).click();
+    await page.locator('#btn-wizard-import').click();
     await page.locator('#ri-result').evaluate((el) => el.classList.remove('hidden'));
     await page.locator('#ri-markdown').fill('# Ada Lovelace\n\nAnalytical engineer.\n');
     await page.getByRole('button', { name: 'Extract profile overview' }).click();

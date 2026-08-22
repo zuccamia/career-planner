@@ -6,7 +6,7 @@ import {
   listCompanies, getCompany, createCompany, updateCompany, deleteCompany,
   findCompanyByName, updateCompanyDossier,
 } from '../entities/companies.mjs';
-import { countApplicationsByCompany, listApplicationsByCompany, topStatusByCompany, headlineStatus } from '../entities/applications.mjs';
+import { countApplicationsByCompany, listApplicationsByCompany, topStatusByCompany, headlineStatus, statusSince } from '../entities/applications.mjs';
 import { countPeopleByCompany, listPeopleByCompanyID } from '../entities/people.mjs';
 import { guessCompanyCandidate, buildDossier } from '../rpc.mjs';
 import { urlFor } from '../host.mjs';
@@ -82,7 +82,7 @@ const editorHtml = (company) => {
             <input id="official_name" name="official_name" type="text" required
                    value="${escapeHtml(c.official_name)}" placeholder="${t('companies.field.official_name.placeholder')}"
                    class="${CLS.input} sm:flex-1">
-            <div class="flex items-end gap-2">
+            <div class="${CLS.rowInlineEnd}">
               ${outputLanguageSelect('out-lang-company-candidate')}
               ${button({ id: 'btn-lookup', variant: 'secondaryCompact', icon: 'search', label: t('companies.action.lookup'), extraClass: 'whitespace-nowrap' })}
             </div>
@@ -136,15 +136,15 @@ const statusPill = (headline) => {
   return badge({ color, size: 'xs', label: t(`applications.status.headline.${headline}`) });
 };
 
-const updatedLabel = (updatedAt) => {
-  if (!updatedAt) return t('companies.list.never_updated');
-  return t('companies.list.updated', { date: formatDate(updatedAt) });
+const researchedLabel = (dossierUpdatedAt) => {
+  if (!dossierUpdatedAt) return t('companies.list.never_researched');
+  return t('companies.list.researched', { date: formatDate(dossierUpdatedAt) });
 };
 
 const rowMeta = (c, roleCount, peopleCount) => {
   const roles = t(roleCount === 1 ? 'companies.list.role_one' : 'companies.list.role_many', { n: roleCount });
   const people = t(peopleCount === 1 ? 'companies.list.person_one' : 'companies.list.person_many', { n: peopleCount });
-  return `${roles}  ·  ${people}  ·  ${updatedLabel(c.updated_at)}`;
+  return `${roles}  ·  ${people}  ·  ${researchedLabel(c.dossier_updated_at)}`;
 };
 
 const companyFileRow = (c, roleCount, peopleCount, headline) => fileRow({
@@ -234,7 +234,7 @@ const chipRow = (items) => items?.length
   : emptyDash();
 
 const stackGroup = (label, items) => items?.length
-  ? `<div class="grid gap-2">
+  ? `<div class="grid gap-2 min-w-0">
        ${dossierLabel(escapeHtml(label))}
        ${chipRow(items)}
      </div>` : '';
@@ -249,7 +249,23 @@ const linkOrDash = (url) => url
   : faintSpan('—');
 
 const applicationsSectionHtml = (apps, companyID) => {
-  if (!apps.length) return '';
+  const addBtn = button({
+    kind: 'link',
+    variant: 'primaryCompact',
+    icon: 'plus',
+    label: t('applications.action.new'),
+    ariaLabel: t('applications.aria.add'),
+    href: urlFor(`applications?new=1&company_id=${companyID}`),
+  });
+  const header = `
+    <div class="${CLS.formRow}">
+      ${sectionTitle(t('companies.dossier.applications.heading'))}
+      ${addBtn}
+      ${apps.length ? `<a href="${urlFor(`applications?company_id=${companyID}`)}" class="${CLS.linkAction}">${t('common.action.view')}</a>` : ''}
+    </div>`;
+  if (!apps.length) {
+    return `<section class="space-y-2">${header}</section>`;
+  }
   const rows = apps.map(a => {
     const headline = headlineStatus(a.status);
     const statusText = statusPill(headline)
@@ -258,7 +274,7 @@ const applicationsSectionHtml = (apps, companyID) => {
     const ageKey = a.status === 'lead'
       ? 'companies.dossier.applications.added'
       : 'companies.dossier.applications.applied';
-    const meta = `${statusText} · ${t(ageKey, { age: relativeAge(a.created_at) })}`;
+    const meta = `${statusText} · ${t(ageKey, { age: relativeAge(statusSince(a)) })}`;
     return `
       <div class="${CLS.staticRow}">
         <div class="${CLS.flexTextCol}">
@@ -267,13 +283,9 @@ const applicationsSectionHtml = (apps, companyID) => {
         </div>
       </div>`;
   }).join('');
-  const viewLink = `<a href="${urlFor(`applications?company_id=${companyID}`)}" class="${CLS.linkAction}">${t('common.action.view')}</a>`;
   return `
     <section class="space-y-2">
-      <div class="${CLS.sectionHead}">
-        ${sectionTitle(t('companies.dossier.applications.heading'))}
-        ${viewLink}
-      </div>
+      ${header}
       <div class="${CLS.divider}">${rows}</div>
     </section>`;
 };
@@ -291,7 +303,7 @@ const peopleSectionHtml = (people, companyID) => {
   const viewLink = `<a href="${urlFor(`people?company_id=${companyID}`)}" class="${CLS.linkAction}">${t('common.action.view')}</a>`;
   return `
     <section class="space-y-2">
-      <div class="${CLS.sectionHead}">
+      <div class="${CLS.formRow}">
         ${sectionTitle(t('companies.dossier.people.heading'))}
         ${viewLink}
       </div>
@@ -354,7 +366,7 @@ const dossierHtml = (company, { editing = false, apps = [], people = [] } = {}) 
                 t('companies.dossier.last_built', { date: formatDate(company.dossier_updated_at) })}
             </p>
           </div>
-          <div class="${CLS.chipRowInline}">
+          <div class="${CLS.rowInlineEnd}">
             ${outputLanguageSelect('out-lang-dossier')}
             ${button({ id: 'btn-dossier-build', icon: 'sparkles', label: isEmpty ? t('companies.action.build_dossier') : t('companies.action.rebuild_dossier') })}
           </div>
@@ -379,11 +391,11 @@ const dossierHtml = (company, { editing = false, apps = [], people = [] } = {}) 
             </div>` : ''}
 
           <div class="${CLS.gridTwoCol} gap-6 items-start">
-            <div class="grid gap-1">
+            <div class="${CLS.fieldStack}">
               ${dossierLabel(t('companies.dossier.customers'))}
               ${chipRow(company.target_customers)}
             </div>
-            <div class="grid gap-1">
+            <div class="${CLS.fieldStack}">
               ${dossierLabel(t('companies.dossier.product_areas'))}
               ${chipRow(company.product_areas)}
             </div>
@@ -395,11 +407,11 @@ const dossierHtml = (company, { editing = false, apps = [], people = [] } = {}) 
           </div>
 
           <div class="${CLS.gridTwoCol} gap-6 items-start">
-            <div class="grid gap-1">
+            <div class="${CLS.fieldStack}">
               ${dossierLabel(t('companies.dossier.launches'))}
               ${company.recent_product_launches?.length ? bulletList(company.recent_product_launches) : emptyDash()}
             </div>
-            <div class="grid gap-1">
+            <div class="${CLS.fieldStack}">
               ${dossierLabel(t('companies.dossier.culture'))}
               ${company.company_culture_notes?.length ? bulletList(company.company_culture_notes) : emptyDash()}
             </div>

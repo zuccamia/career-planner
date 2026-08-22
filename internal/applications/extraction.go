@@ -3,6 +3,7 @@ package applications
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 
@@ -26,10 +27,7 @@ func (s *flexString) UnmarshalJSON(data []byte) error {
 	}
 	var b bool
 	if err := json.Unmarshal(data, &b); err == nil {
-		// A boolean here means the LLM under-specified — the schema expects a
-		// descriptive string (e.g. sponsorship / OPT-CPT nuance). Preserve that
-		// the posting said *something* while flagging that details are missing;
-		// false collapses to empty so the user isn't misled.
+		// Bool means under-specified — preserve presence, flag missing details.
 		if b {
 			*s = "required (details unclear from posting)"
 		} else {
@@ -80,6 +78,7 @@ type JobDescriptionStructured struct {
 	RoleTitle      string     `json:"role_title"`
 	RoleLevel      string     `json:"role_level"`
 	EmploymentType string     `json:"employment_type"`
+	Function       string     `json:"function,omitempty"`
 	Season         string     `json:"season"`
 	Year           int        `json:"year"`
 	Locations      stringList `json:"locations"`
@@ -126,13 +125,23 @@ func sanitizeJobDescriptionStructured(result JobDescriptionStructured, ctx extra
 		result.RoleTitle = strings.TrimSpace(ctx.RoleTitle)
 	}
 	result.RoleLevel = normalizeRoleLevel(result.RoleLevel)
-	if result.RoleLevel == "" {
-		result.RoleLevel = inferRoleLevel(ctx.RoleTitle, ctx.JobDescriptionRaw, result.RoleTitle, result.Summary, result.LocationNotes, result.ApplicationDeadline, strings.Join(result.MinimumQualifications, " "), strings.Join(result.PreferredQualifications, " "), strings.Join(result.Responsibilities, " "))
-	}
 	result.EmploymentType = normalizeEmploymentType(result.EmploymentType)
-	if result.EmploymentType == "" {
-		result.EmploymentType = inferEmploymentType(ctx.RoleTitle, ctx.JobDescriptionRaw, result.RoleTitle, result.Summary, result.LocationNotes, result.ApplicationDeadline, strings.Join(result.MinimumQualifications, " "), strings.Join(result.PreferredQualifications, " "), strings.Join(result.Responsibilities, " "))
+	if result.RoleLevel == "" || result.EmploymentType == "" {
+		haystack := []string{
+			ctx.RoleTitle, ctx.JobDescriptionRaw,
+			result.RoleTitle, result.Summary, result.LocationNotes, result.ApplicationDeadline,
+			strings.Join(result.MinimumQualifications, " "),
+			strings.Join(result.PreferredQualifications, " "),
+			strings.Join(result.Responsibilities, " "),
+		}
+		if result.RoleLevel == "" {
+			result.RoleLevel = inferRoleLevel(haystack...)
+		}
+		if result.EmploymentType == "" {
+			result.EmploymentType = inferEmploymentType(haystack...)
+		}
 	}
+	result.Function = sanitizeFunctionForPersona(result.Function)
 	result.Season = normalizeSeason(result.Season)
 	if result.Year < 0 {
 		result.Year = 0
@@ -154,6 +163,8 @@ func sanitizeJobDescriptionStructured(result JobDescriptionStructured, ctx extra
 	result.Requirements.Availability = sanitizeStringList(result.Requirements.Availability)
 	result.Summary = llm.SanitizeText(result.Summary)
 	result.Reasoning = llm.SanitizeText(result.Reasoning)
+	// Log function alongside role for drift debugging.
+	log.Printf("jd extract: role=%q function=%q", result.RoleTitle, result.Function)
 	return result
 }
 
@@ -237,6 +248,40 @@ func normalizeSeason(value string) string {
 	default:
 		return ""
 	}
+}
+
+// Values that trigger the unscoped-persona fallback (checked post-clean).
+var emptyFunctionSynonyms = map[string]struct{}{
+	"":        {},
+	"unknown": {},
+	"none":    {},
+	"na":      {},
+	"other":   {},
+	"various": {},
+	"general": {},
+}
+
+// sanitizeFunctionForPersona lowercases, keeps only [a-z\s-], caps at 50,
+// deny-lists common empties. Blunts prompt injection through persona.
+func sanitizeFunctionForPersona(value string) string {
+	var b strings.Builder
+	b.Grow(len(value))
+	for _, r := range strings.ToLower(value) {
+		switch {
+		case r >= 'a' && r <= 'z', r == '-':
+			b.WriteRune(r)
+		case r == ' ', r == '\t', r == '\n':
+			b.WriteRune(' ')
+		}
+	}
+	cleaned := strings.Join(strings.Fields(b.String()), " ")
+	if len(cleaned) > 50 {
+		cleaned = cleaned[:50]
+	}
+	if _, empty := emptyFunctionSynonyms[cleaned]; empty {
+		return ""
+	}
+	return cleaned
 }
 
 func sanitizeStringList(values []string) []string {

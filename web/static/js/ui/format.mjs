@@ -1,12 +1,16 @@
 // Shared formatting helpers used across page slide-overs.
 
 import { t } from '../i18n.mjs';
+import { toLocalDate } from './dom.mjs';
 
 export const relativeAge = (iso) => {
   if (!iso) return '';
-  const thenDate = new Date(iso);
+  // SQLite `datetime('now')` yields "YYYY-MM-DD HH:MM:SS" (UTC, no offset marker),
+  // which V8's `new Date` misreads as local time. toLocalDate normalizes both
+  // that shape and full ISO strings so mixed rows compare correctly.
+  const thenDate = toLocalDate(iso);
+  if (!thenDate) return '';
   const then = thenDate.getTime();
-  if (Number.isNaN(then)) return '';
   const nowMs = Date.now();
   const deltaMs = Math.max(0, nowMs - then);
   const hours = Math.floor(deltaMs / 3_600_000);
