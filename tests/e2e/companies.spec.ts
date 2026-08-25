@@ -101,16 +101,16 @@ test.describe('local companies page', () => {
   // Regression: buildDossier's caller in pages/companies.mjs used to omit
   // blog_url from the payload, so the server never saw the blog URL and
   // scrapeMissingIntoEnrichment skipped the blog fanout. This pins that the
-  // outgoing /api/dossiers/build body includes blog_url exactly as saved.
+  // outgoing /api/companies/build-dossier body includes blog_url exactly as saved.
   test('Build dossier forwards blog_url in the request payload', async ({ page }) => {
-    // Force server-LLM path so buildDossier hits /api/dossiers/build (BYOK
+    // Force server-LLM path so buildDossier hits /api/companies/build-dossier (BYOK
     // would route through /api/llm/prompts/build-dossier — same bug lived
     // in the shared caller, so covering either path catches it).
     await page.route('**/api/llm/server-status', route =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ available: true, provider: 'openai-compatible', model: 'gpt-4o-mini' }) }),
     );
     let capturedBody: Record<string, unknown> = {};
-    await page.route('**/api/dossiers/build', async (route) => {
+    await page.route('**/api/companies/build-dossier', async (route) => {
       try { capturedBody = JSON.parse(route.request().postData() || '{}'); } catch { /* ignore */ }
       await route.fulfill({
         status: 200,

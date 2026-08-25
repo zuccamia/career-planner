@@ -1,6 +1,6 @@
 package http
 
-// Assembles the HTTP server, route table, and service dependencies.
+// Assembles the HTTP server, route table, and stateless service dependencies.
 
 import (
 	"context"
@@ -11,58 +11,45 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/zuccamia/career-planner/internal/applications"
-	"github.com/zuccamia/career-planner/internal/brags"
-	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/discover"
-	"github.com/zuccamia/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/people"
 	"github.com/zuccamia/career-planner/internal/profile"
 	"github.com/zuccamia/career-planner/internal/sources/scrape"
 	"github.com/zuccamia/career-planner/internal/sources/search"
 )
 
-// Server bundles the services needed by remaining HTTP handlers. All are
-// stateless LLM helpers — the browser owns persistence.
-type Server struct {
-	companies      *companies.Service
-	applications   *applications.Service
-	brags          *brags.Service
-	communications *communications.Service
-	dossiers       *dossiers.Service
-	profile        *profile.Service
+// ---- types ----
 
-	// Discovery service. Always non-nil; CanRunServerPipeline reports whether
-	// the full server-side pipeline (LLM + search) is usable. The Dashboard
-	// polls /api/discover/server-status to grey the Discover button when it
-	// isn't.
+// Server bundles the stateless LLM-helper services used by HTTP handlers.
+type Server struct {
+	companies    *companies.Service
+	applications *applications.Service
+	people       *people.Service
+	profile      *profile.Service
+
+	// Always non-nil; CanRunServerPipeline reports whether the full server-side pipeline is usable.
 	discover *discover.Service
 
-	// Optional server-side scraper. Non-nil only when SCRAPER_* env vars are
-	// configured. Used by rpcBuildDossier to enrich the LLM prompt with
-	// scraped website markdown, and by the ATS registry as the generic
-	// fallback fetcher. Never used on the browser BYOK path — browsers call
-	// the scraper directly.
+	// Optional server-side scraper; non-nil only when SCRAPER_* env is set.
 	scrape     scrape.Client
 	scrapePing pingCache
 
-	// Search client — the discover pipeline holds its own reference; this
-	// one drives GET /api/search/server-status and /discover/server-status.
+	// Search client for GET /api/search/server-status and /discover/server-status.
 	search     search.Client
 	searchPing pingCache
 
-	// Cached view of the LLM_* env vars this process was started with. Read
-	// via GET /api/llm/server-status so the browser can pick between the
-	// "Server · <model>" and "AI: setup needed" badges. Populated in
-	// app.New; zero-value when no server-side key is configured.
+	// Cached view of LLM_* env at boot.
 	serverLLMAvailable bool
 	serverLLMProvider  string
 	serverLLMModel     string
 
 	// Cached backend names (e.g. "firecrawl", "searxng") for UI messaging.
-	// Availability itself is computed live per subsystem.
 	serverScrapeProvider string
 	serverSearchProvider string
 }
+
+// ---- ping cache ----
 
 // pingCache memoizes a subsystem's reachability probe for statusPingTTL so a
 // dead backend doesn't get hammered by the UI's status polling.
@@ -89,10 +76,7 @@ func (p *pingCache) reachable(ctx context.Context, ping func(context.Context) er
 	return p.up
 }
 
-// ServerLLM captures the LLM_* env vars the process was started with, so the
-// router can report them to the browser without re-reading the environment.
-// Zero-value means the process has no server-side LLM configured — BYOK is
-// the only way to use AI features on this deployment.
+// Snapshot of server-side LLM env for the router.
 type ServerLLM struct {
 	Available bool
 	Provider  string
@@ -114,22 +98,22 @@ type ServerSearch struct {
 	Provider string
 }
 
+// ---- NewRouter ----
+
 // NewRouter wires handlers, static assets, and middleware into the application router.
-func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Service, applicationsService *applications.Service, bragsService *brags.Service, communicationsService *communications.Service, profileService *profile.Service, discoverService *discover.Service, serverLLM ServerLLM, serverScrape ServerScrape, serverSearch ServerSearch, scrapeClient scrape.Client, searchClient search.Client) http.Handler {
+func NewRouter(companiesService *companies.Service, applicationsService *applications.Service, peopleService *people.Service, profileService *profile.Service, discoverService *discover.Service, serverLLM ServerLLM, serverScrape ServerScrape, serverSearch ServerSearch, scrapeClient scrape.Client, searchClient search.Client) http.Handler {
 	server := &Server{
-		companies:           companiesService,
-		applications:        applicationsService,
-		brags:               bragsService,
-		communications:      communicationsService,
-		dossiers:            dossiersService,
-		profile:             profileService,
-		discover:            discoverService,
-		scrape:              scrapeClient,
-		search:              searchClient,
-		serverLLMAvailable:  serverLLM.Available,
-		serverLLMProvider:   serverLLM.Provider,
-		serverLLMModel:      serverLLM.Model,
+		companies:            companiesService,
+		applications:         applicationsService,
+		people:               peopleService,
+		profile:              profileService,
+		discover:             discoverService,
+		serverLLMAvailable:   serverLLM.Available,
+		serverLLMProvider:    serverLLM.Provider,
+		serverLLMModel:       serverLLM.Model,
+		scrape:               scrapeClient,
 		serverScrapeProvider: serverScrape.Provider,
+		search:               searchClient,
 		serverSearchProvider: serverSearch.Provider,
 	}
 
@@ -153,20 +137,20 @@ func NewRouter(companiesService *companies.Service, dossiersService *dossiers.Se
 	mux.HandleFunc("GET /api/search/server-status", server.rpcSearchServerStatus)
 	mux.HandleFunc("GET /api/discover/server-status", server.rpcDiscoverServerStatus)
 	mux.Handle("POST /api/discover/run", llm(server.rpcDiscoverRun))
-	mux.Handle("POST /api/companies/guess-candidate", llm(server.rpcGuessCompanyCandidate))
-	mux.Handle("POST /api/dossiers/build", llm(server.rpcBuildDossier))
+	mux.Handle("POST /api/companies/lookup", llm(server.rpcLookupCompany))
+	mux.Handle("POST /api/companies/build-dossier", llm(server.rpcBuildDossier))
 	mux.Handle("POST /api/applications/extract-job-description", llm(server.rpcExtractJobDescription))
 	mux.Handle("POST /api/applications/analyze-role-signals", llm(server.rpcAnalyzeRoleSignals))
 	mux.Handle("POST /api/applications/tailor", llm(server.rpcTailor))
 	mux.Handle("POST /api/profile/generate-brag-tags", llm(server.rpcGenerateBragTags))
-	mux.Handle("POST /api/profile/extract-brags-from-resume", llm(server.rpcExtractBragsFromResume))
-	mux.Handle("POST /api/profile/extract-overview-from-resume", llm(server.rpcExtractOverviewFromResume))
-	mux.Handle("POST /api/profile/extract-structured-resume-from-source", llm(server.rpcExtractStructuredResumeFromSource))
-	mux.Handle("POST /api/communications/summarize-thread", llm(server.rpcSummarizeThread))
-	mux.Handle("POST /api/communications/generate-message", llm(server.rpcGenerateMessage))
+	mux.Handle("POST /api/profile/import-brags", llm(server.rpcImportBrags))
+	mux.Handle("POST /api/profile/import-overview", llm(server.rpcImportOverview))
+	mux.Handle("POST /api/profile/import-resume", llm(server.rpcImportResume))
+	mux.Handle("POST /api/people/summarize-thread", llm(server.rpcSummarizeThread))
+	mux.Handle("POST /api/people/generate-message", llm(server.rpcGenerateMessage))
 	// Subsystem-only endpoints for BYOK-LLM callers with no BYOK scrape/search
 	// of their own. The browser assembles the prompt + calls its LLM itself.
-	mux.HandleFunc("POST /api/dossiers/scrape", server.rpcDossierScrape)
+	mux.HandleFunc("POST /api/companies/scrape-dossier", server.rpcDossierScrape)
 	mux.HandleFunc("POST /api/applications/scrape", server.rpcApplicationScrape)
 	mux.HandleFunc("POST /api/discover/search", server.rpcDiscoverSearch)
 	for _, p := range Pages {

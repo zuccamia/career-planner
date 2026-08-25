@@ -4,14 +4,14 @@
 
 import { isByokLLMActive, getByokLLMConfig } from './storage/byok-llm.mjs';
 import { isByokScraperActive } from './storage/byok-scraper.mjs';
-import { scrapeWithCache, scrapeInParallel } from './scrape-with-cache.mjs';
-import { lookupATSURL, fetchATSPosting, hasBrowserATSFetcher } from './ats-lookup.mjs';
-import { callOpenAICompatible, getServerLLMStatus } from './llm-client.mjs';
-import { getServerScraperStatus } from './scrape-client.mjs';
+import { scrapeWithCache, scrapeInParallel } from './sources/scrape/client.mjs';
+import { lookupATSURL, fetchATSPosting, hasBrowserATSFetcher } from './sources/ats/lookup.mjs';
+import { callOpenAICompatible, getServerLLMStatus } from './sources/llm/client.mjs';
+import { getServerScraperStatus } from './sources/scrape/client.mjs';
 import { currentLocale, t } from './i18n.mjs';
 import { isStaticHost } from './host.mjs';
-import { builders, parsers } from './llm/parse/index.mjs';
-import { fetchJSON } from './fetch-helpers.mjs';
+import { builders, parsers } from './prompt-handlers/index.mjs';
+import { fetchJSON } from './http.mjs';
 import { stepped, noopStep } from './ui/progress.mjs';
 
 const DOSSIER_SCRAPE_TTL_SECONDS = 24 * 3600;
@@ -43,7 +43,7 @@ const llmCall = async (name, input, serverPath, outputLanguage, onStep = noopSte
   const serverLLM = await getServerLLMStatus();
   if (!serverLLM.available) throw new Error(t('settings.ai.error.no_llm_configured'));
 
-  const mayServerScrape = name === 'build-dossier' || name === 'extract-job-description';
+  const mayServerScrape = name === 'companies/build-dossier' || name === 'applications/extract-job-description';
   const serverScrapeHint = mayServerScrape && (await getServerScraperStatus()).available
     ? 'progress.hint.server_scrape'
     : undefined;
@@ -53,7 +53,7 @@ const llmCall = async (name, input, serverPath, outputLanguage, onStep = noopSte
 // Ask the Go LLM pipeline to guess a canonical Company row from a typed name.
 // Returns { candidate: {official_name, website, blog_url, ats_url, ats_provider, reasoning}, warning? }.
 export const guessCompanyCandidate = (name, outputLanguage, onStep) =>
-  llmCall('guess-candidate', { name }, '/api/companies/guess-candidate', outputLanguage, onStep);
+  llmCall('companies/lookup', { name }, '/api/companies/lookup', outputLanguage, onStep);
 
 // Extract structured JD. Routing (BYOK LLM × static host):
 //   BYOK + non-static  → server /scrape + browser LLM (posting forwards).
@@ -108,7 +108,7 @@ export const extractJobDescription = async (input, outputLanguage, onStep = noop
     }
   }
   // no BYOK: server endpoint does ATS + LLM in one shot.
-  return llmCall('extract-job-description', payload, '/api/applications/extract-job-description', outputLanguage, onStep);
+  return llmCall('applications/extract-job-description', payload, '/api/applications/extract-job-description', outputLanguage, onStep);
 };
 
 // Build a dossier. Scrape preference: BYOK browser → server /scrape → skip.
@@ -139,7 +139,7 @@ export const buildDossier = async (company, outputLanguage, onStep = noopStep) =
     ], { ttlSeconds: DOSSIER_SCRAPE_TTL_SECONDS, onStep });
     Object.assign(payload, scrapedContent);
   } else if (anyURL && await isByokLLMActive() && !isStaticHost() && (await getServerScraperStatus()).available) {
-    const scraped = await stepped(onStep, 'scrape', () => post('/api/dossiers/scrape', {
+    const scraped = await stepped(onStep, 'scrape', () => post('/api/companies/scrape-dossier', {
       website, blog_url: blogURL, ats_url: atsURL, ats_provider: payload.ats_provider || '',
     }), 'progress.hint.server_scrape');
     Object.assign(payload, {
@@ -153,24 +153,24 @@ export const buildDossier = async (company, outputLanguage, onStep = noopStep) =
     onStep({ name: 'scrape', status: 'failed', error: t('dossiers.warning.scraper_recommended') });
   }
 
-  return llmCall('build-dossier', payload, '/api/dossiers/build', outputLanguage, onStep);
+  return llmCall('companies/build-dossier', payload, '/api/companies/build-dossier', outputLanguage, onStep);
 };
 
 // Generate suggested brag tags from the brag body only.
 export const generateBragTags = (payload, outputLanguage, onStep) =>
-  llmCall('generate-brag-tags', payload, '/api/profile/generate-brag-tags', outputLanguage, onStep);
+  llmCall('profile/generate-brag-tags', payload, '/api/profile/generate-brag-tags', outputLanguage, onStep);
 
 // Extract candidate brag entries from an edited résumé Markdown. Response:
 // { brags: [{title, body, impact, tags, company, entry_year, confidence}] }.
 export const extractBragsFromResume = (markdown, outputLanguage, onStep) =>
-  llmCall('extract-brags-from-resume', { markdown }, '/api/profile/extract-brags-from-resume', outputLanguage, onStep);
+  llmCall('profile/import-brags', { markdown }, '/api/profile/import-brags', outputLanguage, onStep);
 
 // Extract profile-overview fields from an edited résumé Markdown. Response:
 // { name, headline, summary, workplace_type, skills: [{name, years?, level?}], tools: [] }.
 // Extractive fields (name/workplace_type/tools) come from the résumé literally;
 // headline and summary are drafts the user edits before applying.
 export const extractOverviewFromResume = (markdown, outputLanguage, onStep) =>
-  llmCall('extract-overview-from-resume', { markdown }, '/api/profile/extract-overview-from-resume', outputLanguage, onStep);
+  llmCall('profile/import-overview', { markdown }, '/api/profile/import-overview', outputLanguage, onStep);
 
 // Extract a full structured résumé from Markdown or Typst source. Response
 // is the profile.ResumeStructured shape. `format` is 'markdown' or 'typst'
@@ -179,12 +179,12 @@ export const extractOverviewFromResume = (markdown, outputLanguage, onStep) =>
 // Extract a structured résumé from a source string (markdown or typst — the
 // prompt handles either).
 export const extractStructuredResumeFromSource = (source, outputLanguage, onStep) =>
-  llmCall('extract-structured-resume-from-source', { source }, '/api/profile/extract-structured-resume-from-source', outputLanguage, onStep);
+  llmCall('profile/import-resume', { source }, '/api/profile/import-resume', outputLanguage, onStep);
 
 // Analyze JD + optional company dossier into a markdown role signals used as
 // rubric by rank + tailor. Response: { signals: "<markdown>" }.
 export const analyzeRoleSignals = (payload, outputLanguage, onStep) =>
-  llmCall('analyze-role-signals', payload, '/api/applications/analyze-role-signals', outputLanguage, onStep);
+  llmCall('applications/analyze-role-signals', payload, '/api/applications/analyze-role-signals', outputLanguage, onStep);
 
 // Ask the LLM to summarize one communication thread. Caller ships the full
 // thread + entries context (the server is stateless for local-first data) and
@@ -193,10 +193,10 @@ export const analyzeRoleSignals = (payload, outputLanguage, onStep) =>
 //   thread:  { person_name, person_notes, channel, subject, status, summary }
 //   entries: [{ direction, content, occurred_at }] — newest first
 export const summarizeThread = (payload, outputLanguage, onStep) =>
-  llmCall('summarize-thread', payload, '/api/communications/summarize-thread', outputLanguage, onStep);
+  llmCall('people/summarize-thread', payload, '/api/people/summarize-thread', outputLanguage, onStep);
 
 // Ask the LLM to draft outreach or a reply from a thread's context. Same
 // payload shape as summarizeThread plus a `goal` of "outreach" or "reply".
 // Returns { message }. The caller decides whether to save the draft.
 export const generateMessage = (payload, outputLanguage, onStep) =>
-  llmCall('generate-message', payload, '/api/communications/generate-message', outputLanguage, onStep);
+  llmCall('people/generate-message', payload, '/api/people/generate-message', outputLanguage, onStep);

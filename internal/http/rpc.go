@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -11,63 +10,21 @@ import (
 	"time"
 
 	"github.com/zuccamia/career-planner/internal/applications"
-	"github.com/zuccamia/career-planner/internal/brags"
-	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
-	"github.com/zuccamia/career-planner/internal/dossiers"
+	"github.com/zuccamia/career-planner/internal/discover"
 	"github.com/zuccamia/career-planner/internal/i18n"
 	"github.com/zuccamia/career-planner/internal/people"
+	"github.com/zuccamia/career-planner/internal/profile"
 	"github.com/zuccamia/career-planner/internal/sources/ats"
-	"github.com/zuccamia/career-planner/internal/sources/llm"
 	"github.com/zuccamia/career-planner/internal/sources/scrape"
 )
 
-// Stateless RPC endpoints for the local-first browser client. These handlers
-// receive JSON, run existing Go business logic (LLM prompts + sanitization),
-// and return JSON — no database access. The browser owns all persistent data.
+// Stateless RPC handlers: JSON in, JSON out; no persistence.
 
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		log.Printf("rpc: encode response: %v", err)
-	}
-}
+// ---- companies ----
 
-func writeErr(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
-}
-
-// writeServiceErr logs the service-layer failure and writes the response.
-// llm.ErrClientNotConfigured and llm.InputError map to 400; else 502.
-func writeServiceErr(w http.ResponseWriter, r *http.Request, name string, err error) {
-	if errors.Is(err, llm.ErrClientNotConfigured) {
-		writeErr(w, http.StatusBadRequest, i18n.T(i18n.Resolve(r), "settings.ai.error.no_llm_configured"))
-		return
-	}
-	var inputErr *llm.InputError
-	if errors.As(err, &inputErr) {
-		writeErr(w, http.StatusBadRequest, inputErr.Msg)
-		return
-	}
-	log.Printf("rpc %s: %v", name, err)
-	writeErr(w, http.StatusBadGateway, err.Error())
-}
-
-// decodeJSON reads r.Body into dst. On decode failure it writes a 400 with a
-// stable error string and returns false, so callers can `return` immediately.
-// On success returns true with dst populated.
-func decodeJSON[T any](r *http.Request, w http.ResponseWriter, dst *T) bool {
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
-		writeErr(w, http.StatusBadRequest, "invalid json body")
-		return false
-	}
-	return true
-}
-
-// rpcGuessCompanyCandidate wraps companies.Service.GuessCandidate for the
-// browser client. Input: {"name": "..."}. Output: the Candidate struct.
-func (s *Server) rpcGuessCompanyCandidate(w http.ResponseWriter, r *http.Request) {
+// rpcLookupCompany wraps companies.Service.GuessCandidate for the browser client.
+func (s *Server) rpcLookupCompany(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Name           string `json:"name"`
 		OutputLanguage string `json:"output_language"`
@@ -84,7 +41,7 @@ func (s *Server) rpcGuessCompanyCandidate(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		// Return the fallback candidate the service produces on LLM failure,
 		// with a warning in the body so the UI can surface it.
-		log.Printf("rpc guess-candidate: %v", err)
+		log.Printf("rpc companies/lookup: %v", err)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"candidate": candidate,
 			"warning":   err.Error(),
@@ -94,7 +51,7 @@ func (s *Server) rpcGuessCompanyCandidate(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"candidate": candidate})
 }
 
-// rpcBuildDossier wraps dossiers.Service.Build for the browser client.
+// rpcBuildDossier wraps companies.Service.Build for the browser client.
 // Input: {official_name, website, ats_url, ats_provider}. Output: the Dossier
 // struct (JSON-tagged). No DB access — the browser stores the result locally.
 func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +82,7 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 	blogURL := strings.TrimSpace(body.BlogURL)
 	atsURL := strings.TrimSpace(body.ATSURL)
 	atsProvider := strings.TrimSpace(body.ATSProvider)
-	pages := dossiers.Pages{
+	pages := companies.Pages{
 		Website: strings.TrimSpace(body.WebsiteContent),
 		Blog:    strings.TrimSpace(body.BlogContent),
 		Careers: strings.TrimSpace(body.CareersContent),
@@ -145,7 +102,7 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 		s.scrapeMissingContent(r.Context(), &pages, website, blogURL, atsURL)
 	}
 
-	out, err := s.dossiers.Build(r.Context(), companies.Company{
+	out, err := s.companies.BuildDossier(r.Context(), companies.Company{
 		OfficialName: name,
 		Website:      website,
 		BlogURL:      blogURL,
@@ -159,10 +116,8 @@ func (s *Server) rpcBuildDossier(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// scrapeMissingContent scrapes each URL in parallel and writes the
-// markdown into the matching pages field. Skips URLs already prefilled
-// by the browser's BYOK scraper. Per-URL failures are logged.
-func (s *Server) scrapeMissingContent(ctx context.Context, e *dossiers.Pages, website, blog, careers string) {
+// scrapeMissingContent scrapes each URL in parallel into pages; skips prefilled slots.
+func (s *Server) scrapeMissingContent(ctx context.Context, e *companies.Pages, website, blog, careers string) {
 	var wg sync.WaitGroup
 	fanout := func(label, url string, dst *string) {
 		if url == "" || *dst != "" {
@@ -191,7 +146,9 @@ func (s *Server) scrapeInto(ctx context.Context, label, url string, dst *string)
 	*dst = res.Markdown
 }
 
-// rpcGenerateBragTags wraps brags.Service.GenerateTags for the browser client.
+// ---- profile ----
+
+// rpcGenerateBragTags wraps profile.Service.GenerateBragTags for the browser.
 // Input: {"body":"..."}. Output: {"tags":[...]}.
 func (s *Server) rpcGenerateBragTags(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -205,19 +162,16 @@ func (s *Server) rpcGenerateBragTags(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "body is required")
 		return
 	}
-	tags, err := s.brags.GenerateTags(r.Context(), body.Body, body.OutputLanguage)
+	tags, err := s.profile.GenerateBragTags(r.Context(), body.Body, body.OutputLanguage)
 	if err != nil {
-		writeServiceErr(w, r, "generate-brag-tags", err)
+		writeServiceErr(w, r, "profile/generate-brag-tags", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, brags.TagResult{Tags: tags})
+	writeJSON(w, http.StatusOK, profile.BragTagResult{Tags: tags})
 }
 
-// rpcExtractBragsFromResume wraps brags.Service.ExtractFromResume. The browser
-// sends the edited résumé Markdown; the response is a list of candidate brag
-// entries the review UI presents for per-entry accept/reject.
 // Input: {"markdown":"...","output_language":"en|vi"}. Output: {"brags":[...]}.
-func (s *Server) rpcExtractBragsFromResume(w http.ResponseWriter, r *http.Request) {
+func (s *Server) rpcImportBrags(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Markdown       string `json:"markdown"`
 		OutputLanguage string `json:"output_language"`
@@ -229,20 +183,16 @@ func (s *Server) rpcExtractBragsFromResume(w http.ResponseWriter, r *http.Reques
 		writeErr(w, http.StatusBadRequest, "markdown is required")
 		return
 	}
-	entries, err := s.brags.ExtractFromResume(r.Context(), body.Markdown, body.OutputLanguage)
+	entries, err := s.profile.ImportBrags(r.Context(), body.Markdown, body.OutputLanguage)
 	if err != nil {
-		writeServiceErr(w, r, "extract-brags-from-resume", err)
+		writeServiceErr(w, r, "profile/import-brags", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, brags.ExtractResumeResult{Brags: entries})
+	writeJSON(w, http.StatusOK, profile.ImportBragsResult{Brags: entries})
 }
 
-// rpcExtractOverviewFromResume wraps profile.Service.ExtractFromResume. The
-// browser sends the edited résumé Markdown; the response is a suggested
-// overview the user reviews per-field before applying.
-// Input: {"markdown":"...","output_language":"en|vi"}.
-// Output: the profile.ExtractedOverview struct.
-func (s *Server) rpcExtractOverviewFromResume(w http.ResponseWriter, r *http.Request) {
+// Input: {"markdown":"...","output_language":"en|vi"}. Output: profile.ImportedOverview.
+func (s *Server) rpcImportOverview(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Markdown       string `json:"markdown"`
 		OutputLanguage string `json:"output_language"`
@@ -254,18 +204,18 @@ func (s *Server) rpcExtractOverviewFromResume(w http.ResponseWriter, r *http.Req
 		writeErr(w, http.StatusBadRequest, "markdown is required")
 		return
 	}
-	overview, err := s.profile.ExtractFromResume(r.Context(), body.Markdown, body.OutputLanguage)
+	overview, err := s.profile.ImportOverview(r.Context(), body.Markdown, body.OutputLanguage)
 	if err != nil {
-		writeServiceErr(w, r, "extract-overview-from-resume", err)
+		writeServiceErr(w, r, "profile/import-overview", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, overview)
 }
 
-// rpcExtractStructuredResumeFromSource wraps profile.Service.ExtractStructuredResume.
+// rpcImportResume wraps profile.Service.ImportResume.
 // Input: {"source":"<markdown or typst>","output_language":"en|vi"}. Prompt
 // is format-neutral so a single field suffices.
-func (s *Server) rpcExtractStructuredResumeFromSource(w http.ResponseWriter, r *http.Request) {
+func (s *Server) rpcImportResume(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Source         string `json:"source"`
 		OutputLanguage string `json:"output_language"`
@@ -278,13 +228,15 @@ func (s *Server) rpcExtractStructuredResumeFromSource(w http.ResponseWriter, r *
 		writeErr(w, http.StatusBadRequest, i18n.T(body.OutputLanguage, "profile.resumes.error.source_required"))
 		return
 	}
-	resume, err := s.profile.ExtractStructuredResume(r.Context(), source, body.OutputLanguage)
+	resume, err := s.profile.ImportResume(r.Context(), source, body.OutputLanguage)
 	if err != nil {
-		writeServiceErr(w, r, "extract-structured-resume-from-source", err)
+		writeServiceErr(w, r, "profile/import-resume", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, resume)
 }
+
+// ---- applications ----
 
 // rpcAnalyzeRoleSignals analyzes JD + optional company dossier into a role brief
 // the tailor pipeline uses as a rubric. Response: { brief: "<markdown>" }.
@@ -295,7 +247,7 @@ func (s *Server) rpcAnalyzeRoleSignals(w http.ResponseWriter, r *http.Request) {
 	}
 	out, err := s.applications.AnalyzeRoleSignals(r.Context(), in)
 	if err != nil {
-		writeServiceErr(w, r, "analyze-role-signals", err)
+		writeServiceErr(w, r, "applications/analyze-role-signals", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
@@ -316,9 +268,7 @@ func (s *Server) rpcTailor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// threadDetailPayload matches the JSON shape the browser sends when calling
-// the stateless communications RPCs. It maps into a communications.ThreadDetail
-// (only the fields buildThreadContext actually reads are populated).
+// Wire shape shared by summarize/generate-message handlers.
 type threadDetailPayload struct {
 	Thread struct {
 		PersonName  string `json:"person_name"`
@@ -339,9 +289,9 @@ type threadDetailPayload struct {
 // toThreadDetail converts the wire payload into the domain type expected by
 // buildThreadContext. occurred_at is parsed leniently: RFC3339 first, then
 // SQLite's default "YYYY-MM-DD HH:MM:SS", then dropped to zero on failure.
-func (p threadDetailPayload) toThreadDetail() communications.ThreadDetail {
-	detail := communications.ThreadDetail{
-		Thread: communications.Thread{
+func (p threadDetailPayload) toThreadDetail() people.ThreadDetail {
+	detail := people.ThreadDetail{
+		Thread: people.Thread{
 			Person: people.Person{
 				Name:  p.Thread.PersonName,
 				Notes: p.Thread.PersonNotes,
@@ -357,7 +307,7 @@ func (p threadDetailPayload) toThreadDetail() communications.ThreadDetail {
 		if err != nil {
 			occurred, _ = time.Parse("2006-01-02 15:04:05", e.OccurredAt)
 		}
-		detail.Entries = append(detail.Entries, communications.Entry{
+		detail.Entries = append(detail.Entries, people.ThreadEntry{
 			Direction:  e.Direction,
 			Content:    e.Content,
 			OccurredAt: occurred,
@@ -366,7 +316,9 @@ func (p threadDetailPayload) toThreadDetail() communications.ThreadDetail {
 	return detail
 }
 
-// rpcSummarizeThread wraps communications.Service.SummarizeThreadContext.
+// ---- people ----
+
+// rpcSummarizeThread wraps people.Service.SummarizeThreadContext.
 // Input: thread + entries payload. Output: {"summary": "..."}. The browser
 // owns persistence — this endpoint only runs the LLM prompt.
 func (s *Server) rpcSummarizeThread(w http.ResponseWriter, r *http.Request) {
@@ -374,11 +326,11 @@ func (s *Server) rpcSummarizeThread(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(r, w, &body) {
 		return
 	}
-	summary, err := s.communications.SummarizeThreadContext(r.Context(), body.toThreadDetail(), body.OutputLanguage)
+	summary, err := s.people.SummarizeThreadContext(r.Context(), body.toThreadDetail(), body.OutputLanguage)
 	if err != nil {
-		log.Printf("rpc summarize-thread: %v", err)
-		if errors.Is(err, communications.ErrUnsafeGeneration) {
-			writeErr(w, http.StatusBadRequest, i18n.T(body.OutputLanguage, "communications.error.unsafe_summary"))
+		log.Printf("rpc people/summarize-thread: %v", err)
+		if errors.Is(err, people.ErrUnsafeGeneration) {
+			writeErr(w, http.StatusBadRequest, i18n.T(body.OutputLanguage, "people.error.unsafe_summary"))
 			return
 		}
 		writeErr(w, http.StatusBadGateway, err.Error())
@@ -387,7 +339,7 @@ func (s *Server) rpcSummarizeThread(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"summary": summary})
 }
 
-// rpcGenerateMessage wraps communications.Service.GenerateMessageFromContext.
+// rpcGenerateMessage wraps people.Service.GenerateMessageFromContext.
 // Input: thread + entries + goal ("outreach" | "reply"). Output: {"message"}.
 func (s *Server) rpcGenerateMessage(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -397,11 +349,11 @@ func (s *Server) rpcGenerateMessage(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(r, w, &body) {
 		return
 	}
-	message, err := s.communications.GenerateMessageFromContext(r.Context(), body.toThreadDetail(), body.Goal, body.OutputLanguage)
+	message, err := s.people.GenerateMessageFromContext(r.Context(), body.toThreadDetail(), body.Goal, body.OutputLanguage)
 	if err != nil {
-		log.Printf("rpc generate-message: %v", err)
-		if errors.Is(err, communications.ErrUnsafeGeneration) {
-			writeErr(w, http.StatusBadRequest, i18n.T(body.OutputLanguage, "communications.error.unsafe_message"))
+		log.Printf("rpc people/generate-message: %v", err)
+		if errors.Is(err, people.ErrUnsafeGeneration) {
+			writeErr(w, http.StatusBadRequest, i18n.T(body.OutputLanguage, "people.error.unsafe_message"))
 			return
 		}
 		writeErr(w, http.StatusBadGateway, err.Error())
@@ -431,7 +383,7 @@ func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request
 		OutputLanguage:    body.OutputLanguage,
 	})
 	if err != nil {
-		writeServiceErr(w, r, "extract-job-description", err)
+		writeServiceErr(w, r, "applications/extract-job-description", err)
 		return
 	}
 	// ExtractJD already logs the suspicious-input warning internally; just
@@ -442,6 +394,8 @@ func (s *Server) rpcExtractJobDescription(w http.ResponseWriter, r *http.Request
 		Warning           string                                `json:"warning,omitempty"`
 	}{Structured: structured, JobDescriptionRaw: raw, Warning: applications.DetectSuspiciousJDInput(raw)})
 }
+
+// ---- scrape sidecars ----
 
 // rpcDossierScrape fetches per-page markdown + discovers the ATS URL for a
 // dossier. Called by BYOK-LLM browsers with no BYOK scraper; the browser
@@ -467,7 +421,7 @@ func (s *Server) rpcDossierScrape(w http.ResponseWriter, r *http.Request) {
 	blogURL := strings.TrimSpace(body.BlogURL)
 	atsURL := strings.TrimSpace(body.ATSURL)
 	atsProvider := strings.TrimSpace(body.ATSProvider)
-	pages := dossiers.Pages{
+	pages := companies.Pages{
 		Website: strings.TrimSpace(body.WebsiteContent),
 		Blog:    strings.TrimSpace(body.BlogContent),
 		Careers: strings.TrimSpace(body.CareersContent),
@@ -524,4 +478,43 @@ func (s *Server) rpcApplicationScrape(w http.ResponseWriter, r *http.Request) {
 		Posting     ats.Posting `json:"posting"`
 		Warning     string      `json:"warning,omitempty"`
 	}{EnrichedRaw: raw, Posting: posting, Warning: applications.DetectSuspiciousJDInput(raw)})
+}
+
+// ---- discover ----
+
+// POST /api/discover/run — runs the pipeline against the user's context,
+// consuming any browser-precomputed inputs and returning ranked recs.
+
+func (s *Server) rpcDiscoverRun(w http.ResponseWriter, r *http.Request) {
+	var req discover.DiscoverRequest
+	if !decodeJSON(r, w, &req) {
+		return
+	}
+	resp, err := s.discover.Run(r.Context(), req)
+	if err != nil {
+		log.Printf("rpc discover run: %v", err)
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// rpcDiscoverSearch runs the search step only. Called by BYOK-LLM browsers
+// that don't have BYOK search: expand + rank happen client-side, search
+// borrows the server's SearXNG.
+func (s *Server) rpcDiscoverSearch(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Query   discover.SearchQuery    `json:"query"`
+		Profile discover.ProfileSummary `json:"profile"`
+		Locale  string                  `json:"locale"`
+	}
+	if !decodeJSON(r, w, &body) {
+		return
+	}
+	groups, err := s.discover.Search(r.Context(), body.Query, body.Profile, body.Locale)
+	if err != nil {
+		writeErr(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"groups": groups})
 }

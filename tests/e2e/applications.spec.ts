@@ -450,7 +450,7 @@ test.describe('local applications page — attachments', () => {
   test('detaching an application-side PDF cascades to the paired resume-side row', async ({ page }) => {
     // Regression for the sibling cascade in deleteAttachment. A resume PDF
     // sent to an application produces two attachment rows sharing folder +
-    // filename (see entities/resume-pdfs.mjs::linkPdfToApplication). Deleting
+    // filename (see entities/profile.mjs::linkPdfToApplication). Deleting
     // either row must remove both, or the surviving row will list a PDF whose
     // file is gone. Exercises the DB path directly since compiling a Typst
     // resume + attaching through the UI is out of reach for headless Chromium.
@@ -458,23 +458,22 @@ test.describe('local applications page — attachments', () => {
     await installFakeStorageBackend(page);
 
     const ids = await page.evaluate(async () => {
-      const [companies, applications, resumes, pdfs, storage] = await Promise.all([
+      const [companies, applications, profile, storage] = await Promise.all([
         import('/static/js/entities/companies.mjs'),
         import('/static/js/entities/applications.mjs'),
-        import('/static/js/entities/resumes.mjs'),
-        import('/static/js/entities/resume-pdfs.mjs'),
+        import('/static/js/entities/profile.mjs'),
         import('/static/js/storage/attachments.mjs'),
       ]);
       const companyId = await companies.createCompany({ official_name: 'Cascade Co.' });
       const applicationId = await applications.createApplication({
         company_id: companyId, role_title: 'Backend Engineer', status: 'applied',
       });
-      const resumeId = await resumes.createResume({
+      const resumeId = await profile.createResume({
         title: 'Cascade Co. - Backend Engineer', format: 'md', body: '# CV',
       });
       const file = new File([new Uint8Array([1, 2, 3])], 'resume.pdf', { type: 'application/pdf' });
       const meta = await storage.uploadAttachment('cascade_co', file);
-      const link = await pdfs.linkPdfToApplication({
+      const link = await profile.linkPdfToApplication({
         resumeId, applicationId,
         folder: 'cascade_co',
         storedFilename: meta.storedFilename,
@@ -517,7 +516,7 @@ test.describe('local applications page — attachments', () => {
     const parents = await page.evaluate(async ([appId, resumeId]) => {
       const [{ getApplication }, { getResume }] = await Promise.all([
         import('/static/js/entities/applications.mjs'),
-        import('/static/js/entities/resumes.mjs'),
+        import('/static/js/entities/profile.mjs'),
       ]);
       return {
         hasApp: !!(await getApplication(appId)),

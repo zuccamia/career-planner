@@ -237,7 +237,7 @@ test.describe('local profile page — wizard', () => {
       route.fulfill({ status: 200, contentType: 'application/json',
         body: JSON.stringify({ available: true, provider: 'stub', model: 'stub' }) }),
     );
-    await page.route('**/api/profile/extract-overview-from-resume', (route) =>
+    await page.route('**/api/profile/import-overview', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
         name: 'Ada Lovelace',
         headline: 'Analytical Engineer',

@@ -64,7 +64,7 @@ func TestRenderProducesExpectedTree(t *testing.T) {
 		"static/db/enums.json",
 		"static/db/migrations/manifest.json",
 		"static/db/migrations/001_init.sql",
-		"static/i18n/prompts/guess-candidate.en.json",
+		"static/i18n/prompts/companies/lookup.en.json",
 	} {
 		if _, err := os.Stat(filepath.Join(outDir, rel)); err != nil {
 			t.Errorf("expected %s in dist: %v", rel, err)

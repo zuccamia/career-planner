@@ -9,7 +9,7 @@
 // navigates to Settings → Web scraper.
 
 import { getByokScraperConfig, PROVIDERS } from '../storage/byok-scraper.mjs';
-import { getServerScraperStatus } from '../scrape-client.mjs';
+import { getServerScraperStatus } from '../sources/scrape/client.mjs';
 import { badge } from './components.mjs';
 import { t } from '../i18n.mjs';
 

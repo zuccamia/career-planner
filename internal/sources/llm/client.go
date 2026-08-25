@@ -1,6 +1,8 @@
 package llm
 
-// Provides a shared LLM client for provider-backed structured JSON generation.
+// Shared LLM client. GenerateJSON dispatches to a per-provider generator
+// (Anthropic Messages API, OpenAI-compatible chat completions) based on
+// config, then decodes the fenced/JSON response.
 
 import (
 	"bytes"
@@ -12,6 +14,8 @@ import (
 	"strings"
 	"time"
 )
+
+// ---- client ----
 
 // Prompt contains the system and user instructions sent to the LLM provider.
 // Persona is optional and only populated for flows whose system template has
@@ -135,4 +139,110 @@ func extractJSON(raw string) string {
 		return trimmed[start : end+1]
 	}
 	return trimmed
+}
+
+// ---- anthropic ----
+
+const anthropicAPIVersion = "2023-06-01"
+
+// generateAnthropicJSON requests a JSON-shaped response from the Anthropic Messages API.
+func (c *HTTPClient) generateAnthropicJSON(ctx context.Context, prompt Prompt) (string, error) {
+	body := anthropicRequest{
+		Model:     c.config.Model,
+		MaxTokens: 1200,
+		System:    prompt.System,
+		Messages:  []anthropicMessage{{Role: "user", Content: prompt.User}},
+	}
+
+	var response anthropicResponse
+	if err := c.doJSONRequest(ctx, http.MethodPost, c.config.BaseURL+"/messages", body, map[string]string{
+		"content-type":      "application/json",
+		"x-api-key":         c.config.APIKey,
+		"anthropic-version": anthropicAPIVersion,
+	}, &response); err != nil {
+		return "", err
+	}
+
+	var parts []string
+	for _, block := range response.Content {
+		if block.Type == "text" {
+			parts = append(parts, block.Text)
+		}
+	}
+	if len(parts) == 0 {
+		return "", &APIError{Message: "anthropic response contained no text content"}
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+type anthropicRequest struct {
+	Model     string             `json:"model"`
+	MaxTokens int                `json:"max_tokens"`
+	System    string             `json:"system,omitempty"`
+	Messages  []anthropicMessage `json:"messages"`
+}
+
+type anthropicMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type anthropicResponse struct {
+	Content []anthropicContentBlock `json:"content"`
+}
+
+type anthropicContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+// ---- openai-compatible ----
+
+// generateOpenAICompatibleJSON requests a JSON object response from an OpenAI-compatible chat completions API.
+func (c *HTTPClient) generateOpenAICompatibleJSON(ctx context.Context, prompt Prompt) (string, error) {
+	body := openAICompatibleRequest{
+		Model: c.config.Model,
+		Messages: []openAICompatibleMessage{
+			{Role: "system", Content: prompt.System},
+			{Role: "user", Content: prompt.User},
+		},
+		ResponseFormat: &openAICompatibleResponseFormat{Type: "json_object"},
+	}
+
+	headers := map[string]string{"content-type": "application/json"}
+	if c.config.APIKey != "" {
+		headers["authorization"] = "Bearer " + c.config.APIKey
+	}
+
+	var response openAICompatibleResponse
+	if err := c.doJSONRequest(ctx, http.MethodPost, c.config.BaseURL+"/chat/completions", body, headers, &response); err != nil {
+		return "", err
+	}
+	if len(response.Choices) == 0 {
+		return "", &APIError{Message: "openai-compatible response contained no choices"}
+	}
+	return response.Choices[0].Message.Content, nil
+}
+
+type openAICompatibleRequest struct {
+	Model          string                          `json:"model"`
+	Messages       []openAICompatibleMessage       `json:"messages"`
+	ResponseFormat *openAICompatibleResponseFormat `json:"response_format,omitempty"`
+}
+
+type openAICompatibleMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type openAICompatibleResponseFormat struct {
+	Type string `json:"type"`
+}
+
+type openAICompatibleResponse struct {
+	Choices []openAICompatibleChoice `json:"choices"`
+}
+
+type openAICompatibleChoice struct {
+	Message openAICompatibleMessage `json:"message"`
 }

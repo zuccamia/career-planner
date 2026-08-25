@@ -8,104 +8,42 @@ import (
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
-// ExtractFromResume runs the résumé-to-overview prompt against a Markdown
-// résumé and returns candidate overview fields for the browser to review.
-// DB writes are the browser's job — this service only sanitizes.
-func (s *Service) ExtractFromResume(ctx context.Context, markdown, outputLanguage string) (ExtractedOverview, error) {
-	if err := llm.RequireClient(s.client); err != nil { return ExtractedOverview{}, err }
-	set := llm.PickPromptSet(extractOverviewPrompts(), outputLanguage)
+// =============================================================================
+// Overview import
+// =============================================================================
+
+// ImportOverview runs the résumé-to-overview prompt against a Markdown résumé
+// and returns candidate overview fields for the browser to review. DB writes
+// are the browser's job — this service only sanitizes.
+func (s *Service) ImportOverview(ctx context.Context, markdown, outputLanguage string) (ImportedOverview, error) {
+	if err := llm.RequireClient(s.client); err != nil {
+		return ImportedOverview{}, err
+	}
+	set := llm.PickPromptSet(importOverviewPrompts(), outputLanguage)
 	prompt := llm.Prompt{
 		System: set.System,
 		User:   fmt.Sprintf(set.User, strings.TrimSpace(markdown)),
 	}
-	var out ExtractedOverview
+	var out ImportedOverview
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
-		return ExtractedOverview{}, err
+		return ImportedOverview{}, err
 	}
-	return finalizeExtracted(out), nil
+	return finalizeImportedOverview(out), nil
 }
 
-// finalizeExtracted normalizes decoded overview extraction output: trims all
-// string fields, drops suspicious text, dedupes skills and tools case-
-// insensitively, and clamps skill fields to the allowed level enum.
-func finalizeExtracted(out ExtractedOverview) ExtractedOverview {
-	name := cleanScalar(out.Name)
-	headline := cleanScalar(out.Headline)
-	summary := cleanScalar(out.Summary)
-	workplaceType := cleanScalar(out.WorkplaceType)
+// =============================================================================
+// Structured résumé import
+// =============================================================================
 
-	skills := make([]Skill, 0, len(out.Skills))
-	seenSkill := map[string]struct{}{}
-	for _, raw := range out.Skills {
-		name := cleanScalar(raw.Name)
-		if name == "" {
-			continue
-		}
-		key := strings.ToLower(name)
-		if _, dup := seenSkill[key]; dup {
-			continue
-		}
-		seenSkill[key] = struct{}{}
-		sk := Skill{Name: name}
-		if raw.Years != nil && *raw.Years > 0 && *raw.Years <= 50 {
-			y := *raw.Years
-			sk.Years = &y
-		}
-		if raw.Level != "" {
-			lvl := strings.ToLower(strings.TrimSpace(raw.Level))
-			if _, ok := SkillLevels[lvl]; ok {
-				sk.Level = lvl
-			}
-		}
-		skills = append(skills, sk)
+// ImportResume runs the résumé-to-structured prompt against a Markdown résumé
+// and returns a fully-typed structure for the browser to hand to a Typst
+// renderer. Nothing hits the database — the caller decides whether to save
+// the generated .typ source.
+func (s *Service) ImportResume(ctx context.Context, markdown, outputLanguage string) (ResumeStructured, error) {
+	if err := llm.RequireClient(s.client); err != nil {
+		return ResumeStructured{}, err
 	}
-
-	tools := make([]string, 0, len(out.Tools))
-	seenTool := map[string]struct{}{}
-	for _, raw := range out.Tools {
-		t := cleanScalar(raw)
-		if t == "" {
-			continue
-		}
-		key := strings.ToLower(t)
-		if _, dup := seenTool[key]; dup {
-			continue
-		}
-		seenTool[key] = struct{}{}
-		tools = append(tools, t)
-	}
-
-	return ExtractedOverview{
-		Name:          name,
-		Headline:      headline,
-		Summary:       summary,
-		WorkplaceType: workplaceType,
-		Skills:        skills,
-		Tools:         tools,
-	}
-}
-
-// cleanScalar trims whitespace, collapses runs of whitespace to a single space
-// for headline-like fields, and rejects strings that llm.IsSuspiciousText
-// flags (prompt-injection remnants, etc.).
-func cleanScalar(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return ""
-	}
-	if llm.IsSuspiciousText(s) {
-		return ""
-	}
-	return s
-}
-
-// ExtractStructuredResume runs the résumé-to-structured prompt against a
-// Markdown résumé and returns a fully-typed structure for the browser to
-// hand to a Typst renderer. Nothing hits the database — the caller decides
-// whether to save the generated .typ source.
-func (s *Service) ExtractStructuredResume(ctx context.Context, markdown, outputLanguage string) (ResumeStructured, error) {
-	if err := llm.RequireClient(s.client); err != nil { return ResumeStructured{}, err }
-	set := llm.PickPromptSet(extractStructuredResumePrompts(), outputLanguage)
+	set := llm.PickPromptSet(importResumePrompts(), outputLanguage)
 	prompt := llm.Prompt{
 		System: set.System,
 		User:   fmt.Sprintf(set.User, strings.TrimSpace(markdown)),
@@ -114,15 +52,11 @@ func (s *Service) ExtractStructuredResume(ctx context.Context, markdown, outputL
 	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
 		return ResumeStructured{}, err
 	}
-	return FinalizeStructuredResume(out), nil
+	return FinalizeImportedResume(out), nil
 }
 
-// FinalizeStructuredResume trims and sanitises the LLM output. Suspicious
-// text (prompt-injection artifacts) is dropped rather than fixed; empty
-// slices stay omitted so downstream renderers can skip whole sections.
-// Exported so cross-package callers (applications.TailorResumeStructured)
-// can reuse the same sanitizer.
-func FinalizeStructuredResume(out ResumeStructured) ResumeStructured {
+// Sanitize LLM-produced structured resume; drop suspicious text.
+func FinalizeImportedResume(out ResumeStructured) ResumeStructured {
 	out.Contact = finalizeContact(out.Contact)
 
 	edu := make([]ResumeEducation, 0, len(out.Education))
@@ -187,42 +121,105 @@ func FinalizeStructuredResume(out ResumeStructured) ResumeStructured {
 	return out
 }
 
-func finalizeContact(c ResumeContact) ResumeContact {
-	name := cleanScalar(c.Name)
-	links := make([]ResumeLink, 0, len(c.Links))
-	for _, l := range c.Links {
-		url := strings.TrimSpace(l.URL)
-		if url == "" || llm.IsSuspiciousText(url) {
+// FlattenBaseResume returns a lossless text projection with `[N]` index
+// anchors so ranker output can point at role/bullet/entry positions.
+// Contact excluded. Mirrors flattenBaseResume in
+// web/static/js/llm/parse/profile/import-resume.mjs.
+func FlattenBaseResume(r ResumeStructured) string {
+	var b strings.Builder
+	writeln := func(s string) { b.WriteString(s); b.WriteByte('\n') }
+	join := func(sep string, parts ...string) string {
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if strings.TrimSpace(p) != "" {
+				out = append(out, p)
+			}
+		}
+		return strings.Join(out, sep)
+	}
+
+	if len(r.Experience) > 0 {
+		writeln("EXPERIENCE")
+		for i, role := range r.Experience {
+			writeln(fmt.Sprintf("[%d] %s", i, join(" | ", role.Company, role.Title, role.Dates)))
+			for j, bl := range role.Bullets {
+				text := bl.Description
+				if bl.LeadIn != "" {
+					text = bl.LeadIn + ": " + bl.Description
+				}
+				writeln(fmt.Sprintf("  [%d] %s", j, text))
+			}
+		}
+		writeln("")
+	}
+	if len(r.Skills) > 0 {
+		writeln("SKILLS")
+		for _, g := range r.Skills {
+			writeln("- " + g.Label + ": " + strings.Join(g.Items, ", "))
+		}
+		writeln("")
+	}
+	for _, sec := range []struct {
+		label   string
+		entries []ResumeNamedEntry
+	}{{"PROJECTS", r.Projects}, {"ACTIVITIES", r.Activities}} {
+		if len(sec.entries) == 0 {
 			continue
 		}
-		links = append(links, ResumeLink{Label: cleanScalar(l.Label), URL: url})
+		writeln(sec.label)
+		for i, e := range sec.entries {
+			writeln(fmt.Sprintf("[%d] %s", i, join(" — ", e.Name, e.Description)))
+		}
+		writeln("")
 	}
-	return ResumeContact{
-		Name:     name,
-		Email:    cleanScalar(c.Email),
-		Phone:    cleanScalar(c.Phone),
-		Location: cleanScalar(c.Location),
-		Links:    links,
+	if len(r.Education) > 0 {
+		writeln("EDUCATION")
+		for _, ed := range r.Education {
+			writeln("- " + join(", ", ed.School, ed.Degree, ed.Dates))
+		}
 	}
+	return strings.TrimSpace(b.String())
 }
 
-func finalizeNamedEntries(in []ResumeNamedEntry) []ResumeNamedEntry {
-	out := make([]ResumeNamedEntry, 0, len(in))
-	for _, e := range in {
-		name := cleanScalar(e.Name)
-		if name == "" {
-			continue
-		}
-		url := strings.TrimSpace(e.URL)
-		if llm.IsSuspiciousText(url) {
-			url = ""
-		}
-		out = append(out, ResumeNamedEntry{
-			Name:        name,
-			URL:         url,
-			Subtitle:    cleanScalar(e.Subtitle),
-			Description: cleanScalar(e.Description),
-		})
+// =============================================================================
+// Brag entries
+// =============================================================================
+
+// GenerateBragTags runs the brag-tag prompt and returns normalized tags.
+// outputLanguage selects the locale-specific prompt template; missing locales
+// fall back to English.
+func (s *Service) GenerateBragTags(ctx context.Context, body, outputLanguage string) ([]string, error) {
+	if err := llm.RequireClient(s.client); err != nil {
+		return nil, err
 	}
-	return out
+	set := llm.PickPromptSet(generateBragTagsPrompts(), outputLanguage)
+	prompt := llm.Prompt{
+		System: set.System,
+		User:   fmt.Sprintf(set.User, strings.TrimSpace(body)),
+	}
+	var out BragTagResult
+	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
+		return nil, err
+	}
+	return finalizeBragTags(out), nil
 }
+
+// ImportBrags runs the résumé-to-brags prompt against a Markdown résumé and
+// returns candidate brag entries for the browser to review. The DB writes
+// happen in the browser after the user picks which entries to keep.
+func (s *Service) ImportBrags(ctx context.Context, markdown, outputLanguage string) ([]ImportedBrag, error) {
+	if err := llm.RequireClient(s.client); err != nil {
+		return nil, err
+	}
+	set := llm.PickPromptSet(importBragsPrompts(), outputLanguage)
+	prompt := llm.Prompt{
+		System: set.System,
+		User:   fmt.Sprintf(set.User, strings.TrimSpace(markdown)),
+	}
+	var out ImportBragsResult
+	if err := s.client.GenerateJSON(ctx, prompt, &out); err != nil {
+		return nil, err
+	}
+	return finalizeImportedBrags(out), nil
+}
+

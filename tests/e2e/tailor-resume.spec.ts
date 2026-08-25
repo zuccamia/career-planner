@@ -15,11 +15,10 @@ const gotoApps = async (page: Page) => {
 const seedFixture = async (page: Page) => {
   await gotoApps(page);
   return page.evaluate(async () => {
-    const [{ createCompany }, { createApplication, updateApplicationExtraction }, { createResume }, { createBragEntry }] = await Promise.all([
+    const [{ createCompany }, { createApplication, updateApplicationExtraction }, { createResume, createBragEntry }] = await Promise.all([
       import('/static/js/entities/companies.mjs'),
       import('/static/js/entities/applications.mjs'),
-      import('/static/js/entities/resumes.mjs'),
-      import('/static/js/entities/brag-entries.mjs'),
+      import('/static/js/entities/profile.mjs'),
     ]);
     const companyId = await createCompany({ official_name: 'Acme Corp' });
     const applicationId = await createApplication({
@@ -79,7 +78,7 @@ const setupTailorMocks = async (page: Page) => {
       body: JSON.stringify({ signals: BRIEF_MARKDOWN, ats_keywords: ['Go', 'PostgreSQL'] }) });
   });
 
-  await page.route('**/api/profile/extract-structured-resume-from-source', (route) => {
+  await page.route('**/api/profile/import-resume', (route) => {
     counters.extract++;
     return route.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({

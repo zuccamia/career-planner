@@ -256,7 +256,7 @@ test.describe('local people page', () => {
         contentType: 'application/json',
         body: JSON.stringify({ available: true, provider: 'openai-compatible', model: 'gpt-4o-mini' }),
       }));
-    await page.route('**/api/communications/generate-message', route =>
+    await page.route('**/api/people/generate-message', route =>
       route.fulfill({
         status: 400,
         contentType: 'application/json',

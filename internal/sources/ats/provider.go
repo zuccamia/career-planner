@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/zuccamia/career-planner/internal/util"
 )
 
 // Posting is the normalized result of fetching a job posting.
@@ -65,7 +67,7 @@ func NewRegistry(fallback Provider, providers ...Provider) *Registry {
 // as a safely-fetchable http(s) URL. Returns the normalized form callers can
 // hand to providers.
 func canonicalURL(rawURL string) (string, error) {
-	parsed, err := ValidateFetchURL(Canonicalize(rawURL))
+	parsed, err := util.ValidateURL(util.CanonicalizeURL(rawURL))
 	if err != nil {
 		return "", err
 	}

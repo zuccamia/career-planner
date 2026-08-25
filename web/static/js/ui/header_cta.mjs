@@ -6,11 +6,11 @@
 // Called once at boot. Re-invoke after the profile page saves changes if
 // you want the CTA to flip without a reload.
 
-import { getOverview } from '../entities/profile-overview.mjs';
-import { getServerDiscoverStatus } from '../discover-client.mjs';
+import { getOverview } from '../entities/profile.mjs';
+import { getServerDiscoverStatus } from '../clients/discover/service.mjs';
 import { isByokLLMActive } from '../storage/byok-llm.mjs';
 import { isByokSearchActive } from '../storage/byok-search.mjs';
-import { openDiscoverPanel } from '../pages/dashboard_discover.mjs';
+import { openDiscoverPanel } from '../pages/dashboard/discover.mjs';
 import { urlFor } from '../host.mjs';
 import { button } from './components.mjs';
 import { t } from '../i18n.mjs';

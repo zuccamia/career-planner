@@ -5,7 +5,7 @@
 //   - No search anywhere            → hidden (Discover is optional)
 // BYOK precedence + click navigates to Settings → Web search.
 
-import { getServerDiscoverStatus } from '../discover-client.mjs';
+import { getServerDiscoverStatus } from '../clients/discover/service.mjs';
 import { getByokSearchConfig } from '../storage/byok-search.mjs';
 import { badge } from './components.mjs';
 import { t } from '../i18n.mjs';

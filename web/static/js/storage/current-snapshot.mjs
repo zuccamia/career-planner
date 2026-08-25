@@ -4,8 +4,7 @@
 // point-in-time they're looking at (e.g. `spring-2026` vs `fall-2020`).
 //
 // Not a durability mechanism and not tied to a dirty flag — after arbitrary
-// edits the badge still shows the last-known restore/save name. That's the
-// intended UX for now; a "modified" indicator can layer on later.
+// edits the badge still shows the last-known restore/save name.
 
 import { idbGet, idbSet, idbDel } from './idb.mjs';
 import { SNAPSHOT_PREFIX, SNAPSHOT_SUFFIX, SNAPSHOT_LABEL_SEP } from './config.mjs';

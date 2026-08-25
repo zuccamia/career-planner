@@ -9,7 +9,7 @@
 // to Settings → AI provider.
 
 import { getByokLLMConfig } from '../storage/byok-llm.mjs';
-import { getServerLLMStatus } from '../llm-client.mjs';
+import { getServerLLMStatus } from '../sources/llm/client.mjs';
 import { badge } from './components.mjs';
 import { t } from '../i18n.mjs';
 

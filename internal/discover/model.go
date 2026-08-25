@@ -9,11 +9,16 @@
 package discover
 
 import (
+	"context"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zuccamia/career-planner/internal/sources/ats"
+	"github.com/zuccamia/career-planner/internal/sources/search"
 )
+
+// ---- request/response (public) ----
 
 // DefaultLimit is the number of ranked recommendations returned when the
 // caller does not specify one.
@@ -93,9 +98,9 @@ type BrowserHitResult struct {
 	PublishedAt time.Time `json:"published_at,omitempty"`
 }
 
-// SearchSignals is the expand step's output: LLM-derived role phrasings
+// SearchQuery is the expand step's output: LLM-derived role phrasings
 // plus secondary keywords for query construction.
-type SearchSignals struct {
+type SearchQuery struct {
 	// RoleVariants: 3–5 alternate phrasings of profile.headline, same
 	// specificity. Primary OR-group in the site-scoped query.
 	RoleVariants []string `json:"role_variants"`
@@ -222,4 +227,169 @@ func deriveLocationContext(locations []string) LocationContext {
 	default:
 		return LocationContext{Mode: LocationModeCitiesOnly, PhysicalLocations: physical}
 	}
+}
+
+// ---- service ----
+
+// extractBudget targets survivor count (not attempts) — extractPostings
+// keeps fetching until it has this many non-gone postings or runs out of
+// hits. Concurrency keeps wall time bounded.
+const extractBudget = 40
+
+// Length caps applied to inbound DiscoverRequest fields. Bound prompt cost and
+// shrink the surface for prompt-injection payloads in long free-text fields.
+const (
+	capHeadline     = 200
+	capSummary      = 2000
+	capSkillName    = 100
+	capSkills       = 50
+	capLocationName = 100
+	capLocations    = 20
+	capCompanyName  = 200
+	capCompanies    = 100
+	capJobURL       = 2000
+	capApplications = 200
+	capExcludeURLs  = 200 // cap on client's shown-recs history sent per run
+	capBragTitle    = 200
+	capBragTitles   = 20
+	capCareerSpark  = 300
+	capCareerSparks = 20
+)
+
+// Staleness windows applied by filterStalePostings. Scarce roles get a
+// wider window since fresh postings are rare and cyclical.
+const (
+	staleDefaultDays = 30
+	staleScarceDays  = 90
+)
+
+// ---- expand-query ----
+
+const (
+	maxRoleVariants   = 5
+	maxSignalKeywords = 5
+)
+
+type expandResponse struct {
+	RoleVariants   []string `json:"role_variants"`
+	SignalKeywords []string `json:"signal_keywords"`
+	BroadRole      string   `json:"broad_role"`
+}
+
+func (r expandResponse) toQuery() SearchQuery {
+	return SearchQuery{
+		RoleVariants:   sanitizeKeywords(r.RoleVariants, maxRoleVariants),
+		SignalKeywords: sanitizeKeywords(r.SignalKeywords, maxSignalKeywords),
+		BroadRole:      strings.TrimSpace(r.BroadRole),
+	}
+}
+
+type expandContext struct {
+	Profile        ProfileSummary  `json:"profile"`
+	SeedCompanies  []string        `json:"seed_companies"`
+	BragTitles     []string        `json:"brag_titles,omitempty"`
+	CareerSparks   []string        `json:"career_sparks,omitempty"`
+	EmploymentType string          `json:"employment_type,omitempty"`
+	Location       LocationContext `json:"location"`
+}
+
+// ---- search ----
+
+const (
+	searchPerHost = 10
+	// concurrency 2+ triggers 429s from scraped engines.
+	searchConcurrency = 1
+	// Higher than one-per-host because each host may retry via the ladder.
+	runSearchBudget      = 60
+	siteScopedTimeRange  = search.TimeRangeDay
+	fallbackAttemptDelay = 500 * time.Millisecond
+	// Pause between hosts so scraped engines don't get a burst.
+	perHostDelay = 1 * time.Second
+	// Once a host's ladder results exceed this, stop broadening.
+	perHostResultTarget = 5
+)
+
+var (
+	defaultSearchCategories = []string{"general"}
+	// Free (scraped) engines preferred so paid Brave quota stays untouched.
+	freeSearchEngines = []string{"google cse", "bing"}
+	paidSearchEngines = []string{"brave-search-api"}
+)
+
+// fallbackAttempt is one rung on the ladder: query shape, freshness filter,
+// engine pool. Different rungs may cost-tier engines (free vs paid).
+type fallbackAttempt struct {
+	query     string
+	timeRange string
+	engines   []string
+}
+
+// ---- pre-filter + gone cache ----
+
+// goneCached = prior-run 404s (via goneCache). Extract-time gone_new is
+// tracked separately. pastCycle = URL slug names a stale season/year.
+type preFilterCounts struct {
+	dedupe     int
+	shape      int
+	goneCached int
+	pastCycle  int
+}
+
+// ATSPreFilter is the subset of ats.Registry the pre-filter needs.
+type ATSPreFilter interface {
+	IsLandingPage(rawURL string) bool
+}
+
+// FIFO evict-half on overflow — dead URLs don't get re-checked.
+const goneCacheCap = 256
+
+type goneCache struct {
+	mu    sync.Mutex
+	seen  map[string]struct{}
+	order []string
+}
+
+const (
+	deadProbeTimeout = 3 * time.Second
+	deadProbeBodyCap = 100 << 10 // markers live in <head>; 100KB is plenty
+)
+
+// ---- extract ----
+
+// ATSFetcher is the subset of ats.Registry the extractor needs. A local
+// interface lets tests substitute a stub without importing the registry.
+type ATSFetcher interface {
+	HasSupportingProvider(rawURL string) bool
+	IsLandingPage(rawURL string) bool
+	ResolvesToLandingPage(ctx context.Context, rawURL string) bool
+	Fetch(ctx context.Context, rawURL string) (ats.Posting, error)
+}
+
+// extractConcurrency matches the JS mirror; stays under provider rate limits.
+const extractConcurrency = 5
+
+// ---- rank ----
+
+const (
+	minMatchScore = 0
+	maxMatchScore = 100
+)
+
+// Length caps for JobPosting fields before they hit the ranker prompt.
+const (
+	capPostingTitle   = 200
+	capPostingSnippet = 2000 // wide enough for "About the role" + "What you'll do" + a few "Requirements" bullets
+	capPostingCompany = 200
+)
+
+type rankResponse struct {
+	Recommendations []Recommendation `json:"recommendations"`
+}
+
+type rankContext struct {
+	Profile        ProfileSummary  `json:"profile"`
+	Postings       []JobPosting    `json:"postings"`
+	Limit          int             `json:"limit"`
+	EmploymentType string          `json:"employment_type,omitempty"`
+	Location       LocationContext `json:"location"`
 }

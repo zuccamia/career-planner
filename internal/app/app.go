@@ -9,15 +9,14 @@ import (
 	"strings"
 
 	"github.com/zuccamia/career-planner/internal/applications"
-	"github.com/zuccamia/career-planner/internal/brags"
-	"github.com/zuccamia/career-planner/internal/communications"
 	"github.com/zuccamia/career-planner/internal/companies"
 	"github.com/zuccamia/career-planner/internal/discover"
-	"github.com/zuccamia/career-planner/internal/dossiers"
 	apphttp "github.com/zuccamia/career-planner/internal/http"
 	"github.com/zuccamia/career-planner/internal/i18n"
+	"github.com/zuccamia/career-planner/internal/people"
 	"github.com/zuccamia/career-planner/internal/profile"
 	"github.com/zuccamia/career-planner/internal/sources/ats"
+	"github.com/zuccamia/career-planner/internal/sources/ats/providers"
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 	"github.com/zuccamia/career-planner/internal/sources/scrape"
 	"github.com/zuccamia/career-planner/internal/sources/search"
@@ -58,7 +57,7 @@ func New() App {
 	// last. When a server-side scraper is configured, applications.Service
 	// prefers it over Generic for unknown-host URLs (see its routing switch)
 	// — it isn't plugged in here.
-	atsRegistry := ats.NewRegistry(ats.NewGeneric(), ats.NewGreenhouse(), ats.NewLever(), ats.NewAshby(), ats.NewEightfold(), ats.NewSmartRecruiters(), ats.NewWorkable())
+	atsRegistry := ats.NewRegistry(providers.NewGeneric(), providers.NewGreenhouse(), providers.NewLever(), providers.NewAshby(), providers.NewEightfold(), providers.NewSmartRecruiters(), providers.NewWorkable())
 
 	// Discover service is always non-nil; CanRunServerPipeline reports whether
 	// the server-side path (LLM + search) is usable. The frontend polls
@@ -67,10 +66,8 @@ func New() App {
 
 	router := apphttp.NewRouter(
 		companies.NewService(llmClient),
-		dossiers.NewService(llmClient),
 		applications.NewService(llmClient, atsRegistry.Fetch, atsRegistry.HasSupportingProvider, newMarkdownScraper(scrapeClient)),
-		brags.NewService(llmClient),
-		communications.NewService(llmClient),
+		people.NewService(llmClient),
 		profile.NewService(llmClient),
 		discoverService,
 		serverLLM,

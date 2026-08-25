@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -639,5 +641,285 @@ func TestNormalizeRequest_CollectionCaps(t *testing.T) {
 	}
 	if len(got.BragTitles) != capBragTitles {
 		t.Errorf("brag titles cap: got %d want %d", len(got.BragTitles), capBragTitles)
+	}
+}
+
+// ---- extract ----
+
+func TestCompanyFromURL(t *testing.T) {
+	loadProvidersForTestDefaults(t)
+
+	cases := map[string]struct {
+		url  string
+		want string
+	}{
+		// slug_in_path providers → tenant slug is the first path segment,
+		// prettified for display.
+		"workable single-word tenant":         {"https://apply.workable.com/stripe/j/CODE", "Stripe"},
+		"workable kebab-case tenant":          {"https://apply.workable.com/high-agency-labs/j/CODE", "High Agency Labs"},
+		"workable already-cased tenant":       {"https://apply.workable.com/DeliveryHero/j/CODE", "DeliveryHero"},
+		"smartrecruiters posting":             {"https://jobs.smartrecruiters.com/Visa/744000-role-slug", "Visa"},
+		"ashby posting":                       {"https://jobs.ashbyhq.com/openai/uuid-here", "Openai"},
+		"greenhouse posting":                  {"https://boards.greenhouse.io/anthropic/jobs/12345", "Anthropic"},
+		"lever posting":                       {"https://jobs.lever.co/deepgram/some-id", "Deepgram"},
+
+		// non-slug_in_path providers → return "" honestly instead of guessing
+		// the wrong label from subdomain heuristics.
+		"eightfold (subdomain tenant, no path)":       {"https://bostonscientific.eightfold.ai/careers/job/123", ""},
+		"workday (pod, not company, in subdomain)":    {"https://wd5.myworkdayjobs.com/en-US/Careers/…", ""},
+		"internal ATS (careers.foo.com)":              {"https://careers.acme.com/positions/eng", ""},
+		"google-careers (fixed subdomain)":            {"https://www.google.com/about/careers/applications/jobs/123", ""},
+
+		// unregistered hosts → empty
+		"totally unregistered":                {"https://example.com/jobs/1", ""},
+		"malformed URL":                       {"not a url", ""},
+		"empty URL":                           {"", ""},
+	}
+	for name, tc := range cases {
+		if got := companyFromURL(tc.url); got != tc.want {
+			t.Errorf("%s: companyFromURL(%q) = %q, want %q", name, tc.url, got, tc.want)
+		}
+	}
+}
+
+// ---- pre-filter ----
+
+// --- goneCache ------------------------------------------------------
+
+// Concurrent Add/Has must be race-free and the cap must hold.
+func TestGoneCache_Concurrent(t *testing.T) {
+	c := newGoneCache()
+	const workers, perWorker = 20, 50
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		w := w
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < perWorker; i++ {
+				u := fmt.Sprintf("https://example.com/jobs/%d-%d", w, i)
+				c.Add(u)
+				_ = c.Has(u)
+			}
+		}()
+	}
+	wg.Wait()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.order) != len(c.seen) {
+		t.Errorf("order/seen desync: %d/%d", len(c.order), len(c.seen))
+	}
+	if len(c.order) > goneCacheCap {
+		t.Errorf("cap exceeded: len=%d cap=%d", len(c.order), goneCacheCap)
+	}
+}
+
+// Nil-receiver methods must no-op, not panic.
+func TestGoneCache_NilSafe(t *testing.T) {
+	var c *goneCache
+	c.Add("https://example.com/x")
+	if c.Has("https://example.com/x") {
+		t.Error("nil goneCache.Has must return false")
+	}
+}
+
+// --- probeSPADeadPage -----------------------------------------------
+
+// Host without registered markers → short-circuits, no network.
+// Pointing at an unroutable URL would hang if the probe tried to dial.
+func TestProbeDeadMarkers_UnregisteredHost(t *testing.T) {
+	loadProvidersForTestDefaults(t)
+	isDead, err := probeSPADeadPage(context.Background(), "https://jobs.lever.co/co/1")
+	if err != nil || isDead {
+		t.Errorf("unregistered host should short-circuit: dead=%v err=%v", isDead, err)
+	}
+}
+
+func TestProbeDeadMarkers_MarkerPresent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<meta name="twitter:url" content="https://x/results/undefined">`))
+	}))
+	defer server.Close()
+	withStubMarker(t, server.URL, "results/undefined")
+
+	isDead, err := probeSPADeadPage(context.Background(), server.URL+"/some/path")
+	if err != nil || !isDead {
+		t.Errorf("expected marker detected: dead=%v err=%v", isDead, err)
+	}
+}
+
+func TestProbeDeadMarkers_MarkerAbsent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<html><head><title>Live job</title></head></html>`))
+	}))
+	defer server.Close()
+	withStubMarker(t, server.URL, "results/undefined")
+
+	isDead, err := probeSPADeadPage(context.Background(), server.URL+"/some/path")
+	if err != nil || isDead {
+		t.Errorf("marker absent — probe should not drop: dead=%v err=%v", isDead, err)
+	}
+}
+
+// --- helpers --------------------------------------------------------
+
+// loadProvidersForTestDefaults loads the shipped ats-providers.json.
+func loadProvidersForTestDefaults(t *testing.T) {
+	t.Helper()
+	_, thisFile, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(thisFile), "..", "..")
+	if err := ats.LoadProviders(filepath.Join(root, "web", "static", "data")); err != nil {
+		t.Fatalf("LoadProviders: %v", err)
+	}
+}
+
+// withStubMarker rewrites the providers config so serverURL's host has
+// the given dead_marker registered, and restores defaults on cleanup.
+func withStubMarker(t *testing.T, serverURL, marker string) {
+	t.Helper()
+	host := hostOf(serverURL)
+	cfg := `[{"provider":"test","search_hosts":["` + host +
+		`"],"host_pattern":"^` + host + `$","slug_in_path":false,"dead_markers":["` + marker + `"]}]`
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "ats-providers.json"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write providers.json: %v", err)
+	}
+	if err := ats.LoadProviders(tmpDir); err != nil {
+		t.Fatalf("LoadProviders(tmp): %v", err)
+	}
+	t.Cleanup(func() { loadProvidersForTestDefaults(t) })
+}
+
+// hostOf mirrors url.URL.Hostname() — strip scheme + port.
+func hostOf(rawURL string) string {
+	i := strings.Index(rawURL, "://")
+	if i < 0 {
+		return rawURL
+	}
+	rest := rawURL[i+3:]
+	if s := strings.Index(rest, "/"); s >= 0 {
+		rest = rest[:s]
+	}
+	if c := strings.Index(rest, ":"); c >= 0 {
+		rest = rest[:c]
+	}
+	return rest
+}
+
+// ---- query ----
+
+func TestBuildSiteScopedQuery(t *testing.T) {
+	host := ATSHost{Host: "boards.greenhouse.io", Provider: "greenhouse"}
+	roles := []string{"Backend Engineer", "Software Engineer, Backend"}
+	signals := []string{"fintech", "payments"}
+	locations := []string{"Remote", "New York"}
+
+	// Full-time (non-scarce): all OR-groups present.
+	q := buildSiteScopedQuery(host, roles, "", signals, locations, "full_time")
+	if !strings.HasPrefix(q, "site:boards.greenhouse.io") {
+		t.Errorf("query missing site prefix: %q", q)
+	}
+	if !strings.Contains(q, `"Backend Engineer" OR "Software Engineer, Backend"`) {
+		t.Errorf("query missing role OR-group: %q", q)
+	}
+	if !strings.Contains(q, `"fintech" OR "payments"`) {
+		t.Errorf("query missing signal OR-group: %q", q)
+	}
+	if !strings.Contains(q, `"Remote" OR "New York"`) {
+		t.Errorf("query missing location OR-group: %q", q)
+	}
+	if strings.Contains(q, " or ") {
+		t.Errorf("OR must be uppercase: %q", q)
+	}
+
+	// Internship (scarce): with broad_role provided, roles collapse to
+	// that single broader term; signals dropped; employment OR-group present.
+	q = buildSiteScopedQuery(host, roles, "Software Engineer", signals, locations, "internship")
+	if strings.Contains(q, `"fintech"`) {
+		t.Errorf("intern query should drop signal group, got: %q", q)
+	}
+	if !strings.Contains(q, `"Software Engineer"`) {
+		t.Errorf("intern query should use broad_role, got: %q", q)
+	}
+	if strings.Contains(q, `"Backend Engineer"`) {
+		t.Errorf("intern query should not include specific variants when broad_role is set: %q", q)
+	}
+	if !strings.Contains(q, `"intern" OR "internship" OR "co-op"`) {
+		t.Errorf("intern query missing employment OR-group: %q", q)
+	}
+	// Scarce employment: target-hire year (now + 9 months) is appended
+	// so the engine filters out prior cycles.
+	restore := nowLocal
+	// August 2026 + 9 months → May 2027 → year 2027.
+	nowLocal = func() time.Time { return time.Date(2026, time.August, 15, 12, 0, 0, 0, time.Local) }
+	q = buildSiteScopedQuery(host, roles, "Software Engineer", signals, locations, "internship")
+	nowLocal = restore
+	if !strings.Contains(q, `"2027"`) {
+		t.Errorf("intern query should include target-hire year OR-group: %q", q)
+	}
+	if strings.Contains(q, `"2026"`) {
+		t.Errorf("intern query in Aug 2026 should target 2027 alone, not include current year: %q", q)
+	}
+
+	// March + 9 months → December same year → single year, current.
+	nowLocal = func() time.Time { return time.Date(2026, time.March, 15, 12, 0, 0, 0, time.Local) }
+	q = buildSiteScopedQuery(host, roles, "Software Engineer", signals, locations, "internship")
+	nowLocal = restore
+	if !strings.Contains(q, `"2026"`) {
+		t.Errorf("intern query in Mar should target 2026: %q", q)
+	}
+
+	// Non-scarce: no year OR-group appended.
+	if got := buildSiteScopedQuery(host, roles, "", signals, locations, "full_time"); strings.Contains(got, `"2026"`) || strings.Contains(got, `"2027"`) {
+		t.Errorf("full-time query should not include year group: %q", got)
+	}
+
+	// Internship without broad_role: fall back to first role variant.
+	q = buildSiteScopedQuery(host, roles, "", signals, locations, "internship")
+	if !strings.Contains(q, `"Backend Engineer"`) {
+		t.Errorf("intern query should fall back to first variant when broad_role empty: %q", q)
+	}
+
+	// Empty groups get dropped, single-term groups quoted without parens.
+	q = buildSiteScopedQuery(host, []string{"Backend Engineer"}, "", nil, nil, "")
+	if q != `site:boards.greenhouse.io "Backend Engineer"` {
+		t.Errorf("minimal query wrong: %q", q)
+	}
+
+	// Empty host → empty query (caller should skip).
+	if got := buildSiteScopedQuery(ATSHost{}, roles, "", nil, nil, ""); got != "" {
+		t.Errorf("expected empty query for empty host, got %q", got)
+	}
+}
+
+func TestComposeORGroup(t *testing.T) {
+	if got := composeORGroup(nil); got != "" {
+		t.Errorf("nil → %q, want empty", got)
+	}
+	if got := composeORGroup([]string{"", "  "}); got != "" {
+		t.Errorf("all-whitespace → %q, want empty", got)
+	}
+	if got := composeORGroup([]string{"Backend Engineer"}); got != `"Backend Engineer"` {
+		t.Errorf("single term → %q", got)
+	}
+	if got := composeORGroup([]string{"A", "B", "C"}); got != `("A" OR "B" OR "C")` {
+		t.Errorf("multi-term → %q", got)
+	}
+	if got := composeORGroup([]string{"Go", "go", "GO", "Rust"}); got != `("Go" OR "Rust")` {
+		t.Errorf("dedupe → %q", got)
+	}
+}
+
+func TestEmploymentExpansions_TableCoversKnownTypes(t *testing.T) {
+	for _, k := range []string{"internship", "new_grad"} {
+		if _, ok := employmentTitleKeywords[k]; !ok {
+			t.Errorf("expected employment expansion for %q", k)
+		}
+	}
+	for _, k := range []string{"full_time", "contract", "open", ""} {
+		if _, ok := employmentTitleKeywords[k]; ok {
+			t.Errorf("expected NO expansion for %q (would over-narrow queries)", k)
+		}
 	}
 }

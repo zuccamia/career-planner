@@ -27,7 +27,7 @@ user's BYOK key stored in the browser.
 
 | Flow | LLM | Scraper | Search |
 |---|:-:|:-:|:-:|
-| Guess company | ✅ | ❌ | ❌ |
+| Lookup company | ✅ | ❌ | ❌ |
 | Build dossier | ✅ | ✅ | ❌ |
 | Extract JD | ✅ | ✅ | ❌ |
 | Brag tags, résumé, summary, message | ✅ | ❌ | ❌ |
@@ -49,7 +49,7 @@ Concretely:
 - LLM: browser LLM if configured; else server route (via
   `/api/{domain}/{action}`) if `LLM_*` set. Static host has no server route.
 - Scraper: browser scraper if configured; else server scraper via
-  `/api/dossiers/scrape` or `/api/applications/scrape`; else the flow
+  `/api/companies/scrape-dossier` or `/api/applications/scrape`; else the flow
   degrades to whatever text the user pasted.
 - Search: browser search if configured; else server SearXNG (via
   `/api/discover/run` on server-LLM deploys, or `/api/discover/search`
@@ -72,15 +72,15 @@ Server (`internal/`)
 
 - `/api/{domain}/{action}`: full server-side flow endpoints, used when no
   BYOK LLM.
-- `/api/dossiers/scrape` and `/api/applications/scrape`: return scraped
+- `/api/companies/scrape-dossier` and `/api/applications/scrape`: return scraped
   enrichment only, so BYOK-LLM users can borrow the server scraper without
   also borrowing the LLM.
 
 Browser (`web/static/js/`)
 
-- Prompt templates: `web/static/i18n/prompts/*.json` (same files the
-  server loads at boot).
-- Prompt builders + response parsers: `web/static/js/llm/parse/*.mjs`,
+- Prompt templates: `web/static/i18n/prompts/{module}/{name}.{en,vi}.json`
+  (same files the server loads at boot).
+- Prompt builders + response parsers: `web/static/js/prompt-handlers/{module}/{name}.mjs`,
   1:1 ports of the Go `Build*Prompt` / `Finalize*` pairs.
-- Clients: `llm-client.mjs`, `scrape-client.mjs`, `search-client.mjs`.
-- Discover composer: `discover-client.mjs`.
+- Source clients: `web/static/js/sources/{llm,scrape,search}/client.mjs`.
+- Discover composer: `web/static/js/clients/discover/service.mjs`.

@@ -7,12 +7,16 @@ import (
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
+// init loads shared prompt JSON before any test in this package runs — some
+// service tests exercise prompt-building call paths that hit llm.PromptSet.
 func init() { testutil.MustLoadPrompts() }
 
 func TestPromptsCoverManifest(t *testing.T) {
 	for name, sets := range map[string]llm.PromptSets{
-		"extractOverviewPrompts":         extractOverviewPrompts(),
-		"extractStructuredResumePrompts": extractStructuredResumePrompts(),
+		"importOverviewPrompts":   importOverviewPrompts(),
+		"importResumePrompts":     importResumePrompts(),
+		"generateBragTagsPrompts": generateBragTagsPrompts(),
+		"importBragsPrompts":      importBragsPrompts(),
 	} {
 		for _, code := range testutil.Locales(t) {
 			if _, ok := sets[code]; !ok {
