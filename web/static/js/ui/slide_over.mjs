@@ -24,7 +24,12 @@ const restore = (panelId) => {
 export const openSlideOver = ({ panelId, trigger, onClose } = {}) => {
   const panel = document.getElementById(panelId);
   if (!panel) return () => {};
-  if (state.has(panelId)) return state.get(panelId).close;
+  // Re-open during a pending close: cancel its cleanup so it doesn't wipe the fresh content.
+  const existing = state.get(panelId);
+  if (existing) {
+    if (existing.cleanupTimer) clearTimeout(existing.cleanupTimer);
+    restore(panelId);
+  }
 
   const originalClass = panel.className;
   const anchor = document.createComment(`slide-over-anchor:${panelId}`);
@@ -34,13 +39,16 @@ export const openSlideOver = ({ panelId, trigger, onClose } = {}) => {
   panel.classList.remove('hidden');
   requestAnimationFrame(() => panel.classList.replace(CLOSED, OPEN));
 
-  const close = openOverlay({
+  const rec = { originalClass, anchor, close: null, cleanupTimer: null };
+  rec.close = openOverlay({
     panel,
     trigger,
     onClose: () => {
       panel.classList.replace(OPEN, CLOSED);
       const delay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 200;
-      setTimeout(() => {
+      rec.cleanupTimer = setTimeout(() => {
+        // Skip if we've been superseded by a fresh open on the same panelId.
+        if (state.get(panelId) !== rec) return;
         restore(panelId);
         panel.innerHTML = '';
         panel.classList.add('hidden');
@@ -48,8 +56,8 @@ export const openSlideOver = ({ panelId, trigger, onClose } = {}) => {
       }, delay);
     },
   });
-  state.set(panelId, { originalClass, anchor, close });
-  return close;
+  state.set(panelId, rec);
+  return rec.close;
 };
 
 export const closeSlideOver = (panelId) => {

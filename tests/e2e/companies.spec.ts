@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // The app renders entirely on the client: the Go server only
 // serves a minimal HTML shell, and page content is drawn by JS after

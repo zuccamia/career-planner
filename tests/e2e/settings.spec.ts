@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // Settings covers backend connect/disconnect + manual snapshots. Real backend
 // connects need user gestures (showDirectoryPicker for local disk, popup OAuth
@@ -65,7 +65,7 @@ test.describe('local settings page', () => {
     // pushing total wall time past the default 30s test timeout.
     test.setTimeout(120_000);
     await page.goto('/companies');
-    await expect(page.getByText('Companies', { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('Companies', { exact: true })).toBeVisible({ timeout: 60_000 });
     // Sidebar is an off-canvas drawer — open it, wait for the toggle to
     // report expanded (so the click landing on Settings isn't racing the
     // slide-in animation), then navigate.

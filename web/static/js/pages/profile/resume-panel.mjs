@@ -12,6 +12,7 @@ import {
 import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../../ui/slide_over.mjs';
 import { toast } from '../../ui/toast.mjs';
 import { t } from '../../i18n.mjs';
+import { urlFor } from '../../host.mjs';
 import {
   getResume, createResume, updateResume, deleteResume, setPrimaryResume,
   listPdfsForResume, linkPdfToApplication,
@@ -63,10 +64,13 @@ const attachedRowsHtml = (pdfList) => liveApplicationRows(pdfList).map((r) => {
     ? t('profile.resumes.sent.item_with_company', { role: r.application_role_title, company: r.application_company_name })
     : t('profile.resumes.sent.item', { role: r.application_role_title });
   const meta = `${formatDate(r.created_at)} · ${relativeAge(r.created_at)}${r.size_bytes ? ' · ' + formatBytes(r.size_bytes) : ''}`;
+  const title = r.application_id
+    ? `<a href="${urlFor(`applications?id=${r.application_id}`)}" class="hover:text-brand hover:underline">${escapeHtml(primary)}</a>`
+    : escapeHtml(primary);
   return `
     <div class="${CLS.staticRow}">
       <div class="${CLS.flexTextCol}">
-        <p class="${CLS.rowTitle}">${escapeHtml(primary)}</p>
+        <p class="${CLS.rowTitle}">${title}</p>
         <p class="${CLS.fileRowMeta}">${escapeHtml(meta)}</p>
       </div>
     </div>`;
@@ -290,21 +294,23 @@ const saveResume = async () => {
         await setPrimaryResume(currentResume.id);
       }
       toast(t('profile.resumes.toast.saved'), 'ok');
-    } else {
-      // A prefilled draft (e.g. from the tailored-résumé flow) carries an
-      // application_id on currentResume — persist it so the new row is
-      // linked to the posting it was drafted for.
-      const applicationId = currentResume?.application_id ?? null;
-      const id = await createResume({ title, format, body, applicationId });
-      currentResume = { id, title, format, body, is_primary: 0, application_id: applicationId };
-      if (isPrimary) await setPrimaryResume(id);
-      toast(t('profile.resumes.toast.created', { id }), 'ok');
+      currentResume = await getResume(currentResume.id);
+      if (currentResume?.format === 'typ') {
+        await compileAndShow();
+      }
+      if (closingHandler) closingHandler.saved = true;
+      return;
     }
-    currentResume = await getResume(currentResume.id);
-    if (currentResume?.format === 'typ') {
-      await compileAndShow();
-    }
+    // A prefilled draft (e.g. from the tailored-résumé flow) carries an
+    // application_id so the new row links back to its posting.
+    const applicationId = currentResume?.application_id ?? null;
+    const newId = await createResume({ title, format, body, applicationId });
+    if (isPrimary) await setPrimaryResume(newId);
+    toast(t('profile.resumes.toast.created', { id: newId }), 'ok');
+    const created = await getResume(newId);
+    if (created) await renderResume(created);
     if (closingHandler) closingHandler.saved = true;
+    if (currentResume?.format === 'typ') await compileAndShow();
   } catch (err) {
     setInlineError('resume-panel-error', t('profile.resumes.error.save_failed', { err: err?.message || String(err) }));
   }
@@ -405,6 +411,23 @@ const wire = () => {
   syncActionButtons();
 };
 
+// Swaps panel content in place — used for both initial open and the
+// create→edit transition after save, to avoid a close/reopen cycle.
+const renderResume = async (resume) => {
+  const panel = document.getElementById(PANEL_ID);
+  if (!panel) return;
+  const [pdfList, apps, companies] = await Promise.all([
+    resume.id ? listPdfsForResume(resume.id) : Promise.resolve([]),
+    resume.id ? listApplications() : Promise.resolve([]),
+    resume.id ? listCompanies() : Promise.resolve([]),
+  ]);
+  attachApps = apps;
+  attachCompanyById = new Map(companies.map((c) => [c.id, c]));
+  currentResume = resume;
+  panel.innerHTML = panelHtml(resume, pdfList);
+  wire();
+};
+
 // openResumePanel opens the slide-over for `resumeId`, or a create flow if
 // null. `triggerEl` is the click origin (kept by openSlideOver for focus
 // restore). `onClose` receives a report — { saved, deleted, attached } —
@@ -440,17 +463,7 @@ export const openResumePanel = async ({
     toast(t('profile.resumes.error.not_found', { id: resumeId }), 'error');
     return;
   }
-  currentResume = resume;
-  // Prefetch attach targets alongside the PDF list so the inline picker
-  // renders synchronously with the panel HTML.
-  const [pdfList, apps, companies] = await Promise.all([
-    resume.id ? listPdfsForResume(resume.id) : Promise.resolve([]),
-    resume.id ? listApplications() : Promise.resolve([]),
-    resume.id ? listCompanies() : Promise.resolve([]),
-  ]);
-  attachApps = apps;
-  attachCompanyById = new Map(companies.map((c) => [c.id, c]));
-  panel.innerHTML = panelHtml(resume, pdfList);
+  await renderResume(resume);
   closingHandler = { saved: false, deleted: false, attached: false };
   openSlideOver({
     panelId: PANEL_ID,
@@ -461,7 +474,6 @@ export const openResumePanel = async ({
       if (onClose) onClose(report);
     },
   });
-  wire();
 };
 
 export const closeResumePanel = () => closeSlideOver(PANEL_ID);

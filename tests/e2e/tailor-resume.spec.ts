@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // Tailor résumé end-to-end. Mocks the four server LLM endpoints in the
 // pipeline (server-status, analyze-role-signals, extract-structured-resume,
@@ -151,6 +151,37 @@ test.describe('tailor résumé — golden path', () => {
     await expect(resumePanel.locator('#res-title')).toHaveValue('Acme Corp — Backend Engineer');
     const body = await resumePanel.locator('#res-body').inputValue();
     expect(body).toContain('Owned end-to-end payments API delivery');
+  });
+
+  test('Save inside the résumé editor reopens the panel in edit mode for the new row', async ({ page }) => {
+    await seedFixture(page);
+    await setupTailorMocks(page);
+
+    await gotoApps(page);
+    await page.locator('#list-content li', { hasText: 'Backend Engineer' })
+      .getByRole('button', { name: /Open Backend Engineer/ }).click();
+    const detailsPanel = page.locator('#details-panel');
+    await detailsPanel.getByRole('button', { name: 'Tailor résumé' }).click();
+    const tailorPanel = page.locator('#tailor-resume-panel');
+    await tailorPanel.getByRole('button', { name: 'Generate' }).click();
+    await expect(tailorPanel.getByText('Owned end-to-end payments API delivery.')).toBeVisible({ timeout: 15_000 });
+    await tailorPanel.getByRole('button', { name: /Open draft/ }).click();
+
+    // Create-mode markers: no delete button, no attach-history section.
+    const resumePanel = page.locator('#resume-panel');
+    await expect(resumePanel).toBeVisible();
+    await expect(resumePanel.locator('#btn-resume-delete')).toHaveCount(0);
+    await expect(resumePanel.locator('#resume-panel-attached-section')).toHaveCount(0);
+
+    // Persist the draft. The create branch re-opens this same panel in edit
+    // mode against the freshly-created résumé row.
+    await resumePanel.getByRole('button', { name: 'Save' }).click();
+    await expect(page.locator('#toast')).toContainText(/Created resume/, { timeout: 10_000 });
+
+    // Edit-mode markers now present.
+    await expect(resumePanel.locator('#btn-resume-delete')).toBeVisible({ timeout: 10_000 });
+    await expect(resumePanel.locator('#resume-panel-attached-section')).toBeVisible();
+    await expect(resumePanel.getByText('Edit resume', { exact: true })).toBeVisible();
   });
 
   test('Analyze slide-over caches the signals; tailor pipeline reuses it without re-derive', async ({ page }) => {

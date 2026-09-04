@@ -21,6 +21,7 @@ import * as summarizeThread             from './people/summarize-thread.mjs';
 import * as generateMessage             from './people/generate-message.mjs';
 import * as extractJobDescription       from './applications/extract-job-description.mjs';
 import * as analyzeRoleSignals          from './applications/analyze-role-signals.mjs';
+import * as analyzeFit                  from './applications/analyze-fit.mjs';
 
 // applications/tailor-rank-brags + applications/tailor-draft-resume are
 // composed by tailor-client.mjs (not dispatched via llmCall) — see
@@ -37,6 +38,7 @@ const modules = {
   'people/generate-message':               generateMessage,
   'applications/extract-job-description':  extractJobDescription,
   'applications/analyze-role-signals':     analyzeRoleSignals,
+  'applications/analyze-fit':              analyzeFit,
 };
 
 export const parsers  = Object.fromEntries(Object.entries(modules).map(([n, m]) => [n, m.parse]));

@@ -23,3 +23,7 @@ func tailorDraftResumePrompts() llm.PromptSets {
 func analyzeRoleSignalsPrompts() llm.PromptSets {
 	return llm.PromptSet("applications/analyze-role-signals")
 }
+
+func analyzeFitPrompts() llm.PromptSets {
+	return llm.PromptSet("applications/analyze-fit")
+}

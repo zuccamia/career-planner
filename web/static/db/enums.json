@@ -9,7 +9,8 @@
     "offer",
     "rejected",
     "ghosted",
-    "withdrawn"
+    "withdrawn",
+    "closed"
   ],
   "communication_channels": [
     "email",

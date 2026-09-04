@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // The Import flow is launched from the Profile page's header button. It
 // replaces the tab-content area, so no separate route to visit. This spec

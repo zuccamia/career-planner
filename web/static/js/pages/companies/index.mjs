@@ -128,6 +128,7 @@ const HEADLINE_BADGE = {
   rejected:  'rose',
   ghosted:   'slate',
   withdrawn: 'slate',
+  closed:    'slate',
 };
 
 const statusPill = (headline) => {
@@ -261,7 +262,6 @@ const applicationsSectionHtml = (apps, companyID) => {
     <div class="${CLS.formRow}">
       ${sectionTitle(t('companies.dossier.applications.heading'))}
       ${addBtn}
-      ${apps.length ? `<a href="${urlFor(`applications?company_id=${companyID}`)}" class="${CLS.linkAction}">${t('common.action.view')}</a>` : ''}
     </div>`;
   if (!apps.length) {
     return `<section class="space-y-2">${header}</section>`;
@@ -278,7 +278,7 @@ const applicationsSectionHtml = (apps, companyID) => {
     return `
       <div class="${CLS.staticRow}">
         <div class="${CLS.flexTextCol}">
-          <p class="${CLS.rowTitle}">${escapeHtml(a.role_title)}</p>
+          <p class="${CLS.rowTitle}"><a href="${urlFor(`applications?id=${a.id}`)}" class="hover:text-brand hover:underline">${escapeHtml(a.role_title)}</a></p>
           <p class="${CLS.fileRowMeta}">${escapeHtml(meta)}</p>
         </div>
       </div>`;
@@ -699,7 +699,9 @@ export const mountCompanies = async (root) => {
   });
   await refreshList();
 
-  // Auto-open the new-company editor if arriving via a quick-action link.
+  // Auto-open editor / dossier when deep-linked (e.g. from an application row).
   const params = new URLSearchParams(location.search);
   if (params.get('new') === '1') openEditor('new');
+  const openID = Number(params.get('id'));
+  if (openID) openDossier(openID);
 };

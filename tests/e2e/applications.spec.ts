@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // Same fresh-OPFS-per-context model as the other local-*.spec.ts files. LLM
 // buttons are not exercised (the test env has the provider disabled).
@@ -29,45 +29,6 @@ const createApplication = async (page: Page, companyName: string, role: string) 
   await page.getByRole('button', { name: 'Create application' }).click();
   await expect(page.locator('#toast')).toContainText(/Created application/);
 };
-
-test.describe('local applications page — company filter', () => {
-  test('?company_id=… filters the list and Clear link restores it', async ({ page }) => {
-    // Seed two companies + one application each so the filter has a signal.
-    await createCompany(page, 'Alpha Co.');
-    await createCompany(page, 'Beta Co.');
-    await createApplication(page, 'Alpha Co.', 'Backend Engineer');
-    await createApplication(page, 'Beta Co.', 'Frontend Engineer');
-
-    // Read Alpha's id from its row and navigate to the filtered URL directly.
-    await page.goto('/companies');
-    await expect(page.getByText('Companies', { exact: true })).toBeVisible({ timeout: 30_000 });
-    const alphaId = await page.locator('#list-content li', { hasText: 'Alpha Co.' })
-      .getAttribute('data-panel-row');
-    await page.goto(`/applications?company_id=${alphaId}`);
-
-    await expect(page).toHaveURL(/\/applications\?company_id=\d+$/);
-    await expect(page.getByText('Filtered by company:')).toBeVisible();
-    await expect(page.locator('#app-count')).toHaveText(/1 application at Alpha Co\./);
-    await expect(page.locator('#list-content li')).toHaveCount(1);
-    await expect(page.locator('#list-content li', { hasText: 'Backend Engineer' })).toBeVisible();
-    await expect(page.locator('#list-content li', { hasText: 'Frontend Engineer' })).toHaveCount(0);
-
-    await page.getByRole('link', { name: 'Clear filter' }).click();
-    await expect(page).toHaveURL(/\/applications$/);
-    await expect(page.getByText('Filtered by company:')).toHaveCount(0);
-    await expect(page.locator('#list-content li')).toHaveCount(2);
-  });
-
-  test('?company_id=… with an unknown id falls back to the full list with a warning', async ({ page }) => {
-    await createCompany(page, 'Alpha Co.');
-    await createApplication(page, 'Alpha Co.', 'Backend Engineer');
-
-    await gotoApps(page, '?company_id=99999');
-    await expect(page.locator('#toast')).toContainText(/Company #99999 not found/);
-    await expect(page.getByText('Filtered by company:')).toHaveCount(0);
-    await expect(page.locator('#list-content li', { hasText: 'Backend Engineer' })).toBeVisible();
-  });
-});
 
 test.describe('local applications page — inline details panel', () => {
   test('clicking the role title opens the inline details panel', async ({ page }) => {

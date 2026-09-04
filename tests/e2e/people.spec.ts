@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // Same context-isolation model as local-companies.spec.ts — each test starts
 // with a fresh OPFS, so no server-side reset is needed. One test mocks the LLM

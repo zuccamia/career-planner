@@ -141,6 +141,7 @@ func NewRouter(companiesService *companies.Service, applicationsService *applica
 	mux.Handle("POST /api/companies/build-dossier", llm(server.rpcBuildDossier))
 	mux.Handle("POST /api/applications/extract-job-description", llm(server.rpcExtractJobDescription))
 	mux.Handle("POST /api/applications/analyze-role-signals", llm(server.rpcAnalyzeRoleSignals))
+	mux.Handle("POST /api/applications/analyze-fit", llm(server.rpcAnalyzeFit))
 	mux.Handle("POST /api/applications/tailor", llm(server.rpcTailor))
 	mux.Handle("POST /api/profile/generate-brag-tags", llm(server.rpcGenerateBragTags))
 	mux.Handle("POST /api/profile/import-brags", llm(server.rpcImportBrags))

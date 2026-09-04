@@ -186,6 +186,11 @@ export const extractStructuredResumeFromSource = (source, outputLanguage, onStep
 export const analyzeRoleSignals = (payload, outputLanguage, onStep) =>
   llmCall('applications/analyze-role-signals', payload, '/api/applications/analyze-role-signals', outputLanguage, onStep);
 
+// Analyze the role-signals rubric + profile + brag entries into a
+// candidate-side fit rubric. Response: { fit: "<markdown>" }.
+export const analyzeFit = (payload, outputLanguage, onStep) =>
+  llmCall('applications/analyze-fit', payload, '/api/applications/analyze-fit', outputLanguage, onStep);
+
 // Ask the LLM to summarize one communication thread. Caller ships the full
 // thread + entries context (the server is stateless for local-first data) and
 // receives { summary }. Persisting the summary is the caller's job.

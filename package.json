@@ -8,8 +8,9 @@
     "watch:css": "npx @tailwindcss/cli -i ./web/static/tailwind.css -o ./web/static/app.css --watch",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
-    "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "build:web-test": "go build -o bin/web-test ./cmd/web",
+    "test:e2e": "npm run build:web-test && playwright test",
+    "test:e2e:headed": "npm run build:web-test && playwright test --headed"
   },
   "repository": {
     "type": "git",

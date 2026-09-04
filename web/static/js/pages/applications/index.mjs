@@ -21,7 +21,7 @@ import {
 import {
   sanitizeFolder, uploadAttachment, downloadAttachment,
 } from '../../storage/attachments.mjs';
-import { listCompanies, getCompany } from '../../entities/companies.mjs';
+import { listCompanies } from '../../entities/companies.mjs';
 import { getPerson, listPeopleByCompanyID } from '../../entities/people.mjs';
 import { listResumes, countResumesByApplication } from '../../entities/profile.mjs';
 import { openTailorResumePanel } from './tailor-resume-panel.mjs';
@@ -29,7 +29,7 @@ import { openRoleSignalsPanel } from './role-signals-panel.mjs';
 import { escapeHtml, formatDate, formatDateTime, formatBytes } from '../../ui/dom.mjs';
 import { CLS } from '../../ui/classes.mjs';
 import { toast } from '../../ui/toast.mjs';
-import { badge, badgeClasses, bulletList, button, codeBlock, collapsible, dtLabel, emptyState, faintSpan, fileRow, fileStamp, filterBanner, helpSpan, helpText, hintLink, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, outputLanguageSelect, pageHeader, panelTitle, readOutputLanguage, sectionTitle, setPageCount, subsectionTitle, uploadButton } from '../../ui/components.mjs';
+import { badge, badgeClasses, bulletList, button, codeBlock, collapsible, dtLabel, emptyState, faintSpan, fileRow, fileStamp, helpSpan, helpText, hintLink, inlineError, setInlineError, inlineNote, setInlineNote, inlineWarning, setInlineWarning, outputLanguageSelect, pageHeader, panelTitle, readOutputLanguage, sectionTitle, setPageCount, subsectionTitle, uploadButton } from '../../ui/components.mjs';
 import { icon } from '../../ui/icons.mjs';
 import { extractJobDescription } from '../../rpc.mjs';
 import { urlFor } from '../../host.mjs';
@@ -52,7 +52,7 @@ const humanize = (s) =>
 const APPLICATION_STATUS_SLUGS = new Set([
   'lead', 'applied', 'online_assessment',
   'first_interview', 'second_interview', 'additional_interview',
-  'offer', 'rejected', 'ghosted', 'withdrawn',
+  'offer', 'rejected', 'ghosted', 'withdrawn', 'closed',
 ]);
 const statusLabel = (s) =>
   s && APPLICATION_STATUS_SLUGS.has(s) ? t(`applications.status.${s}`) : humanize(s);
@@ -72,6 +72,7 @@ const STATUS_BADGE_COLOR = {
   rejected:             'rose',     // status-out clay
   withdrawn:            'slate',    // status-hold gray (you exited)
   ghosted:              'slate',    // status-hold gray (they went silent)
+  closed:               'slate',    // status-hold gray (posting pulled by employer)
 };
 
 const formatSalary = (currency, amount) => {
@@ -261,6 +262,7 @@ const HEADLINE_BADGE = {
   rejected:  'rose',
   ghosted:   'slate',
   withdrawn: 'slate',
+  closed:    'slate',
 };
 
 const headlinePill = (h) => h
@@ -459,7 +461,7 @@ const tailoredResumesSectionHtml = (a, tailored) => {
   const rows = tailored.map((r) => `
     <div class="${CLS.staticRow}">
       <div class="${CLS.flexTextCol}">
-        <p class="${CLS.rowTitle}">${escapeHtml(r.title || t('profile.resumes.untitled'))}</p>
+        <p class="${CLS.rowTitle}"><a href="${urlFor(`profile?tab=resumes&resume_id=${r.id}`)}" class="hover:text-brand hover:underline">${escapeHtml(r.title || t('profile.resumes.untitled'))}</a></p>
         <p class="${CLS.fileRowMeta}">${escapeHtml(t('common.updated_at', { date: relativeAge(r.updated_at) }))}</p>
       </div>
     </div>`).join('');
@@ -540,7 +542,9 @@ const detailsHtml = (a, events, attachments, tailored = [], { editing = false, c
           </div>
         </div>
         <div class="${CLS.textCol}">
-          <p class="${CLS.eyebrow}">${escapeHtml(a.company_name) || t('applications.details.unknown_company')}</p>
+          <p class="${CLS.eyebrow}">${a.company_id && a.company_name
+              ? `<a href="${urlFor(`companies?id=${a.company_id}`)}" class="hover:text-brand hover:underline">${escapeHtml(a.company_name)}</a>`
+              : (escapeHtml(a.company_name) || t('applications.details.unknown_company'))}</p>
           ${panelTitle(a.role_title, `${hasURL
               ? `<a href="${url}" target="_blank" rel="noopener noreferrer" class="hover:text-brand hover:underline">${escapeHtml(a.role_title)}</a>`
               : escapeHtml(a.role_title)} <span class="${pillClass} align-middle ml-1">${escapeHtml(statusLabel(status))}</span>`)}
@@ -646,8 +650,6 @@ let editorSubject = null; // cached row loaded into the editor — used to
                           // JD JSON, person_id) so saves don't wipe them.
 let detailsID = null;     // null | number — id of the application shown in details panel
 let applicationEditing = false;
-// Optional company_id filter (from ?company_id=… — set by company-card pill).
-let companyFilter = null; // { id, name } | null
 // Optional person_id filter (from ?person_id=… — silent, no banner/pill;
 // used by the "View" link on a person's slide-over).
 let personFilter = null;  // { id, name } | null
@@ -657,26 +659,16 @@ let cachedApps = [];
 const HEADLINE_FILTERS = ['all', 'lead', 'applied', 'interview', 'offer', 'rejected', 'ghosted'];
 const filterOptions = () => HEADLINE_FILTERS.map(k => ({ key: k, label: t(`applications.filters.${k}`) }));
 
-const filterBannerHtml = () => companyFilter
-  ? filterBanner({
-      label: t('common.filter.by_company'),
-      name: companyFilter.name,
-      clearHref: urlFor('applications'),
-      clearLabel: t('common.filter.clear'),
-    })
-  : '';
-
 // isUnfiltered reports whether the list is showing the full application
 // set — no URL scoping, no search query, no headline pill selection. The
 // "Clear all applications" button only appears in this state so a user
 // filtered down to a subset can't accidentally wipe everything.
 const isUnfiltered = () =>
-  !companyFilter && !personFilter && !filterState.query.trim() && filterState.headline === 'all';
+  !personFilter && !filterState.query.trim() && filterState.headline === 'all';
 
 const applyFilters = () => {
   const q = filterState.query.trim().toLowerCase();
   return cachedApps.filter(a => {
-    if (companyFilter && a.company_id !== companyFilter.id) return false;
     if (personFilter && a.person_id !== personFilter.id) return false;
     if (q) {
       const hay = `${a.role_title || ''} ${a.company_name || ''}`.toLowerCase();
@@ -691,13 +683,11 @@ const renderList = () => {
   const filtered = applyFilters();
   restoreAllPanels(PANEL_IDS);
   document.getElementById('list-content').innerHTML =
-    filterBannerHtml()
-    + collectionRowsHtml({ rows: filtered.map(appFileRow), emptyMessage: t('applications.list.empty') })
+    collectionRowsHtml({ rows: filtered.map(appFileRow), emptyMessage: t('applications.list.empty') })
     + (filtered.length && isUnfiltered() ? clearAllHtml() : '');
   if (editorMode && editorMode !== 'new') mountInlinePanel('editor-panel', editorMode.id);
-  setPageCount('app-count', filtered.length, n => companyFilter
-    ? t(n === 1 ? 'applications.list.count_one_at_company' : 'applications.list.count_many_at_company', { n, company: companyFilter.name })
-    : t(n === 1 ? 'applications.list.count_one_all' : 'applications.list.count_many_all', { n }));
+  setPageCount('app-count', filtered.length,
+    n => t(n === 1 ? 'applications.list.count_one_all' : 'applications.list.count_many_all', { n }));
   document.getElementById('apps-filters').innerHTML = collectionFilterPillsHtml(filterOptions(), filterState.headline);
   wireListHandlers();
 };
@@ -1095,14 +1085,8 @@ export const mountApplications = async (root) => {
     renderList();
   });
 
-  // Resolve ?company_id / ?person_id before first render so banners paint correctly.
+  // Resolve ?person_id before first render so the silent filter takes hold.
   const params = new URLSearchParams(location.search);
-  const rawCompanyID = Number(params.get('company_id'));
-  if (rawCompanyID) {
-    const company = await getCompany(rawCompanyID);
-    if (company) companyFilter = { id: company.id, name: company.official_name };
-    else toast(t('applications.toast.company_missing_filter', { id: rawCompanyID }), 'warning');
-  }
   const rawPersonID = Number(params.get('person_id'));
   if (rawPersonID) {
     const person = await getPerson(rawPersonID);
@@ -1112,5 +1096,13 @@ export const mountApplications = async (root) => {
   await refreshList();
 
   // Auto-open the new-application editor if arriving via a quick-action link.
-  if (params.get('new') === '1') openEditor('new', { companyID: companyFilter?.id ?? null });
+  // ?company_id here is a prefill for the editor only — no list-filter state.
+  if (params.get('new') === '1') {
+    const prefillCompanyID = Number(params.get('company_id')) || null;
+    openEditor('new', { companyID: prefillCompanyID });
+  }
+  // Auto-open the detail slide-over when deep-linked (e.g. from a company
+  // dossier row or a résumé's "sent to" list).
+  const openID = Number(params.get('id'));
+  if (openID) openDetails(openID);
 };

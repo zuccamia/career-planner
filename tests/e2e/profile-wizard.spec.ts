@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // Fresh OPFS per context — the 9-step wizard shows on first visit because
 // profile_overview.onboarded_at is NULL and every field is empty.

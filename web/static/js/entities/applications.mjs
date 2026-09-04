@@ -14,7 +14,8 @@ import { exec, transaction } from '../db/client.mjs';
 import { APPLICATION_STATUSES } from '../db/schema.mjs';
 import { sanitizeURL } from '../ui/dom.mjs';
 import { getCompany, dossierForPrompt } from './companies.mjs';
-import { analyzeRoleSignals } from '../rpc.mjs';
+import { analyzeRoleSignals, analyzeFit } from '../rpc.mjs';
+import { getOverview, listBragEntries } from './profile.mjs';
 import { t } from '../i18n.mjs';
 import { deleteAttachmentsByEntity } from './attachments.mjs';
 
@@ -231,11 +232,11 @@ export const updateApplicationExtraction = async (id, { structuredJson, jobDescr
   );
 };
 
-// Persistence envelope for tailor_signals: the analyze-role-signals response
+// Persistence envelope for role_signals: the analyze-role-signals response
 // carries markdown (`signals`) AND a machine-readable ATS keyword array
 // (`ats_keywords`). We serialize both into the single TEXT column as JSON.
 // Empty envelope clears the cache.
-export const updateApplicationTailorSignals = async (id, envelope) => {
+export const updateApplicationRoleSignals = async (id, envelope) => {
   const payload = envelope && (envelope.signals || envelope.ats_keywords?.length)
     ? JSON.stringify({
         signals: envelope.signals || '',
@@ -244,15 +245,15 @@ export const updateApplicationTailorSignals = async (id, envelope) => {
     : '';
   await exec(
     `UPDATE applications
-     SET tailor_signals = ?, updated_at = datetime('now')
+     SET role_signals = ?, updated_at = datetime('now')
      WHERE id = ?`,
     [payload, id],
   );
 };
 
 // analyzeAndCacheRoleSignals runs the analyze-role-signals LLM call for the
-// application, persists the envelope on tailor_signals, and mutates
-// `application.tailor_signals` in place so callers reuse the same row.
+// application, persists the envelope on role_signals, and mutates
+// `application.role_signals` in place so callers reuse the same row.
 export const analyzeAndCacheRoleSignals = async (application, jd, locale) => {
   const dossier = application.company_id
     ? dossierForPrompt(await getCompany(application.company_id))
@@ -262,15 +263,15 @@ export const analyzeAndCacheRoleSignals = async (application, jd, locale) => {
   );
   const envelope = { signals: (signals || '').trim(), ats_keywords: ats_keywords || [] };
   if (envelope.signals || envelope.ats_keywords.length) {
-    await updateApplicationTailorSignals(application.id, envelope);
-    application.tailor_signals = JSON.stringify(envelope);
+    await updateApplicationRoleSignals(application.id, envelope);
+    application.role_signals = JSON.stringify(envelope);
   }
   return envelope;
 };
 
-// parseTailorSignals reads the persisted envelope written by
-// updateApplicationTailorSignals.
-export const parseTailorSignals = (raw) => {
+// parseRoleSignals reads the persisted envelope written by
+// updateApplicationRoleSignals.
+export const parseRoleSignals = (raw) => {
   const s = (raw ?? '').trim();
   if (!s) return { signals: '', ats_keywords: [] };
   try {
@@ -281,6 +282,62 @@ export const parseTailorSignals = (raw) => {
     };
   } catch {
     return { signals: '', ats_keywords: [] };
+  }
+};
+
+// profile_fit envelope: markdown wrapped as JSON so the field can grow
+// structured children later without another migration.
+export const updateApplicationProfileFit = async (id, envelope) => {
+  const payload = envelope && envelope.fit
+    ? JSON.stringify({ fit: envelope.fit })
+    : '';
+  await exec(
+    `UPDATE applications
+     SET profile_fit = ?, updated_at = datetime('now')
+     WHERE id = ?`,
+    [payload, id],
+  );
+};
+
+// Same shape ProfileForTailor takes on the Go side.
+const profileForFitPrompt = (overview) => ({
+  headline: overview?.headline || '',
+  summary: overview?.summary || '',
+  skills: overview?.skills || [],
+  tools: overview?.tools || [],
+});
+
+// analyzeAndCacheProfileFit runs analyze-fit against the pre-derived role
+// signals rubric (not raw JD) — cleaner context than re-parsing the JD,
+// coherent with the signals panel above. Persists to profile_fit and
+// mutates `application.profile_fit` in place.
+export const analyzeAndCacheProfileFit = async (application, roleSignalsEnvelope, locale) => {
+  const [overview, brags] = await Promise.all([getOverview(), listBragEntries()]);
+  const { fit } = await analyzeFit(
+    {
+      role_signals: roleSignalsEnvelope?.signals || '',
+      ats_keywords: roleSignalsEnvelope?.ats_keywords || [],
+      profile: profileForFitPrompt(overview),
+      brags: brags || [],
+    },
+    locale,
+  );
+  const envelope = { fit: (fit || '').trim() };
+  if (envelope.fit) {
+    await updateApplicationProfileFit(application.id, envelope);
+    application.profile_fit = JSON.stringify(envelope);
+  }
+  return envelope;
+};
+
+export const parseProfileFit = (raw) => {
+  const s = (raw ?? '').trim();
+  if (!s) return { fit: '' };
+  try {
+    const obj = JSON.parse(s);
+    return { fit: typeof obj.fit === 'string' ? obj.fit : '' };
+  } catch {
+    return { fit: '' };
   }
 };
 

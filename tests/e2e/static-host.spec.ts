@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // Simulates the GH Pages build by rewriting every top-level HTML response
 // so the static-host meta tag reads true. Playwright's route interception

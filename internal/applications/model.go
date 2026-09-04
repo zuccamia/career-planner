@@ -105,6 +105,26 @@ type AnalyzeRoleSignalsResponse struct {
 	ATSKeywords []string `json:"ats_keywords,omitempty"`
 }
 
+// ---- analyze-fit ----
+
+// AnalyzeFitInput: RoleSignals is the pre-digested rubric from
+// AnalyzeRoleSignals — passed instead of raw JD so the fit prompt reasons off
+// a clean, sectioned view of the role. Brags is opaque JSON (same convention
+// as CompanyDossier), the ground truth for what the candidate has done.
+type AnalyzeFitInput struct {
+	RoleSignals    string           `json:"role_signals"`
+	ATSKeywords    []string         `json:"ats_keywords,omitempty"`
+	Profile        ProfileForTailor `json:"profile"`
+	Brags          json.RawMessage  `json:"brags,omitempty"`
+	OutputLanguage string           `json:"output_language"`
+}
+
+// AnalyzeFitResponse: unstructured markdown so prompt iteration doesn't
+// require model changes.
+type AnalyzeFitResponse struct {
+	Fit string `json:"fit"`
+}
+
 // ---- tailor-rank-brags ----
 
 // BragForRanking is the LLM's view of a brag — trimmed, no DB metadata.

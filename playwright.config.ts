@@ -8,18 +8,22 @@ const chromeExecutablePath = process.env.PLAYWRIGHT_CHROME_EXECUTABLE
 
 export default defineConfig({
   testDir: path.join(__dirname, 'tests', 'e2e'),
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: 1,
+  workers: process.env.CI ? 1 : 2,
   reporter: [['list']],
+  // Hard ceiling per run (per shard on CI). Green runs finish in ~2m. Any
+  // hang past that is a real signal something's wrong — cap at 10m so a
+  // pathological failure doesn't burn CI budget silently.
+  globalTimeout: 10 * 60 * 1000,
   use: {
     baseURL: testBaseURL,
     trace: 'on-first-retry',
     headless: true,
   },
   webServer: {
-    command: `go run ./cmd/web`,
+    command: `./bin/web-test`,
     url: testBaseURL,
     reuseExistingServer: false,
     timeout: 120 * 1000,

@@ -20,3 +20,4 @@ docs/plans/
 test-results/
 playwright-report/
 .playwright/
+.playwright-profile/

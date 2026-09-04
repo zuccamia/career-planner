@@ -253,6 +253,20 @@ func (s *Server) rpcAnalyzeRoleSignals(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// rpcAnalyzeFit derives the candidate-side fit rubric. Response: { fit: "<markdown>" }.
+func (s *Server) rpcAnalyzeFit(w http.ResponseWriter, r *http.Request) {
+	var in applications.AnalyzeFitInput
+	if !decodeJSON(r, w, &in) {
+		return
+	}
+	out, err := s.applications.AnalyzeFit(r.Context(), in)
+	if err != nil {
+		writeServiceErr(w, r, "applications/analyze-fit", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // rpcTailor runs the composite tailor pipeline: rank per category, take
 // top-N, draft the résumé.
 func (s *Server) rpcTailor(w http.ResponseWriter, r *http.Request) {

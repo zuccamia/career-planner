@@ -138,7 +138,7 @@ func scrapeAsPosting(ctx context.Context, scraper markdownScraper, rawURL string
 // ---- analyze-role-signals ----
 
 // AnalyzeRoleSignals returns the ranking rubric. Cached on
-// applications.tailor_signals so subsequent tailors reuse it.
+// applications.role_signals so subsequent tailors reuse it.
 func (s *Service) AnalyzeRoleSignals(ctx context.Context, in AnalyzeRoleSignalsInput) (AnalyzeRoleSignalsResponse, error) {
 	if err := llm.RequireClient(s.client); err != nil {
 		return AnalyzeRoleSignalsResponse{}, err
@@ -168,6 +168,48 @@ func sanitizeRoleSignals(raw AnalyzeRoleSignalsResponse) AnalyzeRoleSignalsRespo
 		Signals:     signals,
 		ATSKeywords: dedupeATSKeywords(raw.ATSKeywords),
 	}
+}
+
+// ---- analyze-fit ----
+
+// AnalyzeFit derives the profile-vs-role fit rubric. Cached on
+// applications.profile_fit.
+func (s *Service) AnalyzeFit(ctx context.Context, in AnalyzeFitInput) (AnalyzeFitResponse, error) {
+	if err := llm.RequireClient(s.client); err != nil {
+		return AnalyzeFitResponse{}, err
+	}
+	if strings.TrimSpace(in.RoleSignals) == "" {
+		return AnalyzeFitResponse{}, errors.New("role_signals is required")
+	}
+	profileJSON, _ := json.Marshal(in.Profile)
+	brags := strings.TrimSpace(string(in.Brags))
+	if brags == "" {
+		brags = "[]"
+	}
+	rubric := strings.TrimSpace(in.RoleSignals)
+	if len(in.ATSKeywords) > 0 {
+		rubric = rubric + "\n\n### ATS keywords\n" + strings.Join(in.ATSKeywords, ", ")
+	}
+	set := llm.PickPromptSet(analyzeFitPrompts(), in.OutputLanguage)
+	prompt := llm.Prompt{
+		System: set.System,
+		User: fmt.Sprintf(
+			set.User,
+			rubric,
+			string(profileJSON),
+			brags,
+		),
+	}
+	var raw AnalyzeFitResponse
+	if err := s.client.GenerateJSON(ctx, prompt, &raw); err != nil {
+		return AnalyzeFitResponse{}, err
+	}
+	fit := strings.TrimSpace(raw.Fit)
+	if llm.IsSuspiciousText(fit) {
+		log.Printf("analyze-fit suspicious-output dropped=1")
+		return AnalyzeFitResponse{}, nil
+	}
+	return AnalyzeFitResponse{Fit: fit}, nil
 }
 
 // dedupeATSKeywords collapses case-insensitive duplicates, preserving

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // Route-stubbed coverage for the Discover openings feature. The real
 // pipeline needs an LLM + SearXNG, both impractical in CI, so we intercept

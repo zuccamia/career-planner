@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // Fresh OPFS per context (same convention as the other local-*.spec.ts files).
 // D3 loads from a CDN — the sankey block hydrates only when the pipeline has
@@ -60,5 +60,35 @@ test.describe('local dashboard', () => {
     // Applied totals card reads 1.
     const appliedCard = page.locator('[data-total="blue"]');
     await expect(appliedCard).toContainText('1');
+  });
+
+  test('sankey shows lead node and "Still <status>" sinks for non-terminal populations', async ({ page }) => {
+    // Two leads that never advanced + one that made lead → applied. The sankey
+    // should render a synthetic "Still Lead (2)" sink (from the leads sitting
+    // in lead), a "Still Applied (1)" sink (from the one advanced app now
+    // parked in applied), and the Lead node itself as the source of both.
+    await gotoDashboard(page);
+    await page.evaluate(async () => {
+      // @ts-expect-error — module exposed for e2e diagnostics
+      const { exec } = await import('/static/js/db/client.mjs');
+      await exec("INSERT INTO companies (official_name) VALUES ('Alpha Co.')");
+      const c = await exec('SELECT last_insert_rowid() AS id');
+      await exec("INSERT INTO applications (company_id, role_title, status) VALUES (?, 'A', 'lead')", [c[0].id]);
+      await exec("INSERT INTO applications (company_id, role_title, status) VALUES (?, 'B', 'lead')", [c[0].id]);
+      await exec("INSERT INTO applications (company_id, role_title, status) VALUES (?, 'C', 'applied')", [c[0].id]);
+      const advanced = await exec('SELECT last_insert_rowid() AS id');
+      await exec(
+        `INSERT INTO application_events (application_id, type, from_status, to_status, occurred_at)
+         VALUES (?, 'status_changed', 'lead', 'applied', datetime('now'))`,
+        [advanced[0].id],
+      );
+    });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Application pipeline' })).toBeVisible({ timeout: 30_000 });
+
+    const sankey = page.locator('#pipeline-sankey');
+    await expect(sankey.locator('tspan:text-is("Still Lead (2)")')).toBeVisible({ timeout: 15_000 });
+    await expect(sankey.locator('tspan:text-is("Still Applied (1)")')).toBeVisible();
+    await expect(sankey.locator('tspan:text-is("Lead")')).toBeVisible();
   });
 });

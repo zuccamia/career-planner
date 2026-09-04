@@ -11,7 +11,7 @@ import {
   subheadTitle,
 } from '../../ui/components.mjs';
 import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../../ui/slide_over.mjs';
-import { getApplication, parseTailorSignals, parsedJD, analyzeAndCacheRoleSignals } from '../../entities/applications.mjs';
+import { getApplication, parseRoleSignals, parsedJD, analyzeAndCacheRoleSignals } from '../../entities/applications.mjs';
 import { listResumes, getResume, listBragEntries, getOverview } from '../../entities/profile.mjs';
 import { extractStructuredResumeFromSource } from '../../rpc.mjs';
 import { tailorResume } from '../../clients/tailor/service.mjs';
@@ -314,7 +314,7 @@ const runTailor = async () => {
     const profile = profileForPrompt(overview);
 
     // Derive signals if missing (user can review it later on the Analyze slide-over).
-    let envelope = parseTailorSignals(currentApplication.tailor_signals);
+    let envelope = parseRoleSignals(currentApplication.role_signals);
     if (!envelope.signals && !envelope.ats_keywords.length) {
       envelope = await stepped(step, 'analyze_role', () => analyzeAndCacheRoleSignals(currentApplication, jd, locale));
     }

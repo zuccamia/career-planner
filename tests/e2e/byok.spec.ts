@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // BYOK (bring-your-own-key) settings panel. Playwright starts the server with
 // empty LLM_* env vars — so /api/llm/server-status returns available:false.

@@ -88,8 +88,11 @@ export const openOverlay = ({ panel, trigger, onOpen, onClose } = {}) => {
   stack.push(entry);
   if (onOpen) onOpen();
 
-  const fs = panel.querySelectorAll(FOCUSABLE);
-  if (fs.length) fs[0].focus();
+  // Focus the panel container so a11y/keyboard land here without painting a
+  // focus ring on a destructive child button after deep-link navigation.
+  if (!panel.hasAttribute('tabindex')) panel.setAttribute('tabindex', '-1');
+  if (!panel.style.outline) panel.style.outline = 'none';
+  panel.focus({ preventScroll: true });
 
   if (trigger) trigger.setAttribute('aria-expanded', 'true');
 

@@ -21,13 +21,12 @@ const ensureWorker = () => {
   };
 };
 
-// Terminate the worker eagerly when the page is unloaded, otherwise the OPFS
-// SyncAccessHandles it holds may still be alive when the next page's worker
-// tries to open the same pool. Disable BFCache too so we always get a fresh
-// worker on return (BFCache would resurrect the old worker without re-init).
+// Release the SAH pool on page navigation so the next page's DB worker can
+// acquire it without hitting the "App already open in another tab" race.
+// `beforeunload` also disables BFCache, so return-visits re-init cleanly.
 export const disposeWorker = () => {
   if (worker) {
-    try { worker.terminate(); } catch {}
+    try { worker.postMessage({ id: 0, type: 'shutdown' }); } catch {}
     worker = null;
   }
   pending.clear();

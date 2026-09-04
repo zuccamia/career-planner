@@ -32,6 +32,7 @@ const STAGE_DEFINITIONS = [
   { key: 'rejected',   statuses: ['rejected'],                                                              accent: 'bg-status-out',  muted: 'bg-status-out-bg',  fill: '#A05648' },
   { key: 'withdrawn',  statuses: ['withdrawn'],                                                             accent: 'bg-status-hold', muted: 'bg-status-hold-bg', fill: '#7D8A93' },
   { key: 'ghosted',    statuses: ['ghosted'],                                                               accent: 'bg-status-hold', muted: 'bg-status-hold-bg', fill: '#7D8A93' },
+  { key: 'closed',     statuses: ['closed'],                                                                accent: 'bg-status-hold', muted: 'bg-status-hold-bg', fill: '#7D8A93' },
 ];
 
 // SANKEY_STATUS_DEFS lists every distinct pipeline status. `color` is the node
@@ -39,15 +40,17 @@ const STAGE_DEFINITIONS = [
 // depth) per §9 so the Sankey shows progression a flat brass would hide.
 // Withdrawn and Ghosted are distinct terminal sinks; both status-hold gray.
 const SANKEY_STATUS_DEFS = [
-  { status: 'applied',              label: 'Applied',              color: '#0F5C5B', depth: 0, verticalOrder: 2, terminal: false },
-  { status: 'online_assessment',    label: 'Assessment',           color: '#D9AF74', depth: 1, verticalOrder: 3, terminal: false },
-  { status: 'first_interview',      label: '1st interview',        color: '#C6944F', depth: 2, verticalOrder: 4, terminal: false },
-  { status: 'second_interview',     label: '2nd interview',        color: '#B4823A', depth: 3, verticalOrder: 4, terminal: false },
-  { status: 'additional_interview', label: 'Additional interview', color: '#8F6626', depth: 4, verticalOrder: 4, terminal: false },
-  { status: 'offer',                label: 'Offer',                color: '#2F7D5B', depth: 5, verticalOrder: 4, terminal: true },
-  { status: 'withdrawn',            label: 'Withdrawn',            color: '#7D8A93', depth: 3, verticalOrder: 1, terminal: true },
-  { status: 'ghosted',              label: 'Ghosted',              color: '#7D8A93', depth: 4, verticalOrder: 1, terminal: true },
-  { status: 'rejected',             label: 'Rejected',             color: '#A05648', depth: 6, verticalOrder: 0, terminal: true },
+  { status: 'lead',                 label: 'Lead',                 color: '#4E6E8E', depth: 0, verticalOrder: 2, terminal: false },
+  { status: 'applied',              label: 'Applied',              color: '#0F5C5B', depth: 1, verticalOrder: 2, terminal: false },
+  { status: 'online_assessment',    label: 'Assessment',           color: '#D9AF74', depth: 2, verticalOrder: 3, terminal: false },
+  { status: 'first_interview',      label: '1st interview',        color: '#C6944F', depth: 3, verticalOrder: 4, terminal: false },
+  { status: 'second_interview',     label: '2nd interview',        color: '#B4823A', depth: 4, verticalOrder: 4, terminal: false },
+  { status: 'additional_interview', label: 'Additional interview', color: '#8F6626', depth: 5, verticalOrder: 4, terminal: false },
+  { status: 'offer',                label: 'Offer',                color: '#2F7D5B', depth: 6, verticalOrder: 4, terminal: true },
+  { status: 'withdrawn',            label: 'Withdrawn',            color: '#7D8A93', depth: 4, verticalOrder: 1, terminal: true },
+  { status: 'ghosted',              label: 'Ghosted',              color: '#7D8A93', depth: 5, verticalOrder: 1, terminal: true },
+  { status: 'rejected',             label: 'Rejected',             color: '#A05648', depth: 7, verticalOrder: 0, terminal: true },
+  { status: 'closed',               label: 'Closed',               color: '#7D8A93', depth: 4, verticalOrder: 5, terminal: true },
 ];
 
 // ---------- helpers ----------
@@ -102,8 +105,15 @@ const buildPipelineStages = async () => {
   return stages.map(s => ({ ...s, width: scaledFunnelWidth(s.count, total) }));
 };
 
+// Gray fill for the synthetic "still in <status>" sinks — same hue family as
+// the hold statuses but lighter so it reads as in-progress rather than terminal.
+const STILL_NODE_COLOR = '#B0B7BC';
+
 const buildSankeyData = async () => {
-  const rows = await listStatusTransitionCounts();
+  const [rows, currentCounts] = await Promise.all([
+    listStatusTransitionCounts(),
+    countApplicationsByStatus(),
+  ]);
   const defByStatus = new Map(SANKEY_STATUS_DEFS.map(d => [d.status, d]));
   const aggregated = new Map(); // key: `${from}->${to}` → n
   const activeStatuses = new Set();
@@ -117,7 +127,21 @@ const buildSankeyData = async () => {
     valueByStatus.set(r.from_status, (valueByStatus.get(r.from_status) || 0) + r.n);
     valueByStatus.set(r.to_status, (valueByStatus.get(r.to_status) || 0) + r.n);
   }
-  if (aggregated.size === 0) return { nodes: [], links: [] };
+
+  // For every non-terminal status with applications currently sitting in it,
+  // emit a synthetic "still in <status>" sink so the diagram accounts for the
+  // full pipeline population — not just what has already transitioned.
+  const stillCounts = new Map();
+  for (const def of SANKEY_STATUS_DEFS) {
+    if (def.terminal) continue;
+    const still = currentCounts.get(def.status) || 0;
+    if (still <= 0) continue;
+    stillCounts.set(def.status, still);
+    activeStatuses.add(def.status);
+    valueByStatus.set(def.status, (valueByStatus.get(def.status) || 0) + still);
+  }
+
+  if (aggregated.size === 0 && stillCounts.size === 0) return { nodes: [], links: [] };
 
   const nodes = [];
   const indexByStatus = new Map();
@@ -134,6 +158,20 @@ const buildSankeyData = async () => {
       terminal: def.terminal,
     });
   }
+  const stillIndexByStatus = new Map();
+  for (const [status, count] of stillCounts) {
+    const parent = defByStatus.get(status);
+    stillIndexByStatus.set(status, nodes.length);
+    nodes.push({
+      id: `${status}__still`,
+      name: t('dashboard.sankey.still', { status: t(`applications.status.${status}`), n: count }),
+      color: STILL_NODE_COLOR,
+      value: count,
+      depth: parent.depth + 1,
+      verticalOrder: (parent.verticalOrder ?? 0) + 0.5,
+      terminal: true,
+    });
+  }
   const links = [];
   for (const from of SANKEY_STATUS_DEFS) {
     for (const to of SANKEY_STATUS_DEFS) {
@@ -141,6 +179,9 @@ const buildSankeyData = async () => {
       if (!n) continue;
       links.push({ source: indexByStatus.get(from.status), target: indexByStatus.get(to.status), value: n });
     }
+  }
+  for (const [status, count] of stillCounts) {
+    links.push({ source: indexByStatus.get(status), target: stillIndexByStatus.get(status), value: count });
   }
   return { nodes, links };
 };

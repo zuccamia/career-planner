@@ -990,11 +990,17 @@ export const mountProfile = async (appEl) => {
     }
   }
   if (initialTab && VALID_TABS.includes(initialTab)) state.tab = initialTab;
+  // ?resume_id deep-link (from an application's tailored-résumés row) forces
+  // the Résumés tab so the slide-over has its mount point.
+  const rawResumeID = Number(params.get('resume_id'));
+  if (rawResumeID) state.tab = 'resumes';
 
   appEl.innerHTML = shellHtml();
   wireTabStrip();
   document.getElementById('btn-import')?.addEventListener('click', () => setTab(IMPORT_TAB));
   refreshProfileTabCounts();
-  renderTab();
+  // Await the initial tab render so #resume-panel exists before we open it.
+  await renderTab();
   if (pendingFilterToast) toast(pendingFilterToast, 'warning');
+  if (rawResumeID) launchResumePanel(rawResumeID);
 };

@@ -84,6 +84,14 @@ self.onmessage = async (ev) => {
       return;
     }
 
+    if (type === 'shutdown') {
+      // Release SAH handles so the next page's worker can acquire the pool.
+      try { if (db) { db.close(); db = null; } } catch {}
+      try { if (poolUtil) await poolUtil.pauseVfs(); } catch {}
+      self.close();
+      return;
+    }
+
     throw new Error(`unknown message type: ${type}`);
   } catch (err) {
     send(id, false, errStr(err));

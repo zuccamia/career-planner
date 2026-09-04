@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // Fresh OPFS per context — the wizard shows on first visit because
 // profile_overview.onboarded_at is NULL and every field is empty. The tests
@@ -157,7 +157,10 @@ test.describe('local profile page — resumes tab', () => {
     // New résumés default to Typst format; save.
     await page.getByRole('button', { name: 'Save' }).click();
     await expect(page.locator('#toast')).toContainText(/Created resume/);
-    // Close the slide-over so the list refreshes with the new row + count.
+    // Save reopens the panel in edit mode (see resume-panel saveResume), which
+    // re-renders the header — wait for the edit-only delete button before
+    // clicking close, otherwise the close button races the re-mount.
+    await expect(page.locator('#btn-resume-delete')).toBeVisible();
     await page.locator('#btn-resume-close').click();
 
     // Tab counter now shows "1".
