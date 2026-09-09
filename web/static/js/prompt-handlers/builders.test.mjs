@@ -42,7 +42,9 @@ const MINIMUM_INPUT = {
   'profile/generate-brag-tags':                   { body: 'Shipped feature flags to production.' },
   'profile/import-brags':                          { markdown: '# CV\n- did stuff' },
   'profile/import-overview':               { markdown: '# CV\n- did stuff' },
-  'profile/import-resume':                 { markdown: '# CV\n- did stuff' },
+  // `source` mirrors rpc.mjs's extractStructuredResumeFromSource wire shape;
+  // the handler also accepts `markdown` / `typst`.
+  'profile/import-resume':                 { source: '# CV\n- did stuff' },
   'people/summarize-thread': {
     thread:  { person_name: 'Jane', channel: 'email', subject: 'hi', status: 'open', summary: '' },
     entries: [{ direction: 'inbound', content: 'hi there', occurred_at: '2026-01-02T03:04:05Z' }],
@@ -59,6 +61,12 @@ const MINIMUM_INPUT = {
   'applications/analyze-role-signals': {
     jd_structured: { role_title: 'Engineer', must_have_skills: ['Go'] },
     company_dossier: null,
+  },
+  'applications/analyze-fit': {
+    role_signals: '### Desirable skills\n- Go\n### ATS keywords\nGo, Postgres',
+    ats_keywords: ['Go', 'Postgres'],
+    profile: { name: 'Alex', headline: 'Backend engineer' },
+    brags: [{ id: 1, title: 'Shipped X', body: 'Y', tags: [] }],
   },
 };
 
@@ -145,5 +153,20 @@ describe('builders reject invalid input', () => {
   it('applications/extract-job-description throws on empty raw', async () => {
     await expect(builders['applications/extract-job-description']({ job_description_raw: '' }, 'en'))
       .rejects.toThrow(/job description is required/);
+  });
+  it('applications/analyze-role-signals throws on missing jd_structured', async () => {
+    await expect(builders['applications/analyze-role-signals']({}, 'en'))
+      .rejects.toThrow(/jd_structured is required/);
+  });
+  it('applications/analyze-fit throws on empty role_signals', async () => {
+    await expect(builders['applications/analyze-fit']({ role_signals: '' }, 'en'))
+      .rejects.toThrow(/role_signals is required/);
+  });
+  it('profile/import-overview throws on empty markdown', async () => {
+    await expect(builders['profile/import-overview']({ markdown: '' }, 'en'))
+      .rejects.toThrow(/markdown is required/);
+  });
+  it('profile/import-resume throws when no source key carries content', async () => {
+    await expect(builders['profile/import-resume']({}, 'en')).rejects.toThrow(/source_required/);
   });
 });

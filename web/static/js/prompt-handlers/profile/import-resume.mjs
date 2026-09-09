@@ -147,9 +147,10 @@ export const flattenBaseResume = (resume) => {
   return lines.join('\n').trim();
 };
 
-// Accepts either input.markdown or input.typst — same prompt, format-neutral.
+// Prompt is format-neutral; the source string may be Markdown or Typst.
+// Callers pass it under `source`, `markdown`, or `typst` — first non-empty wins.
 export const build = async (input, locale) => {
-  const source = (input?.markdown ?? '').trim() || (input?.typst ?? '').trim();
+  const source = (input?.source ?? '').trim() || (input?.markdown ?? '').trim() || (input?.typst ?? '').trim();
   if (!source) throw new Error(t('profile.resumes.error.source_required'));
   return buildFromField('profile/import-resume', { source }, 'source', locale);
 };

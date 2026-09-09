@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { finalizeImportResume, flattenBaseResume, parse } from './import-resume.mjs';
+import { describe, expect, it, beforeAll, afterAll, vi } from 'vitest';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { build, finalizeImportResume, flattenBaseResume, parse } from './import-resume.mjs';
+import { _resetPromptCacheForTests } from '../../sources/llm/prompts.mjs';
 
 // Mirrors TestFinalizeStructuredResumeNormalizes +
 // TestFinalizeStructuredResumeRejectsSuspicious.
@@ -72,6 +76,50 @@ describe('extract-structured-resume-from-source parse', () => {
     const got = parse(raw);
     expect(got.contact.name).toBe('Ada Lovelace');
     expect(got.experience[0].bullets[0].lead_in).toBe('Search');
+  });
+});
+
+// build() accepts the source string under `source`, `markdown`, or `typst`
+// so every caller shape lands on the same prompt.
+describe('extract-structured-resume-from-source build', () => {
+  const HERE = dirname(fileURLToPath(import.meta.url));
+  // web/static/js/prompt-handlers/profile → four levels below the repo root.
+  const PROMPTS_DIR = join(HERE, '..', '..', '..', '..', '..', 'web', 'static', 'i18n', 'prompts');
+  let realFetch;
+  beforeAll(() => {
+    realFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url) => {
+      const m = /\/static\/i18n\/prompts\/(.+\.json)$/.exec(String(url));
+      if (!m) throw new Error(`unexpected fetch: ${url}`);
+      const path = join(PROMPTS_DIR, m[1]);
+      if (!existsSync(path)) return { ok: false, status: 404 };
+      return { ok: true, status: 200, json: async () => JSON.parse(readFileSync(path, 'utf8')) };
+    });
+  });
+  afterAll(() => {
+    globalThis.fetch = realFetch;
+    _resetPromptCacheForTests();
+  });
+
+  it('accepts input.source', async () => {
+    const { user } = await build({ source: '#let name = "Ada"' }, 'en');
+    expect(user).toContain('Ada');
+  });
+
+  it('accepts input.markdown', async () => {
+    const { user } = await build({ markdown: '# Ada Lovelace' }, 'en');
+    expect(user).toContain('Ada Lovelace');
+  });
+
+  it('accepts input.typst', async () => {
+    const { user } = await build({ typst: '#heading[Ada]' }, 'en');
+    expect(user).toContain('#heading[Ada]');
+  });
+
+  it('throws when no source key carries content', async () => {
+    // t() returns the raw i18n key in the test env, so match on the key.
+    await expect(build({}, 'en')).rejects.toThrow(/source_required/);
+    await expect(build({ source: '   ' }, 'en')).rejects.toThrow(/source_required/);
   });
 });
 
