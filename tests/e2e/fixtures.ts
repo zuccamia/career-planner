@@ -1,9 +1,12 @@
-// Shared base for e2e specs. Force-exits each worker after all its tests
-// finish, skipping Playwright's own teardown which holds a keep-alive
-// socket to the webServer open for 5 minutes. Exits unconditionally now —
-// the `line` reporter flushes each test's assertion output before worker
-// teardown, so preserving failing-test output no longer requires waiting
-// for Playwright's natural shutdown.
+// Shared base for e2e specs. `_forceExit` skips Playwright's 5-min
+// keep-alive teardown on green runs. Failing runs skip the exit —
+// `process.exit(1)` mid-teardown makes Playwright overwrite the real
+// assertion with "worker exited unexpectedly" and cascade it to
+// unrelated tests on the same worker.
+//
+// Sporadic 5-min teardown hangs on green runs are a known Playwright
+// quirk (CDP/keep-alive races) that no fixture-level workaround has
+// solved without causing worse problems.
 import { test as base, expect } from '@playwright/test';
 
 let workerSawFailure = false;
@@ -15,10 +18,7 @@ export const test = base.extend<{ _trackFailure: void }, { _forceExit: void }>({
   }, { auto: true }],
   _forceExit: [async ({}, use) => {
     await use();
-    // Failing tests already emitted their diagnostic. Non-zero exit on
-    // failure so the harness still marks the worker as failed; zero on
-    // green so cleanup is silent.
-    process.exit(workerSawFailure ? 1 : 0);
+    if (!workerSawFailure) process.exit(0);
   }, { scope: 'worker', auto: true }],
 });
 

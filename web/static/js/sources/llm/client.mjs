@@ -48,14 +48,29 @@ const classifyError = (status, text, baseUrl) => {
   return { code: 'other', message: `HTTP ${status}${text ? `: ${text}` : ''}` };
 };
 
-// callOpenAICompatible sends the assembled prompt to the user's provider and
-// returns the raw string content of the assistant message. Response is
-// deliberately NOT decoded — the server's /parse/:name endpoint owns JSON
-// extraction + sanitization to stay identical to the server-side path.
+// callOpenAICompatible sends the assembled prompt to the user's provider.
+// Accepts either { system, user } (single-shot) or { messages, tools?,
+// tool_choice? } (multi-turn tool loop). Returns { content, toolCalls }
+// where `content` is the raw assistant string (may be '' when the model
+// only emits tool calls) and `toolCalls` is a normalized array of
+// { id, name, arguments } — `arguments` stays as the raw JSON string the
+// provider returned, callers own parsing. Response is deliberately NOT
+// JSON-decoded here; the server's /parse/:name endpoint owns extraction +
+// sanitization to keep the browser + server paths identical.
 export const callOpenAICompatible = async (prompt, cfg) => {
   if (!cfg || !cfg.baseUrl || !cfg.apiKey || !cfg.model) {
     throw Object.assign(new Error('BYOK config incomplete'), { code: 'config' });
   }
+  const messages = Array.isArray(prompt.messages)
+    ? prompt.messages
+    : [
+        { role: 'system', content: prompt.system },
+        { role: 'user', content: prompt.user },
+      ];
+  const body = { model: cfg.model, messages };
+  if (Array.isArray(prompt.tools) && prompt.tools.length) body.tools = prompt.tools;
+  if (prompt.tool_choice != null) body.tool_choice = prompt.tool_choice;
+
   const url = `${cfg.baseUrl.replace(/\/+$/, '')}/chat/completions`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -67,16 +82,7 @@ export const callOpenAICompatible = async (prompt, cfg) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${cfg.apiKey}`,
       },
-      body: JSON.stringify({
-        model: cfg.model,
-        messages: [
-          { role: 'system', content: prompt.system },
-          { role: 'user', content: prompt.user },
-        ],
-        // response_format is not sent — many OpenAI-compatible providers
-        // don't support json_object mode. The server's DecodeJSONResponse
-        // strips markdown fences either way.
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
   } catch (err) {
@@ -89,16 +95,42 @@ export const callOpenAICompatible = async (prompt, cfg) => {
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    // Distinguish "provider doesn't support tools" from generic 4xx so the
+    // tool-loop caller can fall back cleanly. Structured signals only: the
+    // OpenAI-style { error.param } and the substring "tool" in the field
+    // name ({unsupported_parameter, param: "tools"|"tool_choice"|...}).
+    if (body.tools && res.status === 400) {
+      let parsed = null;
+      try { parsed = JSON.parse(text); } catch { /* non-JSON body */ }
+      const param = parsed?.error?.param || '';
+      const errCode = parsed?.error?.code || '';
+      if ((errCode === 'unsupported_parameter' || errCode === 'invalid_request_error')
+          && /tool/i.test(param)) {
+        throw Object.assign(new Error(`Provider does not support tools: ${param}`), {
+          code: 'tools_unsupported', status: 400,
+        });
+      }
+    }
     const { code, message } = classifyError(res.status, text, cfg.baseUrl);
     throw Object.assign(new Error(message), { code, status: res.status });
   }
 
   const payload = await res.json();
-  const content = payload?.choices?.[0]?.message?.content;
-  if (typeof content !== 'string') {
+  const message = payload?.choices?.[0]?.message;
+  if (!message || typeof message !== 'object') {
     throw Object.assign(new Error('Provider returned an unexpected response shape'), { code: 'shape' });
   }
-  return content;
+  const content = typeof message.content === 'string' ? message.content : '';
+  const toolCalls = Array.isArray(message.tool_calls)
+    ? message.tool_calls
+        .filter((call) => call?.function?.name)
+        .map((call) => ({
+          id: call.id || '',
+          name: call.function.name,
+          arguments: typeof call.function.arguments === 'string' ? call.function.arguments : '',
+        }))
+    : [];
+  return { content, toolCalls };
 };
 
 // testConnection sends a minimal /chat/completions POST to confirm baseUrl +

@@ -16,15 +16,19 @@ import (
 // ---- helpers ----
 
 // fakeClient records the last prompt for assertion; stubLLM does not.
-// Both stand in for llm.Client.
+// Both stand in for llm.Client. `prompts` accumulates every call so tests
+// exercising multi-hop flows (e.g. Tailor: rank-per-category → draft) can
+// inspect intermediate prompts too.
 type fakeClient struct {
 	payload    string
 	err        error
 	lastPrompt llm.Prompt
+	prompts    []llm.Prompt
 }
 
 func (f *fakeClient) GenerateJSON(_ context.Context, p llm.Prompt, out any) error {
 	f.lastPrompt = p
+	f.prompts = append(f.prompts, p)
 	if f.err != nil {
 		return f.err
 	}
@@ -717,6 +721,21 @@ func TestRankBragsForJDPropagatesLLMError(t *testing.T) {
 	}
 }
 
+func TestRankBragsForJDIncludesProfileFitInPrompt(t *testing.T) {
+	brags, jd := testInputs()
+	fake := &fakeClient{payload: `{"ranked":[]}`}
+	svc := NewService(fake, nil, nil, nil)
+	fit := "### Strengths\n- Deep Go\n### Gaps\n- No k8s"
+	if _, err := svc.rankBragsForJD(context.Background(), RankBragsInput{
+		JDStructured: jd, Brags: brags, ProfileFit: fit,
+	}); err != nil {
+		t.Fatalf("rankBragsForJD: %v", err)
+	}
+	if !strings.Contains(fake.lastPrompt.User, fit) {
+		t.Fatalf("profile_fit not interpolated into rank prompt; user=%q", fake.lastPrompt.User)
+	}
+}
+
 // ---- tailor-draft-resume ----
 
 func TestSanitizeTailorResumeFiltersInvalidChanges(t *testing.T) {
@@ -755,5 +774,210 @@ func TestSanitizeTailorResumeFiltersInvalidChanges(t *testing.T) {
 	}
 	if out.Resume.Contact.Name != "Alex" {
 		t.Fatalf("contact not finalized: %#v", out.Resume.Contact)
+	}
+	// Each drop carries its reason so the panel can render what the model tried.
+	if len(out.RejectedChanges) != 4 {
+		t.Fatalf("expected 4 rejected changes, got %d: %#v", len(out.RejectedChanges), out.RejectedChanges)
+	}
+	wantReasons := []string{"suspicious_text", "invalid_index", "empty_or_noop", "invalid_index"}
+	for i, want := range wantReasons {
+		if out.RejectedChanges[i].Reason != want {
+			t.Errorf("rejects[%d].Reason = %q, want %q", i, out.RejectedChanges[i].Reason, want)
+		}
+	}
+}
+
+func TestTailorThreadsProfileFitIntoRankAndDraftPrompts(t *testing.T) {
+	// One brag in the experience bucket so rank fires once, then draft fires
+	// once → fake.prompts holds both.
+	fake := &fakeClient{payload: `{"ranked":[{"brag_id":1,"relevance":0.9,"swap_priority":0.9}],"resume":{"contact":{"name":"Alex"}}}`}
+	svc := NewService(fake, nil, nil, nil)
+	fit := "### Strengths\n- Payments\n### Gaps\n- Frontend"
+	_, err := svc.Tailor(context.Background(), TailorInput{
+		JDStructured:         json.RawMessage(`{"role_title":"Engineer","function":"engineering"}`),
+		Profile:              ProfileForTailor{Headline: "Backend eng"},
+		BaseResumeStructured: profile.ResumeStructured{Experience: []profile.ResumeExperience{{Company: "Acme", Bullets: []profile.ResumeExperienceItem{{Description: "X"}}}}},
+		RoleSignals:          "### Desirable skills\n- Go",
+		ProfileFit:           fit,
+		Brags:                []BragForRanking{{ID: 1, Title: "Shipped payments API", Category: "experience"}},
+		OutputLanguage:       "en",
+	})
+	if err != nil {
+		t.Fatalf("Tailor: %v", err)
+	}
+	if len(fake.prompts) < 2 {
+		t.Fatalf("expected ≥2 prompts (rank + draft), got %d", len(fake.prompts))
+	}
+	for i, p := range fake.prompts {
+		if !strings.Contains(p.User, fit) {
+			t.Fatalf("prompt %d missing profile_fit; user=%q", i, p.User)
+		}
+	}
+}
+
+// ---- tailor-with-tools (turn) ----
+
+// fakeTurner scripts a sequence of ChatTurn responses and records the
+// messages it was called with. Implements both llm.Client (no-op
+// GenerateJSON) and llm.ChatTurner.
+type fakeTurner struct {
+	responses  []llm.ChatTurnResponse
+	callCount  int
+	lastReq    llm.ChatTurnRequest
+	turnErr    error
+	requireErr error
+}
+
+func (f *fakeTurner) GenerateJSON(_ context.Context, _ llm.Prompt, _ any) error {
+	return nil
+}
+
+func (f *fakeTurner) ChatTurn(_ context.Context, req llm.ChatTurnRequest) (llm.ChatTurnResponse, error) {
+	f.callCount++
+	f.lastReq = req
+	if f.requireErr != nil && f.callCount == 1 {
+		return llm.ChatTurnResponse{}, f.requireErr
+	}
+	if f.turnErr != nil {
+		return llm.ChatTurnResponse{}, f.turnErr
+	}
+	idx := f.callCount - 1
+	if idx >= len(f.responses) {
+		return llm.ChatTurnResponse{}, errors.New("no more scripted responses")
+	}
+	return f.responses[idx], nil
+}
+
+func newTailorTurnInput() TailorTurnRequest {
+	return TailorTurnRequest{
+		Input: TailorInput{
+			JDStructured: json.RawMessage(`{"role_title":"Engineer","function":"engineering"}`),
+			Profile:      ProfileForTailor{Headline: "Senior engineer"},
+			BaseResumeStructured: profile.ResumeStructured{
+				Contact:    profile.ResumeContact{Name: "Alex"},
+				Experience: []profile.ResumeExperience{{Company: "Acme", Bullets: []profile.ResumeExperienceItem{{Description: "Shipped X"}}}},
+			},
+			RoleSignals:    "### Desirable skills\n- Go",
+			ProfileFit:     "Strong Go background.",
+			OutputLanguage: "en",
+		},
+	}
+}
+
+func TestTailorTurnRequiresClient(t *testing.T) {
+	svc := &Service{}
+	_, err := svc.TailorTurn(context.Background(), newTailorTurnInput())
+	if !errors.Is(err, llm.ErrClientNotConfigured) {
+		t.Fatalf("expected ErrClientNotConfigured, got %v", err)
+	}
+}
+
+func TestTailorTurnRejectsWhenClientHasNoChatTurner(t *testing.T) {
+	svc := NewService(&stubLLM{}, nil, nil, nil)
+	_, err := svc.TailorTurn(context.Background(), newTailorTurnInput())
+	if err == nil {
+		t.Fatal("expected tools-unsupported error")
+	}
+	var apiErr *llm.APIError
+	if !errors.As(err, &apiErr) || !apiErr.IsToolSupportError() {
+		t.Fatalf("expected llm.APIError with IsToolSupportError=true, got %v", err)
+	}
+}
+
+func TestTailorTurnReturnsToolCalls(t *testing.T) {
+	turner := &fakeTurner{
+		responses: []llm.ChatTurnResponse{{
+			ToolCalls: []llm.ChatToolCall{{
+				ID:       "call_1",
+				Function: llm.ChatToolCallFunc{Name: "search_brags", Arguments: `{"query":"latency"}`},
+			}},
+		}},
+	}
+	svc := NewService(turner, nil, nil, nil)
+	resp, err := svc.TailorTurn(context.Background(), newTailorTurnInput())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Function.Name != "search_brags" {
+		t.Fatalf("tool_calls mismatch: %#v", resp.ToolCalls)
+	}
+	if resp.Result != nil {
+		t.Fatalf("Result should be nil when tool_calls returned: %#v", resp.Result)
+	}
+	// System + user only; no exchanges appended on turn 1.
+	if len(turner.lastReq.Messages) != 2 {
+		t.Fatalf("expected 2 initial messages, got %d", len(turner.lastReq.Messages))
+	}
+	if len(turner.lastReq.Tools) != 3 {
+		t.Fatalf("expected 3 tool defs (get_brags, search_brags, search_resumes), got %d", len(turner.lastReq.Tools))
+	}
+}
+
+func TestTailorTurnAppendsExchangesToMessages(t *testing.T) {
+	turner := &fakeTurner{
+		responses: []llm.ChatTurnResponse{{Content: `{"resume":{"contact":{"name":"Alex"}}}`}},
+	}
+	svc := NewService(turner, nil, nil, nil)
+	in := newTailorTurnInput()
+	in.Exchanges = []TailorTurnExchange{{
+		ToolCalls: []llm.ChatToolCall{{
+			ID:       "call_1",
+			Function: llm.ChatToolCallFunc{Name: "search_brags", Arguments: `{"query":"latency"}`},
+		}},
+		ToolResults: []TailorTurnToolResult{{
+			ID:         "call_1",
+			ResultJSON: json.RawMessage(`{"results":[{"id":1,"title":"Cut latency 40%"}]}`),
+		}},
+	}}
+	if _, err := svc.TailorTurn(context.Background(), in); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// system + user + assistant(tool_calls) + tool(result) = 4 messages.
+	if got := len(turner.lastReq.Messages); got != 4 {
+		t.Fatalf("expected 4 messages, got %d", got)
+	}
+	assistant := turner.lastReq.Messages[2]
+	if assistant.Role != "assistant" || len(assistant.ToolCalls) != 1 {
+		t.Fatalf("assistant turn mismatch: %#v", assistant)
+	}
+	tool := turner.lastReq.Messages[3]
+	if tool.Role != "tool" || tool.ToolCallID != "call_1" {
+		t.Fatalf("tool turn mismatch: %#v", tool)
+	}
+	if !strings.Contains(tool.Content, "Cut latency 40%") {
+		t.Fatalf("tool content missing result payload: %q", tool.Content)
+	}
+}
+
+func TestTailorTurnParsesFinalDraft(t *testing.T) {
+	final := `{"resume":{"contact":{"name":"Alex"},"experience":[{"company":"Acme","bullets":[{"description":"Cut latency 40% on the checkout flow."}]}]}}`
+	turner := &fakeTurner{
+		responses: []llm.ChatTurnResponse{{Content: final}},
+	}
+	svc := NewService(turner, nil, nil, nil)
+	resp, err := svc.TailorTurn(context.Background(), newTailorTurnInput())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Result == nil {
+		t.Fatal("Result should be populated when the model emits final content")
+	}
+	if resp.Result.Resume.Contact.Name != "Alex" {
+		t.Fatalf("final resume not parsed: %#v", resp.Result.Resume.Contact)
+	}
+	if len(resp.ToolCalls) != 0 {
+		t.Fatalf("ToolCalls should be empty on final turn: %#v", resp.ToolCalls)
+	}
+}
+
+func TestTailorTurnSurfacesProviderToolSupportError(t *testing.T) {
+	turner := &fakeTurner{
+		turnErr: &llm.APIError{Message: "tools is not supported by this provider"},
+	}
+	svc := NewService(turner, nil, nil, nil)
+	_, err := svc.TailorTurn(context.Background(), newTailorTurnInput())
+	var apiErr *llm.APIError
+	if !errors.As(err, &apiErr) || !apiErr.IsToolSupportError() {
+		t.Fatalf("expected llm.APIError with IsToolSupportError=true, got %v", err)
 	}
 }

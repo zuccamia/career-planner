@@ -11,7 +11,7 @@ import {
   subheadTitle,
 } from '../../ui/components.mjs';
 import { openSlideOver, closeSlideOver, isSlideOverOpen } from '../../ui/slide_over.mjs';
-import { getApplication, parseRoleSignals, parsedJD, analyzeAndCacheRoleSignals } from '../../entities/applications.mjs';
+import { getApplication, parseRoleSignals, parsedJD, analyzeAndCacheRoleSignals, parseProfileFit } from '../../entities/applications.mjs';
 import { listResumes, getResume, listBragEntries, getOverview } from '../../entities/profile.mjs';
 import { extractStructuredResumeFromSource } from '../../rpc.mjs';
 import { tailorResume } from '../../clients/tailor/service.mjs';
@@ -25,7 +25,7 @@ const PANEL_ID = 'tailor-resume-panel';
 // Module-local state — cleared on close.
 let currentApplication = null;
 let resumesById = new Map();
-let latestDraft = null; // { title, changes, base, atsKeywords, coverage, typst, overflow }
+let latestDraft = null; // { title, changes, rejectedChanges, base, atsKeywords, coverage, typst, overflow }
 let bragsById = new Map();
 
 const resetState = () => {
@@ -241,6 +241,35 @@ const groupChangesBySection = (changes, base) => {
   return out;
 };
 
+// Collapsed diagnostic for sanitizer drops. Hidden when zero rejects.
+const REJECT_REASON_KEYS = new Set([
+  'invalid_index', 'empty_or_noop', 'suspicious_text', 'hallucinated_before',
+]);
+const rejectedChangesHtml = (rejected) => {
+  if (!Array.isArray(rejected) || rejected.length === 0) return '';
+  const items = rejected.map((r) => {
+    const reasonKey = REJECT_REASON_KEYS.has(r.reason) ? r.reason : 'unknown';
+    const reasonLabel = t(`applications.tailor.result.rejected.reason.${reasonKey}`);
+    const rawJSON = escapeHtml(JSON.stringify(r.raw ?? {}, null, 2));
+    return `
+      <li class="space-y-1">
+        <p class="${CLS.helpText}">${escapeHtml(reasonLabel)}</p>
+        <details class="text-xs">
+          <summary class="cursor-pointer text-ink-faint">${escapeHtml(t('applications.tailor.result.rejected.raw'))}</summary>
+          <pre class="${CLS.codeText} mt-1 whitespace-pre-wrap">${rawJSON}</pre>
+        </details>
+      </li>`;
+  }).join('');
+  return `
+    <details class="mt-4 rounded-xl border border-line-strong bg-surface p-4">
+      <summary class="cursor-pointer text-sm font-semibold text-ink">
+        ${escapeHtml(t('applications.tailor.result.rejected.title', { count: rejected.length }))}
+      </summary>
+      <p class="mt-2 ${CLS.helpText}">${escapeHtml(t('applications.tailor.result.rejected.hint'))}</p>
+      <ul class="mt-3 space-y-3">${items}</ul>
+    </details>`;
+};
+
 const resultSectionHtml = (draft) => {
   const overflow = draft.overflow
     ? inlineWarning({ id: 'tailor-overflow', message: t('applications.tailor.result.overflow') })
@@ -259,6 +288,7 @@ const resultSectionHtml = (draft) => {
     ${overflow}
     ${coverageStripHtml(draft.coverage)}
     ${diffs}
+    ${rejectedChangesHtml(draft.rejectedChanges)}
     <div class="${CLS.actionRowEnd}">
       ${button({ id: 'btn-tailor-open-draft', variant: 'primaryCompact', icon: 'edit', label: t('applications.tailor.action.open_draft') })}
     </div>
@@ -324,11 +354,14 @@ const runTailor = async () => {
     const baseStructured = await stepped(step, 'parse_base',
       () => extractStructuredResumeFromSource(baseWithBody.body, locale));
 
+    // profile_fit seeds the tool-loop path; empty is fine (prompt handles it).
+    const fit = parseProfileFit(currentApplication.profile_fit)?.fit || '';
     const tailored = await tailorResume({
       jd_structured: jd,
       profile,
       base_resume_structured: baseStructured,
       role_signals: signals,
+      profile_fit: fit,
       brags,
     }, { locale, onStep: step });
 
@@ -340,6 +373,7 @@ const runTailor = async () => {
     latestDraft = {
       title,
       changes: tailored.changes,
+      rejectedChanges: tailored.rejected_changes || [],
       base: baseStructured,
       atsKeywords: envelope.ats_keywords,
       coverage,

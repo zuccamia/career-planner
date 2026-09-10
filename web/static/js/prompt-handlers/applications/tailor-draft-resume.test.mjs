@@ -73,5 +73,27 @@ describe('tailor-draft-resume parse', () => {
     });
     expect(parse(raw).changes[0].citations).toEqual(['one', 'two', 'three']);
   });
+
+  it('records dropped changes with a per-entry reason', () => {
+    const base = {
+      experience: [{ company: 'Acme', bullets: [{ description: 'Shipped X' }] }],
+    };
+    const raw = JSON.stringify({
+      changes: [
+        { section: 'headline', entry_index: 0, before: 'x', after: 'y' },                            // invalid_index (unknown section)
+        { section: 'experience', entry_index: 0, bullet_index: 0, before: 'X', after: 'X' },        // empty_or_noop (identical)
+        { section: 'experience', entry_index: 0, bullet_index: 0, before: 'wrong quote', after: 'z' }, // hallucinated_before
+        { section: 'experience', entry_index: 0, bullet_index: 0, before: 'Shipped X', after: 'Shipped the checkout redesign.' }, // valid
+      ],
+      resume: { contact: { name: 'Alex' } },
+    });
+    const out = parse(raw, { base });
+    expect(out.changes).toHaveLength(1);
+    expect(out.rejected_changes).toHaveLength(3);
+    const reasons = out.rejected_changes.map((r) => r.reason);
+    expect(reasons).toEqual(['invalid_index', 'empty_or_noop', 'hallucinated_before']);
+    // Raw payload survives verbatim so the UI can show what the model tried.
+    expect(out.rejected_changes[2].raw.before).toBe('wrong quote');
+  });
 });
 

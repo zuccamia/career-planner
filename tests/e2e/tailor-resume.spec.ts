@@ -78,6 +78,14 @@ const setupTailorMocks = async (page: Page) => {
       body: JSON.stringify({ signals: BRIEF_MARKDOWN, ats_keywords: ['Go', 'PostgreSQL'] }) });
   });
 
+  // Analyze slide-over runs role-signals + analyze-fit sequentially. Without
+  // this stub the fit call hits the real server, hangs on the LLM-missing
+  // response, and leaves a keepalive socket open past worker teardown.
+  await page.route('**/api/applications/analyze-fit', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ fit: '### Strengths\n- Go\n### Gaps\n- k8s' }) }),
+  );
+
   await page.route('**/api/profile/import-resume', (route) => {
     counters.extract++;
     return route.fulfill({ status: 200, contentType: 'application/json',
@@ -89,29 +97,42 @@ const setupTailorMocks = async (page: Page) => {
       }) });
   });
 
-  // Composite endpoint. Server-side ranks + drafts internally; mock returns
-  // the final TailorResumeResponse ({changes, resume}).
+  const TAILORED = {
+    changes: [{
+      section: 'experience',
+      entry_index: 0,
+      bullet_index: 0,
+      before: 'Base bullet.',
+      after: 'Owned end-to-end payments API delivery.',
+      brag_id: 1,
+      citations: ['Go'],
+    }],
+    resume: {
+      contact: { name: 'Alex' },
+      experience: [{ company: 'Prior', title: 'Engineer',
+        bullets: [{ description: 'Owned end-to-end payments API delivery.' }] }],
+      projects: [{ name: 'Prior project', description: 'Refit for the role.' }],
+      activities: [{ name: 'Prior activity', description: 'Refit for the role.' }],
+    },
+  };
+
+  // Server-LLM dispatch now targets /tailor/turn first (server drives the
+  // tool loop, browser executes tools). The model returns final content
+  // directly with no tool calls, so the response envelope is { result }.
+  await page.route('**/api/applications/tailor/turn', (route) => {
+    counters.tailor++;
+    return route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ result: TAILORED }) });
+  });
+
+  // Bundled fallback endpoint — hit only when /tailor/turn returns a
+  // tools-unsupported error (not exercised in the golden path today, but
+  // stubbed so a future regression that trips the fallback branch has a
+  // deterministic response instead of timing out on the real server).
   await page.route('**/api/applications/tailor', (route) => {
     counters.tailor++;
     return route.fulfill({ status: 200, contentType: 'application/json',
-      body: JSON.stringify({
-        changes: [{
-          section: 'experience',
-          entry_index: 0,
-          bullet_index: 0,
-          before: 'Base bullet.',
-          after: 'Owned end-to-end payments API delivery.',
-          brag_id: 1,
-          citations: ['Go'],
-        }],
-        resume: {
-          contact: { name: 'Alex' },
-          experience: [{ company: 'Prior', title: 'Engineer',
-            bullets: [{ description: 'Owned end-to-end payments API delivery.' }] }],
-          projects: [{ name: 'Prior project', description: 'Refit for the role.' }],
-          activities: [{ name: 'Prior activity', description: 'Refit for the role.' }],
-        },
-      }) });
+      body: JSON.stringify(TAILORED) });
   });
 
   return counters;

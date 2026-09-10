@@ -14,7 +14,16 @@ import (
 
 func main() {
 	application := app.New()
-	srv := &http.Server{Addr: application.Addr, Handler: application.Router}
+	// IdleTimeout caps how long keep-alive connections stay idle. Without it
+	// Go's default is unlimited — Chromium's shutdown then waits on those
+	// sockets during Playwright teardown, which shows up as workers hanging
+	// past all-tests-done. 5s is short enough to release cleanly, long enough
+	// to reuse across a single page's fetches.
+	srv := &http.Server{
+		Addr:        application.Addr,
+		Handler:     application.Router,
+		IdleTimeout: 5 * time.Second,
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

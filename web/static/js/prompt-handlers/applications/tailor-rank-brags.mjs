@@ -73,12 +73,14 @@ export const build = async (input, locale) => {
   const brags = input?.brags;
   const base = input?.base_resume_structured;
   const signals = input?.role_signals ?? '';
+  const fit = input?.profile_fit ?? '';
   if (!jd) throw new Error('jd_structured is required');
   if (!profile) throw new Error('profile is required');
   if (!base) throw new Error('base_resume_structured is required');
   if (!Array.isArray(brags) || brags.length === 0) throw new Error('brags is required');
   return buildFormattedWithJDPersona('applications/tailor-rank-brags', locale, jd,
     signals,
+    fit,
     JSON.stringify(jd),
     JSON.stringify(profile),
     flattenBaseResume(base),

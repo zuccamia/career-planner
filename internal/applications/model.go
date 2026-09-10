@@ -157,6 +157,7 @@ type RankBragsInput struct {
 	BaseResumeStructured profile.ResumeStructured `json:"base_resume_structured"`
 	Brags                []BragForRanking         `json:"brags"`
 	RoleSignals          string                   `json:"role_signals,omitempty"`
+	ProfileFit           string                   `json:"profile_fit,omitempty"`
 	OutputLanguage       string                   `json:"output_language"`
 }
 
@@ -200,23 +201,65 @@ type TailorChange struct {
 	Reasoning   string   `json:"reasoning,omitempty"`
 }
 
-// TailorResumeResponse: no Title field — the client renders {company} — {role}
-// deterministically, so an LLM title would be discarded anyway.
+// No Title field — the client renders {company} — {role} deterministically.
+// RejectedChanges surfaces sanitizer drops so the UI can show what the
+// model tried instead of swallowing it silently.
 type TailorResumeResponse struct {
-	Changes []TailorChange           `json:"changes,omitempty"`
-	Resume  profile.ResumeStructured `json:"resume"`
+	Changes         []TailorChange           `json:"changes,omitempty"`
+	RejectedChanges []RejectedTailorChange   `json:"rejected_changes,omitempty"`
+	Resume          profile.ResumeStructured `json:"resume"`
+}
+
+// Reason is one of: invalid_index, empty_or_noop, suspicious_text, hallucinated_before.
+type RejectedTailorChange struct {
+	Raw    TailorChange `json:"raw"`
+	Reason string       `json:"reason"`
 }
 
 // TailorInput is the composite endpoint's request body: unranked brags in one
 // list. Server splits by category, ranks each (chunked if large), takes top-N,
-// then runs the tailor prompt.
+// then runs the tailor prompt. ProfileFit is unused by the bundled path and
+// only consumed by the tool-loop turn endpoint.
 type TailorInput struct {
 	JDStructured         json.RawMessage          `json:"jd_structured"`
 	Profile              ProfileForTailor         `json:"profile"`
 	BaseResumeStructured profile.ResumeStructured `json:"base_resume_structured"`
 	RoleSignals          string                   `json:"role_signals,omitempty"`
+	ProfileFit           string                   `json:"profile_fit,omitempty"`
 	Brags                []BragForRanking         `json:"brags"`
 	OutputLanguage       string                   `json:"output_language"`
+}
+
+// ---- tailor-with-tools (turn) ----
+
+// TailorTurnRequest is one turn of the browser-driven tool loop. On turn 1
+// Exchanges is empty; every subsequent turn appends the model's tool_calls
+// and the browser-executed tool_results from the previous turn.
+type TailorTurnRequest struct {
+	Input     TailorInput          `json:"input"`
+	Exchanges []TailorTurnExchange `json:"exchanges,omitempty"`
+}
+
+// TailorTurnExchange pairs one round of tool_calls (model → browser) with the
+// browser-executed tool_results (browser → server) on the next turn.
+type TailorTurnExchange struct {
+	ToolCalls   []llm.ChatToolCall     `json:"tool_calls"`
+	ToolResults []TailorTurnToolResult `json:"tool_results"`
+}
+
+// TailorTurnToolResult carries one search_brags / search_resumes result the
+// browser executed locally. ResultJSON is passed through verbatim into the
+// tool-role message content.
+type TailorTurnToolResult struct {
+	ID         string          `json:"id"`
+	ResultJSON json.RawMessage `json:"result_json"`
+}
+
+// TailorTurnResponse: exactly one of ToolCalls / Result is populated per turn.
+// ToolCalls = model wants more info; Result = final parsed draft.
+type TailorTurnResponse struct {
+	ToolCalls []llm.ChatToolCall    `json:"tool_calls,omitempty"`
+	Result    *TailorResumeResponse `json:"result,omitempty"`
 }
 
 // ---- internal ----

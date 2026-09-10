@@ -16,5 +16,6 @@
   "015_brag_entry_category.sql",
   "016_application_tailor_signals.sql",
   "017_application_events_status_since_index.sql",
-  "018_role_signals_and_profile_fit.sql"
+  "018_role_signals_and_profile_fit.sql",
+  "019_search_index.sql"
 ]

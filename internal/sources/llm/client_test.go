@@ -141,7 +141,7 @@ func TestGenerateJSONOpenAICompatibleSuccessAndAuthHeader(t *testing.T) {
 			t.Errorf("authorization header = %q", r.Header.Get("authorization"))
 		}
 		_ = json.NewEncoder(w).Encode(openAICompatibleResponse{
-			Choices: []openAICompatibleChoice{{Message: openAICompatibleMessage{Content: `{"ok":true}`}}},
+			Choices: []openAICompatibleChoice{{Message: openAICompatibleChoiceMessage{Content: `{"ok":true}`}}},
 		})
 	}))
 	defer srv.Close()
@@ -161,7 +161,7 @@ func TestGenerateJSONOpenAICompatibleNoAuthHeaderWhenKeyEmpty(t *testing.T) {
 			t.Errorf("authorization header should be absent when api key empty; got %q", r.Header.Get("authorization"))
 		}
 		_ = json.NewEncoder(w).Encode(openAICompatibleResponse{
-			Choices: []openAICompatibleChoice{{Message: openAICompatibleMessage{Content: `{"ok":true}`}}},
+			Choices: []openAICompatibleChoice{{Message: openAICompatibleChoiceMessage{Content: `{"ok":true}`}}},
 		})
 	}))
 	defer srv.Close()
@@ -188,7 +188,7 @@ func TestGenerateJSONOpenAICompatibleEmptyChoices(t *testing.T) {
 func TestGenerateJSONMalformedInnerJSONReturnsAPIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(openAICompatibleResponse{
-			Choices: []openAICompatibleChoice{{Message: openAICompatibleMessage{Content: `not-json`}}},
+			Choices: []openAICompatibleChoice{{Message: openAICompatibleChoiceMessage{Content: `not-json`}}},
 		})
 	}))
 	defer srv.Close()

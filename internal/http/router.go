@@ -143,6 +143,7 @@ func NewRouter(companiesService *companies.Service, applicationsService *applica
 	mux.Handle("POST /api/applications/analyze-role-signals", llm(server.rpcAnalyzeRoleSignals))
 	mux.Handle("POST /api/applications/analyze-fit", llm(server.rpcAnalyzeFit))
 	mux.Handle("POST /api/applications/tailor", llm(server.rpcTailor))
+	mux.Handle("POST /api/applications/tailor/turn", llm(server.rpcTailorTurn))
 	mux.Handle("POST /api/profile/generate-brag-tags", llm(server.rpcGenerateBragTags))
 	mux.Handle("POST /api/profile/import-brags", llm(server.rpcImportBrags))
 	mux.Handle("POST /api/profile/import-overview", llm(server.rpcImportOverview))

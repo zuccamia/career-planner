@@ -20,6 +20,10 @@ func tailorDraftResumePrompts() llm.PromptSets {
 	return llm.PromptSet("applications/tailor-draft-resume")
 }
 
+func tailorWithToolsPrompts() llm.PromptSets {
+	return llm.PromptSet("applications/tailor-with-tools")
+}
+
 func analyzeRoleSignalsPrompts() llm.PromptSets {
 	return llm.PromptSet("applications/analyze-role-signals")
 }

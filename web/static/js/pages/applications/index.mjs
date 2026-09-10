@@ -445,14 +445,8 @@ const attachmentCardHtml = (att) => {
   `;
 };
 
-// Rollup of résumés drafted against this application. Static rows (no
-// per-row click) + a single "View" link to Profile → Résumés scoped by
-// application_id. Mirrors companies.mjs's Applications rollup.
 const tailoredResumesSectionHtml = (a, tailored) => {
   const heading = sectionTitle(t('applications.tailor.section.title'));
-  const viewLink = tailored.length
-    ? `<a href="${urlFor(`profile?tab=resumes&application_id=${a.id}`)}" class="${CLS.linkAction}">${t('applications.tailor.section.view')}</a>`
-    : '';
   const summaryLine = tailored.length
     ? (tailored.length === 1
         ? t('applications.tailor.section.count_one')
@@ -467,10 +461,7 @@ const tailoredResumesSectionHtml = (a, tailored) => {
     </div>`).join('');
   return `
     <div class="space-y-3">
-      <div class="${CLS.formRow}">
-        ${heading}
-        ${viewLink}
-      </div>
+      ${heading}
       ${tailored.length ? `<div class="${CLS.divider}">${rows}</div>` : helpText(summaryLine)}
       ${tailored.length ? helpText(summaryLine) : ''}
     </div>

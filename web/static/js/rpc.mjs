@@ -34,7 +34,8 @@ const llmCall = async (name, input, serverPath, outputLanguage, onStep = noopSte
     // step before invoking llmCall.
     const cfg = await getByokLLMConfig();
     const { system, user, ...extras } = await stepped(onStep, 'prompt', () => builders[name](withLang, lang));
-    const raw = await stepped(onStep, 'generate', () => callOpenAICompatible({ system, user }, cfg));
+    const raw = await stepped(onStep, 'generate',
+      async () => (await callOpenAICompatible({ system, user }, cfg)).content);
     return stepped(onStep, 'parse', () => Promise.resolve(parsers[name](raw, { input: withLang, ...extras })));
   }
 

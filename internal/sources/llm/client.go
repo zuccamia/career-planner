@@ -32,6 +32,56 @@ type Client interface {
 	GenerateJSON(ctx context.Context, prompt Prompt, out any) error
 }
 
+// ChatMessage / ChatTool / ChatToolCall mirror the OpenAI chat schema so
+// the browser tool loop can round-trip messages without transformation.
+type ChatMessage struct {
+	Role       string         `json:"role"`
+	Content    string         `json:"content,omitempty"`
+	ToolCallID string         `json:"tool_call_id,omitempty"`
+	ToolCalls  []ChatToolCall `json:"tool_calls,omitempty"`
+}
+
+type ChatTool struct {
+	Type     string           `json:"type"`
+	Function ChatToolFunction `json:"function"`
+}
+
+type ChatToolFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+}
+
+// Arguments stays a raw JSON string per OpenAI convention.
+type ChatToolCall struct {
+	ID       string           `json:"id"`
+	Type     string           `json:"type,omitempty"`
+	Function ChatToolCallFunc `json:"function"`
+}
+
+type ChatToolCallFunc struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+type ChatTurnRequest struct {
+	Messages   []ChatMessage `json:"messages"`
+	Tools      []ChatTool    `json:"tools,omitempty"`
+	ToolChoice any           `json:"tool_choice,omitempty"`
+}
+
+// Exactly one of Content / ToolCalls is populated per turn.
+type ChatTurnResponse struct {
+	Content   string         `json:"content"`
+	ToolCalls []ChatToolCall `json:"tool_calls,omitempty"`
+}
+
+// Implemented by *HTTPClient for OpenAI-compatible. Other providers return
+// an APIError where IsToolSupportError is true so callers can fall back.
+type ChatTurner interface {
+	ChatTurn(ctx context.Context, req ChatTurnRequest) (ChatTurnResponse, error)
+}
+
 // HTTPClient calls a configured LLM provider over HTTP.
 type HTTPClient struct {
 	config     Config
@@ -244,5 +294,57 @@ type openAICompatibleResponse struct {
 }
 
 type openAICompatibleChoice struct {
-	Message openAICompatibleMessage `json:"message"`
+	Message openAICompatibleChoiceMessage `json:"message"`
+}
+
+type openAICompatibleChoiceMessage struct {
+	Role      string         `json:"role"`
+	Content   string         `json:"content"`
+	ToolCalls []ChatToolCall `json:"tool_calls,omitempty"`
+}
+
+// ---- chat/tool-loop turn ----
+
+// Anthropic returns an APIError that trips IsToolSupportError so callers
+// can fall back cleanly.
+func (c *HTTPClient) ChatTurn(ctx context.Context, req ChatTurnRequest) (ChatTurnResponse, error) {
+	switch c.config.Provider {
+	case ProviderOpenAICompatible:
+		return c.chatTurnOpenAICompatible(ctx, req)
+	case ProviderAnthropic:
+		return ChatTurnResponse{}, &APIError{Message: "tools is not supported by this provider (anthropic)"}
+	default:
+		return ChatTurnResponse{}, &ConfigError{Message: fmt.Sprintf("unsupported provider %q", c.config.Provider)}
+	}
+}
+
+// response_format is omitted — tool-emitting models don't reliably accept
+// json_object mode and tools together.
+type openAICompatibleChatTurnRequest struct {
+	Model      string        `json:"model"`
+	Messages   []ChatMessage `json:"messages"`
+	Tools      []ChatTool    `json:"tools,omitempty"`
+	ToolChoice any           `json:"tool_choice,omitempty"`
+}
+
+func (c *HTTPClient) chatTurnOpenAICompatible(ctx context.Context, req ChatTurnRequest) (ChatTurnResponse, error) {
+	body := openAICompatibleChatTurnRequest{
+		Model:      c.config.Model,
+		Messages:   req.Messages,
+		Tools:      req.Tools,
+		ToolChoice: req.ToolChoice,
+	}
+	headers := map[string]string{"content-type": "application/json"}
+	if c.config.APIKey != "" {
+		headers["authorization"] = "Bearer " + c.config.APIKey
+	}
+	var response openAICompatibleResponse
+	if err := c.doJSONRequest(ctx, http.MethodPost, c.config.BaseURL+"/chat/completions", body, headers, &response); err != nil {
+		return ChatTurnResponse{}, err
+	}
+	if len(response.Choices) == 0 {
+		return ChatTurnResponse{}, &APIError{Message: "openai-compatible response contained no choices"}
+	}
+	msg := response.Choices[0].Message
+	return ChatTurnResponse{Content: msg.Content, ToolCalls: msg.ToolCalls}, nil
 }

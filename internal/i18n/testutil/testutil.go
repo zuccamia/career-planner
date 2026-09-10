@@ -15,25 +15,28 @@ import (
 	"github.com/zuccamia/career-planner/internal/sources/llm"
 )
 
-// MustLoadPrompts hydrates llm.PromptSet for the whole test binary. Meant to
-// be called from a package-level init() in _test.go so it fires before any
-// TestFoo touches a prompt getter. Fatal-logs on failure since tests cannot
-// meaningfully continue without prompts loaded.
+// MustLoadPrompts hydrates llm.PromptSet + llm.ToolSchema for the whole test
+// binary. Meant to be called from a package-level init() in _test.go so it
+// fires before any TestFoo touches a prompt or tool-schema getter. Fatal-logs
+// on failure since tests cannot meaningfully continue without them loaded.
 func MustLoadPrompts() {
-	if err := llm.LoadPrompts(promptsDirFromCaller()); err != nil {
+	root := repoRootFromCaller()
+	if err := llm.LoadPrompts(filepath.Join(root, "web", "static", "i18n", "prompts")); err != nil {
 		log.Fatalf("testutil: load prompts: %v", err)
+	}
+	if err := llm.LoadToolSchemas(filepath.Join(root, "web", "static", "tool-schemas")); err != nil {
+		log.Fatalf("testutil: load tool schemas: %v", err)
 	}
 }
 
-// promptsDirFromCaller walks up from this source file's directory to the repo
-// root (go.mod) and returns web/static/i18n/prompts/ underneath. Same walk as
-// BundlesDir/PromptsDir but no *testing.TB dependency — usable from init().
-func promptsDirFromCaller() string {
+// repoRootFromCaller walks up from this source file's directory to the repo
+// root (go.mod). No *testing.TB dependency — usable from init().
+func repoRootFromCaller() string {
 	_, this, _, _ := runtime.Caller(0)
 	dir := filepath.Dir(this)
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return filepath.Join(dir, "web", "static", "i18n", "prompts")
+			return dir
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {

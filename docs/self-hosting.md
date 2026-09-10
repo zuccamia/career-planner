@@ -36,9 +36,10 @@ doesn't route through the demo's Google Cloud project.
 
 ## Web scraping
 
-The dossier builder can pull live company website content, and JD extraction
-can fall back to a rendered scrape for non-Greenhouse/Lever/Ashby URLs, when
-a scraper is configured. Two backends behind one interface:
+The dossier builder pulls live company website content when a scraper is
+configured; JD extraction falls back to it for Ashby and unknown hosts.
+Greenhouse, Lever, Eightfold, SmartRecruiters, and Workable postings use
+their public APIs and don't need a scraper. Two backends behind one interface:
 
 | Backend | Setup | Best for |
 |---|---|---|
