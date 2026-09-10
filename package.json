@@ -29,6 +29,6 @@
     "@tailwindcss/cli": "^4.3.3",
     "happy-dom": "^15.7.0",
     "tailwindcss": "^4.3.3",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.11"
   }
 }
