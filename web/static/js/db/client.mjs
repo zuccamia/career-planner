@@ -21,12 +21,12 @@ const ensureWorker = () => {
   };
 };
 
-// Release the SAH pool on page navigation so the next page's DB worker can
-// acquire it without hitting the "App already open in another tab" race.
-// `beforeunload` also disables BFCache, so return-visits re-init cleanly.
+// Graceful shutdown (worker calls db.close + pauseVfs + self.close). The
+// next page's initDb retries on SAH-lock so a slow release doesn't surface
+// as a user error. `beforeunload` disables BFCache so return-visits re-init.
 export const disposeWorker = () => {
   if (worker) {
-    try { worker.postMessage({ id: 0, type: 'shutdown' }); } catch {}
+    try { worker.postMessage({ type: 'shutdown' }); } catch {}
     worker = null;
   }
   pending.clear();
@@ -41,7 +41,34 @@ const call = (type, extra = {}, transfer) => new Promise((resolve, reject) => {
   worker.postMessage({ id, type, ...extra }, transfer || []);
 });
 
-export const initDb = (dbName) => call('init', { dbName });
+// Retry SAH-lock failures so the old page's async worker shutdown doesn't
+// race the new page's init. Also retry when the worker never responds
+// (hung mid-acquire), since Chromium's OPFS cleanup can pause the worker
+// without throwing. Two-tab collisions exhaust the retries and throw.
+const isSAHLockError = (err) => {
+  const msg = err?.message || String(err);
+  return msg.includes('another open Access Handle') || msg.includes('Access Handles cannot be created');
+};
+export const initDb = async (dbName) => {
+  const attempts = 6;
+  const delayMs = 400;
+  const perAttemptTimeoutMs = 3000;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await Promise.race([
+        call('init', { dbName }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('init timeout')), perAttemptTimeoutMs)),
+      ]);
+    } catch (err) {
+      const retriable = isSAHLockError(err) || err.message === 'init timeout';
+      if (!retriable || i === attempts - 1) throw err;
+      try { worker?.terminate(); } catch {}
+      worker = null;
+      pending.clear();
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+};
 export const exec = async (sql, bind) => (await call('exec', { sql, bind })).rows;
 export const exportDb = () => call('export');
 export const importDb = (bytes) => call('import', { bytes }, [bytes.buffer]);

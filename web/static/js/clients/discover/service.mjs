@@ -132,7 +132,7 @@ export const discoverInBrowser = async (req, { onStep = noopStep } = {}) => {
 
   const query = await stepped(onStep, 'expand', async () => {
     const expandPrompt = await buildExpandPrompt(req, locale);
-    const expandRaw = await callOpenAICompatible({ system: expandPrompt.system, user: expandPrompt.user }, cfg);
+    const { content: expandRaw } = await callOpenAICompatible({ system: expandPrompt.system, user: expandPrompt.user }, cfg);
     const q = finalizeExpandQuery(decodeJSONResponse(expandRaw), req);
     if (q.role_variants.length === 0) {
       const headline = (req.profile?.headline || '').trim();
@@ -175,7 +175,7 @@ export const discoverInBrowser = async (req, { onStep = noopStep } = {}) => {
 
   const recs = await stepped(onStep, 'rank', async () => {
     const rankPrompt = await buildRankPrompt({ request: req, postings: survivors, limit }, locale);
-    const rankRaw = await callOpenAICompatible({ system: rankPrompt.system, user: rankPrompt.user }, cfg);
+    const { content: rankRaw } = await callOpenAICompatible({ system: rankPrompt.system, user: rankPrompt.user }, cfg);
     const ranked = finalizeRankJobs(decodeJSONResponse(rankRaw), survivors, limit);
     return await filterDeadLinks(ranked, goneCache);
   });

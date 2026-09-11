@@ -249,6 +249,24 @@ export const listBragEntriesByCompany = async (companyID) => {
   return rows.map(hydrateBragEntry);
 };
 
+// Preserves caller's id order; drops unknown ids silently (LLMs hallucinate).
+export const listBragEntriesByIds = async (ids) => {
+  const wanted = (Array.isArray(ids) ? ids : [])
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  if (!wanted.length) return [];
+  const placeholders = wanted.map(() => '?').join(', ');
+  const rows = await exec(
+    `SELECT b.*, c.official_name AS company_name
+     FROM brag_entries b
+     LEFT JOIN companies c ON c.id = b.company_id
+     WHERE b.id IN (${placeholders})`,
+    wanted,
+  );
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return wanted.map((id) => byId.get(id)).filter(Boolean).map(hydrateBragEntry);
+};
+
 export const createBragEntry = async (data) => {
   const n = sanitizeBragEntryFields(data);
   const values = BRAG_EDITABLE_COLS.map(c => n[c]);
@@ -275,6 +293,61 @@ export const updateBragEntry = async (id, data) => {
 
 export const deleteBragEntry = (id) =>
   exec('DELETE FROM brag_entries WHERE id = ?', [id]);
+
+// ---- FTS search ----
+// Backs search_brags / search_resumes tool calls (BM25 order via migration 019).
+
+// FTS5 MATCH treats -, :, *, ^, quotes, parens, and bare AND/OR/NEAR
+// as operators — a hyphen in "data-driven" is enough to throw
+// SQLITE_ERROR. Wrap each whitespace-split term as a quoted phrase so
+// the whole query is a literal AND of phrases with no operator parsing.
+const sanitizeFtsQuery = (raw) => {
+  const cleaned = String(raw ?? '').replace(/"/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return '';
+  return cleaned.split(' ').map((term) => `"${term}"`).join(' ');
+};
+
+export const searchBrags = async ({ query, category = null, limit = 10 } = {}) => {
+  const match = sanitizeFtsQuery(query);
+  if (!match) return [];
+  const cap = Math.max(1, Math.min(Number(limit) || 10, 50));
+  const cat = category ? coerceCategory(category) : null;
+  const sql = cat
+    ? `SELECT b.*, c.official_name AS company_name
+       FROM brag_entries_fts f
+       JOIN brag_entries b ON b.id = f.rowid
+       LEFT JOIN companies c ON c.id = b.company_id
+       WHERE brag_entries_fts MATCH ? AND b.category = ?
+       ORDER BY bm25(brag_entries_fts) LIMIT ?`
+    : `SELECT b.*, c.official_name AS company_name
+       FROM brag_entries_fts f
+       JOIN brag_entries b ON b.id = f.rowid
+       LEFT JOIN companies c ON c.id = b.company_id
+       WHERE brag_entries_fts MATCH ?
+       ORDER BY bm25(brag_entries_fts) LIMIT ?`;
+  const bind = cat ? [match, cat, cap] : [match, cap];
+  const rows = await exec(sql, bind);
+  return rows.map(hydrateBragEntry);
+};
+
+// LIKE scan (résumé corpus is tiny; this tool is a rare fallback).
+// `%`/`_` stripped so LLM tokens can't act as wildcards.
+export const searchResumes = async ({ query, limit = 5 } = {}) => {
+  const tokens = sanitizeFtsQuery(query).replace(/[%_\\]/g, ' ').split(/\s+/).filter(Boolean);
+  if (!tokens.length) return [];
+  const cap = Math.max(1, Math.min(Number(limit) || 5, 20));
+  const clauses = tokens.map(() => '(title LIKE ? OR body LIKE ?)').join(' AND ');
+  const binds = tokens.flatMap((t) => [`%${t}%`, `%${t}%`]);
+  const rows = await exec(
+    `SELECT id, title, format, body, is_primary, application_id, updated_at
+     FROM resumes
+     WHERE ${clauses}
+     ORDER BY is_primary DESC, datetime(updated_at) DESC, id DESC
+     LIMIT ?`,
+    [...binds, cap],
+  );
+  return rows.map(hydrateResume);
+};
 
 // ---- career sparks ----
 // Career sparks — freeform criteria the user cares about. Ordered list.

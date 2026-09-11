@@ -252,6 +252,7 @@ func (s *Service) rankBragsForJD(ctx context.Context, in RankBragsInput) (RankBr
 		User: fmt.Sprintf(
 			set.User,
 			in.RoleSignals,
+			in.ProfileFit,
 			string(in.JDStructured),
 			string(profileJSON),
 			profile.FlattenBaseResume(in.BaseResumeStructured),
@@ -335,7 +336,7 @@ func (s *Service) Tailor(ctx context.Context, in TailorInput) (TailorResumeRespo
 			set.User,
 			bulletWordCap,
 			in.RoleSignals,
-			string(in.JDStructured),
+			in.ProfileFit,
 			string(profileJSON),
 			string(baseJSON),
 			string(expJSON),
@@ -350,6 +351,49 @@ func (s *Service) Tailor(ctx context.Context, in TailorInput) (TailorResumeRespo
 	return sanitizeTailorResume(raw, in.BaseResumeStructured, collectBragIDs(ranked)), nil
 }
 
+// One turn of the tool-driven tailor loop. Returns either the model's next
+// tool_calls (browser executes locally) or the parsed final draft. Stateless
+// — the caller sends the full exchange history each turn.
+func (s *Service) TailorTurn(ctx context.Context, req TailorTurnRequest) (TailorTurnResponse, error) {
+	if err := llm.RequireClient(s.client); err != nil {
+		return TailorTurnResponse{}, err
+	}
+	turner, ok := s.client.(llm.ChatTurner)
+	if !ok {
+		return TailorTurnResponse{}, &llm.APIError{Message: "tools is not supported by this provider"}
+	}
+	if err := validateJDForTailor(req.Input.JDStructured, req.Input.OutputLanguage); err != nil {
+		return TailorTurnResponse{}, err
+	}
+	messages, err := assembleTailorTurnMessages(req)
+	if err != nil {
+		return TailorTurnResponse{}, err
+	}
+	resp, err := turner.ChatTurn(ctx, llm.ChatTurnRequest{Messages: messages, Tools: tailorToolDefs()})
+	if err != nil {
+		return TailorTurnResponse{}, err
+	}
+	// Server sees each turn in isolation; concatenating log lines by request
+	// reconstructs the full loop shape.
+	turnNum := len(req.Exchanges) + 1
+	if len(resp.ToolCalls) > 0 {
+		names := make([]string, len(resp.ToolCalls))
+		for i, tc := range resp.ToolCalls {
+			names[i] = tc.Function.Name
+		}
+		log.Printf("tailor-turn turn=%d tools=%v", turnNum, names)
+		return TailorTurnResponse{ToolCalls: resp.ToolCalls}, nil
+	}
+	var raw TailorResumeResponse
+	if err := llm.DecodeJSONResponse(resp.Content, &raw); err != nil {
+		log.Printf("tailor-turn turn=%d final=parse_fail: %v", turnNum, err)
+		return TailorTurnResponse{}, err
+	}
+	log.Printf("tailor-turn turn=%d final=draft", turnNum)
+	cleaned := sanitizeTailorResume(raw, req.Input.BaseResumeStructured, nil)
+	return TailorTurnResponse{Result: &cleaned}, nil
+}
+
 // rankAndSelectTopN fans out per-category rank goroutines; returns top-N
 // per category keyed on profile.BragCategory.* tokens.
 func (s *Service) rankAndSelectTopN(ctx context.Context, in TailorInput) (map[string][]BragForRanking, error) {
@@ -359,6 +403,7 @@ func (s *Service) rankAndSelectTopN(ctx context.Context, in TailorInput) (map[st
 		Profile:              in.Profile,
 		BaseResumeStructured: in.BaseResumeStructured,
 		RoleSignals:          in.RoleSignals,
+		ProfileFit:           in.ProfileFit,
 		OutputLanguage:       in.OutputLanguage,
 	}
 	type bucketResult struct {
@@ -398,24 +443,23 @@ func (s *Service) rankAndSelectTopN(ctx context.Context, in TailorInput) (map[st
 func sanitizeTailorResume(raw TailorResumeResponse, base profile.ResumeStructured, validBrags map[int64]struct{}) TailorResumeResponse {
 	resume := profile.FinalizeImportedResume(raw.Resume)
 	changes := make([]TailorChange, 0, len(raw.Changes))
-	dropped := 0
+	rejects := make([]RejectedTailorChange, 0)
+	reject := func(ch TailorChange, reason string) {
+		rejects = append(rejects, RejectedTailorChange{Raw: ch, Reason: reason})
+	}
 	for _, ch := range raw.Changes {
 		if !validTailorChangeIndex(ch.Section, ch.EntryIndex, ch.BulletIndex, base) {
-			dropped++
+			reject(ch, "invalid_index")
 			continue
 		}
-		before := strings.TrimSpace(ch.Before)
+		before := strings.TrimSpace(baseTextAt(ch.Section, ch.EntryIndex, ch.BulletIndex, base))
 		after := strings.TrimSpace(ch.After)
-		if before == "" || after == "" || before == after {
-			dropped++
+		if after == "" || before == after {
+			reject(ch, "empty_or_noop")
 			continue
 		}
-		if llm.IsSuspiciousText(before) || llm.IsSuspiciousText(after) {
-			dropped++
-			continue
-		}
-		if strings.TrimSpace(baseTextAt(ch.Section, ch.EntryIndex, ch.BulletIndex, base)) != before {
-			dropped++
+		if llm.IsSuspiciousText(after) {
+			reject(ch, "suspicious_text")
 			continue
 		}
 		// Unknown/negative brag_id → drop the attribution, keep the edit.
@@ -434,10 +478,10 @@ func sanitizeTailorResume(raw TailorResumeResponse, base profile.ResumeStructure
 			Reasoning:   llm.SanitizeText(ch.Reasoning),
 		})
 	}
-	if dropped > 0 {
-		log.Printf("tailor-draft-resume suspicious-or-invalid-changes dropped=%d", dropped)
+	if len(rejects) > 0 {
+		log.Printf("tailor-draft-resume suspicious-or-invalid-changes dropped=%d", len(rejects))
 	}
-	return TailorResumeResponse{Changes: changes, Resume: resume}
+	return TailorResumeResponse{Changes: changes, RejectedChanges: rejects, Resume: resume}
 }
 
 // ---- helpers ----

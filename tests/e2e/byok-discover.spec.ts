@@ -1,7 +1,5 @@
-// BYOK variant covering discover. Exercises the JS
-// prompt-handlers/discover/{expand-query,rank-jobs}.mjs handlers by driving
-// the Discover panel with a fake BYOK provider + stubbed search + stubbed
-// ATS extract results.
+// BYOK variant for discover expand-query + rank-jobs, with stubbed search
+// and ATS extract responses.
 
 import { expect, test, type Page } from './fixtures';
 import { enableBYOK, interceptBYOKLLM } from './byok-fixtures';

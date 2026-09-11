@@ -1,8 +1,6 @@
-// BYOK variant of profile-import.spec.ts. Enables BYOK and intercepts the
-// outbound /chat/completions POST so the browser exercises the JS
-// build()/parse() handlers under prompt-handlers/profile/*. Covers the
-// interface where field-name drift between rpc.mjs and each handler hides
-// (the `source` vs `markdown`/`typst` bug lived here).
+// BYOK variant of profile-import.spec.ts — exercises the browser-side
+// build()/parse() handlers under prompt-handlers/profile/* against a
+// mocked provider response.
 
 import { expect, test, type Page } from './fixtures';
 import { enableBYOK, interceptBYOKLLM, scriptedBYOKResponder } from './byok-fixtures';
@@ -46,9 +44,7 @@ test.describe('profile import — BYOK', () => {
     await page.locator('#ri-markdown').fill('# Ada Lovelace\n\nEngineer.\n');
     await page.getByRole('button', { name: 'Build Typst résumé' }).click();
 
-    // The review panel appears; the Typst source contains canned content —
-    // proving both build() (prompt assembly) and parse() (finalizer) ran
-    // client-side against the LLM response.
+    // Canned content in the Typst source proves build() + parse() both ran.
     const source = page.locator('#ri-typst-source');
     await expect(source).toBeVisible({ timeout: 15_000 });
     const value = await source.inputValue();
@@ -56,9 +52,8 @@ test.describe('profile import — BYOK', () => {
     expect(value).toContain('Analytical Engine Institute');
     expect(value).toContain('Difference Engine Co');
 
-    // Exactly one LLM call — the import-resume flow. Prompt body carries the
-    // markdown we filled in, proving build() interpolated the source field
-    // (regression guard for the source/markdown/typst bug).
+    // One LLM call carrying the filled markdown in its user message —
+    // asserts build() interpolated the source field.
     expect(calls).toHaveLength(1);
     const userMessage = calls[0].messages.find((m) => m.role === 'user');
     expect(userMessage?.content).toContain('Ada Lovelace');

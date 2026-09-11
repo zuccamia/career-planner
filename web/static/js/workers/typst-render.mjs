@@ -5,7 +5,7 @@ const HOUSE_PREAMBLE = `// Generated from an imported CV — edit freely.
 
 #set page(paper: "us-letter", margin: (x: 0.5in, y: 0.4in))
 #set text(font: "Libertinus Serif", size: 11pt)
-#set par(justify: true, leading: 0.59em)
+#set par(justify: true, leading: 0.65em)
 #show link: set text(blue)
 
 // Section heading: small-caps title with a thin rule underneath.
@@ -131,7 +131,8 @@ ${lines}
 const renderExperience = (experience) => {
   if (!experience || !experience.length) return '';
   const blocks = experience.map((entry) => {
-    const header = `#expEntry(\n  "${escapeTypst(entry.company)}", "${escapeTypst(entry.location || '')}",\n  "${escapeTypst(entry.title || '')}", "${escapeTypst(entry.division || '')}",\n  "${escapeTypst(entry.dates || '')}")`;
+    const urlArg = entry.url ? `, url: "${escapeTypst(entry.url)}"` : '';
+    const header = `#expEntry(\n  "${escapeTypst(entry.company)}", "${escapeTypst(entry.location || '')}",\n  "${escapeTypst(entry.title || '')}", "${escapeTypst(entry.division || '')}",\n  "${escapeTypst(entry.dates || '')}"${urlArg})`;
     const bullets = (entry.bullets || []).map((bullet) =>
       `#rItem("${escapeTypst(bullet.lead_in || '')}",\n  "${escapeTypst(bullet.description || '')}")`,
     ).join('\n');

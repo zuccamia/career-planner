@@ -150,6 +150,7 @@ type ResumeEducation struct {
 // team within a company); `Bullets` are the per-role achievement items.
 type ResumeExperience struct {
 	Company  string                 `json:"company"`
+	URL      string                 `json:"url,omitempty"`
 	Location string                 `json:"location,omitempty"`
 	Title    string                 `json:"title,omitempty"`
 	Division string                 `json:"division,omitempty"`

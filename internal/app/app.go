@@ -45,6 +45,9 @@ func New() App {
 	if err := llm.LoadPrompts(filepath.Join("web", "static", "i18n", "prompts")); err != nil {
 		log.Fatalf("llm prompts: %v", err)
 	}
+	if err := llm.LoadToolSchemas(filepath.Join("web", "static", "tool-schemas")); err != nil {
+		log.Fatalf("llm tool schemas: %v", err)
+	}
 	if err := ats.LoadProviders(filepath.Join("web", "static", "data")); err != nil {
 		log.Fatalf("ats providers: %v", err)
 	}

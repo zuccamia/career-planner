@@ -1,6 +1,5 @@
-// BYOK variant covering companies/lookup + build-dossier. Exercises the
-// JS prompt-handlers/companies/{lookup,build-dossier}.mjs handlers via the
-// editor's Look-up button and the details panel's Build-dossier action.
+// BYOK variant for companies/lookup + build-dossier via the editor's
+// Look-up button and the details panel's Build-dossier action.
 
 import { expect, test, type Page } from './fixtures';
 import { enableBYOK, interceptBYOKLLM } from './byok-fixtures';

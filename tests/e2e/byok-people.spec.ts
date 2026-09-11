@@ -1,20 +1,15 @@
-// BYOK variant covering people flows. Exercises the JS
-// prompt-handlers/people/{summarize-thread,generate-message}.mjs handlers
-// through the threads panel's Summarize + Draft outreach buttons.
+// BYOK variant for summarize-thread + generate-message via the threads panel.
 
 import { expect, test, type Page } from './fixtures';
 import { enableBYOK, interceptBYOKLLM, scriptedBYOKResponder } from './byok-fixtures';
 
 const gotoPeople = async (page: Page) => {
   await page.goto('/people');
-  // Wait for the client-mounted Add-person button rather than SSR text — SSR
-  // sidebar links render before boot(), and evaluating before initDb() fails
-  // with "DB not initialized" when we seed via entity helpers.
+  // Wait for the client-mounted button — SSR text renders before initDb().
   await expect(page.getByRole('button', { name: 'Add person' })).toBeVisible({ timeout: 30_000 });
 };
 
-// Seed a person + one thread + one inbound entry so both LLM buttons are
-// enabled (they gate on having at least one entry).
+// One thread + one entry — both LLM buttons need at least one entry to enable.
 const seedPersonAndThread = async (page: Page) => {
   await gotoPeople(page);
   return page.evaluate(async () => {

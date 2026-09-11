@@ -1,6 +1,4 @@
-// BYOK variant covering extract-job-description. Exercises the JS
-// prompt-handlers/applications/extract-job-description handler (build +
-// parse) end-to-end via the details panel's Re-extract action.
+// BYOK variant for extract-job-description via the details panel's Re-extract.
 
 import { expect, test, type Page } from './fixtures';
 import { enableBYOK, interceptBYOKLLM, scriptedBYOKResponder } from './byok-fixtures';

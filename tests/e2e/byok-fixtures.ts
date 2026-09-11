@@ -1,19 +1,14 @@
-// Shared BYOK helpers for e2e specs.
-//
-// BYOK e2e specs cover the JS build()/parse() handlers that BYOK-inactive
-// specs skip. Each helper here sets up one leg of the BYOK path: seed the
-// config in IndexedDB so isByokLLMActive() returns true, then intercept
-// outbound calls to the configured provider so no real LLM runs.
+// Shared BYOK helpers for e2e specs: seed a fake config in IDB so
+// isByokLLMActive() returns true, then intercept outbound provider calls
+// so no real LLM runs.
 
 import type { Page, Route } from '@playwright/test';
 
-// Fake provider host — must be a pattern page.route can catch. `.test` is a
-// reserved TLD so no accidental external traffic reaches a real server.
+// `.test` is a reserved TLD, so a stray fetch can't reach anything real.
 const BYOK_BASE_URL = 'https://byok-mock.test/v1';
 const BYOK_HOST_GLOB = '**/byok-mock.test/**';
 
-// enableBYOK persists a fake BYOK config through the app's own IDB layer, so
-// isByokLLMActive() reads back what we wrote. Call after page.goto().
+// Persists a fake BYOK config via the app's IDB layer. Call after page.goto().
 export const enableBYOK = async (page: Page, overrides: Partial<{ baseUrl: string; apiKey: string; model: string }> = {}) => {
   const config = { baseUrl: BYOK_BASE_URL, apiKey: 'sk-test', model: 'stub', ...overrides };
   await page.evaluate(async (cfg) => {
@@ -22,20 +17,14 @@ export const enableBYOK = async (page: Page, overrides: Partial<{ baseUrl: strin
   }, config);
 };
 
-// One entry in the request log we hand back to specs.
 export interface BYOKCall {
   messages: any[];
   tools?: any[];
   toolChoice?: any;
 }
 
-// interceptBYOKLLM captures every /chat/completions POST and answers with the
-// caller-provided responder. Responses are wrapped in the OpenAI-compat
-// { choices: [{ message: ... }] } envelope callOpenAICompatible expects.
-//
-// The responder receives the parsed request body plus a zero-based call index.
-// Return { content?, toolCalls? } — content defaults to '' when only tool
-// calls fire, toolCalls defaults to [] for a normal response.
+// Captures every /chat/completions POST and answers via the caller's
+// responder. Responses are wrapped in the OpenAI-compat choices envelope.
 export const interceptBYOKLLM = async (
   page: Page,
   respond: (call: BYOKCall, index: number) =>
@@ -61,8 +50,7 @@ export const interceptBYOKLLM = async (
   return { calls };
 };
 
-// scriptedBYOKResponder is the common shape: a fixed list of replies, returned
-// in order. Useful when you just want turn 1 → tool_calls, turn 2 → final.
+// Returns queued replies in order; last reply is repeated after exhaustion.
 export const scriptedBYOKResponder = (
   responses: Array<{ content?: string; toolCalls?: any[] }>,
 ) => (_call: BYOKCall, index: number) => responses[index] ?? responses[responses.length - 1];

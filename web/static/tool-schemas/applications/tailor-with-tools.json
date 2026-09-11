@@ -1,0 +1,73 @@
+[
+  {
+    "type": "function",
+    "function": {
+      "name": "get_brags",
+      "description": "Fetch specific brag entries by id. Use for brags cited by id in the fit analysis (format `[#<id> - ...]`); use search_brags for exploratory retrieval. Skip if the fit cites no brag ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 1 },
+            "minItems": 1,
+            "maxItems": 8,
+            "description": "Brag ids to fetch. At most 8 per call."
+          }
+        },
+        "required": ["ids"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_brags",
+      "description": "Full-text search the candidate's brag entries (accomplishments). Returns the top matches in BM25 order. Call once per section (experience / project / activity) and again with different queries when the first results miss a role-signals bullet.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Space-separated keywords. Use terms from the JD, role_signals, or the base résumé — not full sentences."
+          },
+          "category": {
+            "type": "string",
+            "enum": ["experience", "project", "activity"],
+            "description": "Restrict to one section: experience, project, or activity. Omit to search all."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "description": "Max results. Default 10."
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "search_resumes",
+      "description": "Full-text search the candidate's past résumés for phrasing you can reuse. Only helpful when the base résumé + brags leave a role-signals bullet uncovered.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Space-separated keywords."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "Max results. Default 5."
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  }
+]

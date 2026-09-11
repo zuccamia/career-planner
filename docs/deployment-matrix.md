@@ -33,10 +33,9 @@ user's BYOK key stored in the browser.
 | Brag tags, résumé, summary, message | ✅ | ❌ | ❌ |
 | Discover | ✅ | 🌐 for Ashby + unknown hosts¹ | ✅ |
 
-¹ Greenhouse and Lever expose CORS-open JSON APIs, so the browser hits them
-directly. Ashby is the only known-structured ATS whose posting pages aren't
-CORS-friendly (HTML page, no CORS headers) — a BYOK scraper is needed to
-read them, same story for unknown hosts.
+¹ Greenhouse, Lever, Eightfold, SmartRecruiters, Workable expose CORS-open
+APIs — browser hits them directly. Ashby (HTML, no CORS) and unknown hosts
+need a BYOK scraper.
 
 ## Routing rule
 
@@ -61,10 +60,9 @@ one round trip. Same for scraper and search.
 
 ## Static host caveats
 
-Every stage must be BYOK. Missing configuration throws a user-facing error
-at request time. Discover works without a BYOK scraper only for Greenhouse
-and Lever URLs (their APIs are CORS-open); Ashby and unknown hosts require
-one.
+Every stage must be BYOK. Missing config throws a user-facing error at
+request time. Discover works without a BYOK scraper for CORS-open ATS URLs
+(see footnote above); Ashby and unknown hosts need one.
 
 ## Where the pieces live
 
@@ -84,3 +82,45 @@ Browser (`web/static/js/`)
   1:1 ports of the Go `Build*Prompt` / `Finalize*` pairs.
 - Source clients: `web/static/js/sources/{llm,scrape,search}/client.mjs`.
 - Discover composer: `web/static/js/clients/discover/service.mjs`.
+
+## Tailor tool loop
+
+The only flow with a multi-turn tool-calling loop. Both LLM paths share
+the same loop; 🌐 always executes tool calls against local FTS
+(`brag_entries_fts` + resumes) — that's where the brag inventory lives.
+
+| Path                    | When                 | Prompt | LLM | Parse | Tools |
+|-------------------------|----------------------|:------:|:---:|:-----:|:-----:|
+| `tailorInBrowser`       | BYOK LLM active      |   🌐   | 🌐  |  🌐   |  🌐   |
+| `tailorOnServer`        | Server LLM available |   🖥️   | 🖥️  |  🖥️   |  🌐   |
+| `tailorOnServerBundled` | Neither (fallback)   |   🖥️   | 🖥️  |  🖥️   |   —   |
+
+```
+   build prompt + tool schemas
+             │
+             ▼
+    ┌── LLM turn ──┐
+    │              │
+    │ tool_calls   │ final content
+    ▼              ▼
+ dispatch     parse draft ─► return
+  local       (search_brags   → brag_entries_fts BM25)
+              (search_resumes → resumes LIKE)
+    │
+    └─ append results, next turn
+
+   on {tools_unsupported | tool_loop_failed | parse_fail}
+      └─► fallback → bundled rank+draft (`tailorOnServerBundled`)
+```
+
+Exit conditions (all failures route to the bundled fallback):
+
+- **Return** — final draft (no `tool_calls`) parses.
+- **Cap** — hits `MAX_TOOL_ITERATIONS = 6` → `tool_loop_failed`.
+- **Empty turn** — neither `tool_calls` nor content → `tool_loop_failed`.
+- **Provider rejects tools** — 400 with `tool`-related `error.param` → `tools_unsupported`.
+
+Endpoints:
+
+- `POST /api/applications/tailor/turn` — server tool-loop, per turn.
+- `POST /api/applications/tailor` — bundled fallback, one shot.

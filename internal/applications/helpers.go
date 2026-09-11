@@ -1,6 +1,8 @@
 package applications
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"sort"
 	"strings"
@@ -359,4 +361,49 @@ func normalizeEducationLabel(value string) string {
 	default:
 		return ""
 	}
+}
+
+// ---- tailor-with-tools (turn) helpers ----
+
+// Loaded via ToolSchema (not a var) so it resolves at request time, after
+// LoadToolSchemas runs at boot — same pattern as the prompt getters.
+func tailorToolDefs() []llm.ChatTool {
+	return llm.ToolSchema("applications/tailor-with-tools")
+}
+
+// Assembles [system, user, ...exchange_pairs] from the request. Server is
+// stateless; caller sends the full exchange history each turn.
+func assembleTailorTurnMessages(req TailorTurnRequest) ([]llm.ChatMessage, error) {
+	set := llm.PickPromptSet(tailorWithToolsPrompts(), req.Input.OutputLanguage)
+	profileJSON, err := json.Marshal(req.Input.Profile)
+	if err != nil {
+		return nil, fmt.Errorf("marshal profile: %w", err)
+	}
+	baseJSON, err := json.Marshal(req.Input.BaseResumeStructured)
+	if err != nil {
+		return nil, fmt.Errorf("marshal base resume: %w", err)
+	}
+	system := buildPersonifiedSystem(set, req.Input.JDStructured)
+	user := fmt.Sprintf(set.User,
+		bulletWordCap,
+		req.Input.RoleSignals,
+		req.Input.ProfileFit,
+		string(profileJSON),
+		string(baseJSON),
+	)
+	msgs := []llm.ChatMessage{
+		{Role: "system", Content: system},
+		{Role: "user", Content: user},
+	}
+	for _, ex := range req.Exchanges {
+		msgs = append(msgs, llm.ChatMessage{Role: "assistant", ToolCalls: ex.ToolCalls})
+		for _, tr := range ex.ToolResults {
+			msgs = append(msgs, llm.ChatMessage{
+				Role:       "tool",
+				ToolCallID: tr.ID,
+				Content:    string(tr.ResultJSON),
+			})
+		}
+	}
+	return msgs, nil
 }

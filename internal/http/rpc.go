@@ -282,6 +282,24 @@ func (s *Server) rpcTailor(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
+// rpcTailorTurn runs one turn of the tool-driven tailor loop. The browser
+// sends { input, exchanges }; we assemble the prompt + prior tool exchanges,
+// call the LLM once, and return either the next tool_calls the browser must
+// execute or the parsed final draft. Loop iteration + tool execution live
+// browser-side.
+func (s *Server) rpcTailorTurn(w http.ResponseWriter, r *http.Request) {
+	var in applications.TailorTurnRequest
+	if !decodeJSON(r, w, &in) {
+		return
+	}
+	out, err := s.applications.TailorTurn(r.Context(), in)
+	if err != nil {
+		writeServiceErr(w, r, "tailor-turn", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // Wire shape shared by summarize/generate-message handlers.
 type threadDetailPayload struct {
 	Thread struct {

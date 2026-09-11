@@ -9,7 +9,7 @@ import { finalizeImportResume } from '../profile/import-resume.mjs';
 
 // Must match bulletWordCap in internal/applications/tailor.go so the LLM
 // sees the same soft limit on both paths.
-const BULLET_WORD_CAP = 40;
+export const BULLET_WORD_CAP = 40;
 
 const CHANGE_SECTIONS = new Set(['experience', 'projects', 'activities']);
 
@@ -34,44 +34,49 @@ const baseTextAt = (section, entryIndex, bulletIndex, base) => {
   return null;
 };
 
+// Returns { clean, reason }: clean is the sanitized entry when accepted;
+// reason is a stable enum matching internal/applications/service.go so both
+// paths render the same UI labels. `before` is derived from the base — the
+// LLM only supplies `after`, index, brag_id, citations, reasoning.
 const sanitizeChange = (raw, base) => {
-  if (!raw || typeof raw !== 'object') return null;
-  if (!CHANGE_SECTIONS.has(raw.section)) return null;
+  if (!raw || typeof raw !== 'object') return { clean: null, reason: 'invalid_index' };
+  if (!CHANGE_SECTIONS.has(raw.section)) return { clean: null, reason: 'invalid_index' };
   const entryIndex = nonNegInt(raw.entry_index);
-  if (entryIndex === null) return null;
+  if (entryIndex === null) return { clean: null, reason: 'invalid_index' };
   const bulletIndex = nonNegInt(raw.bullet_index);
-  const before = sanitizeText(raw.before ?? '');
+  const baseText = baseTextAt(raw.section, entryIndex, bulletIndex, base);
+  if (baseText === null) return { clean: null, reason: 'invalid_index' };
+  const before = String(baseText).trim();
   const after = sanitizeText(raw.after ?? '');
-  if (!before || !after || before === after) return null;
-  // Drop if `before` doesn't match the base text at that position — guards
-  // against LLM hallucinating a base line that never existed.
-  if (base) {
-    const expected = baseTextAt(raw.section, entryIndex, bulletIndex, base);
-    if (expected === null || String(expected).trim() !== before) return null;
-  }
+  if (!after || before === after) return { clean: null, reason: 'empty_or_noop' };
   const bragID = Number.isInteger(Number(raw.brag_id)) && Number(raw.brag_id) > 0
     ? Number(raw.brag_id) : 0;
   return {
-    section: raw.section,
-    entry_index: entryIndex,
-    bullet_index: bulletIndex,
-    before,
-    after,
-    brag_id: bragID,
-    citations: sanitizeCitations(raw.citations),
-    reasoning: sanitizeText(raw.reasoning ?? ''),
+    clean: {
+      section: raw.section,
+      entry_index: entryIndex,
+      bullet_index: bulletIndex,
+      before,
+      after,
+      brag_id: bragID,
+      citations: sanitizeCitations(raw.citations),
+      reasoning: sanitizeText(raw.reasoning ?? ''),
+    },
+    reason: null,
   };
 };
 
 export const parse = (raw, { base = null } = {}) => {
   const decoded = decodeJSONResponse(raw) ?? {};
   const changes = [];
+  const rejected_changes = [];
   for (const entry of decoded.changes ?? []) {
-    const cleaned = sanitizeChange(entry, base);
-    if (cleaned) changes.push(cleaned);
+    const { clean, reason } = sanitizeChange(entry, base);
+    if (clean) changes.push(clean);
+    else rejected_changes.push({ raw: entry, reason });
   }
   const resume = finalizeImportResume(decoded.resume ?? {});
-  return { changes, resume };
+  return { changes, rejected_changes, resume };
 };
 
 export const build = async (input, locale) => {
@@ -79,6 +84,7 @@ export const build = async (input, locale) => {
   const profile = input?.profile;
   const base = input?.base_resume_structured;
   const signals = input?.role_signals ?? '';
+  const fit = input?.profile_fit ?? '';
   const experienceBrags = input?.experience_brags ?? [];
   const projectBrags = input?.project_brags ?? [];
   const activityBrags = input?.activity_brags ?? [];
@@ -91,7 +97,7 @@ export const build = async (input, locale) => {
   return buildFormattedWithJDPersona('applications/tailor-draft-resume', locale, jd,
     String(BULLET_WORD_CAP),
     signals,
-    JSON.stringify(jd),
+    fit,
     JSON.stringify(profile),
     JSON.stringify(base),
     JSON.stringify(experienceBrags),
