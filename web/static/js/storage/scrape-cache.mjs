@@ -16,6 +16,7 @@
 // a new failure mode.
 
 import { availableBackends, localDisk, googleDrive } from './index.mjs';
+import { attachmentKey } from './config.mjs';
 
 const FOLDER = 'scrapes';
 const SIDECAR_SUFFIX = '.json';
@@ -55,8 +56,9 @@ export const getCachedScrape = async (url, provider, ttlSeconds) => {
   const backends = [localDisk, googleDrive].filter(b => b.isAvailable());
   for (const b of backends) {
     try {
-      if (!(await b.hasAttachment(FOLDER, key + SIDECAR_SUFFIX))) continue;
-      const sidecarBytes = await b.loadAttachment(FOLDER, key + SIDECAR_SUFFIX);
+      const sidecarKey = attachmentKey(FOLDER, key + SIDECAR_SUFFIX);
+      if (!(await b.hasBlob(sidecarKey))) continue;
+      const sidecarBytes = await b.readBlob(sidecarKey);
       const meta = JSON.parse(decoder.decode(sidecarBytes));
       const ageSec = (Date.now() - new Date(meta.fetchedAt).getTime()) / 1000;
       if (ageSec > (meta.ttlSeconds ?? ttlSeconds)) {
@@ -64,7 +66,7 @@ export const getCachedScrape = async (url, provider, ttlSeconds) => {
         removeStaleEntry(key).catch(err => console.warn('scrape-cache: evict failed', err));
         return null;
       }
-      const bodyBytes = await b.loadAttachment(FOLDER, key + BODY_SUFFIX);
+      const bodyBytes = await b.readBlob(attachmentKey(FOLDER, key + BODY_SUFFIX));
       const markdown = decoder.decode(bodyBytes);
       // Promote to L1 for the rest of the session.
       l1.set(key, { markdown, expiresAt: Date.now() + ttlSeconds * 1000, provider, url });
@@ -98,8 +100,8 @@ export const putCachedScrape = async (url, provider, markdown, ttlSeconds) => {
   }));
   for (const b of backends) {
     try {
-      await b.saveAttachment(FOLDER, key + BODY_SUFFIX, bodyBytes);
-      await b.saveAttachment(FOLDER, key + SIDECAR_SUFFIX, sidecarBytes);
+      await b.writeBlob(attachmentKey(FOLDER, key + BODY_SUFFIX), bodyBytes);
+      await b.writeBlob(attachmentKey(FOLDER, key + SIDECAR_SUFFIX), sidecarBytes);
     } catch (err) {
       console.warn(`scrape-cache: L2 write to ${b.name} failed for ${url}:`, err);
     }
@@ -109,8 +111,8 @@ export const putCachedScrape = async (url, provider, markdown, ttlSeconds) => {
 const removeStaleEntry = async (key) => {
   const backends = availableBackends();
   for (const b of backends) {
-    try { await b.deleteAttachment(FOLDER, key + BODY_SUFFIX); } catch (_) {}
-    try { await b.deleteAttachment(FOLDER, key + SIDECAR_SUFFIX); } catch (_) {}
+    try { await b.deleteBlob(attachmentKey(FOLDER, key + BODY_SUFFIX)); } catch (_) {}
+    try { await b.deleteBlob(attachmentKey(FOLDER, key + SIDECAR_SUFFIX)); } catch (_) {}
   }
   l1.delete(key);
 };

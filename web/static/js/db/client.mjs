@@ -2,6 +2,24 @@
 // Single global worker per tab; commands are id-tagged so multiple in-flight
 // calls don't collide.
 
+import { idbSet } from '../storage/idb.mjs';
+
+// Bump "local last modified" on mutation — read by sync-current for newest-wins.
+// Fire-and-forget; loss on hard crash just means sync may pull a backend copy.
+// Word-boundary match anywhere (not just start) so WITH-CTE forms like
+// `WITH x AS (...) UPDATE ...` still bump. False positives on the verb
+// appearing inside string literals are harmless (extra IDB write).
+const MUTATE_RE = /\b(insert|update|delete|replace|create|drop|alter)\b/i;
+// Deferred during a transaction — a mid-tx write shouldn't bump if the tx
+// later ROLLBACKs. transaction() flushes once on COMMIT.
+let inTx = false;
+let txMutated = false;
+const bumpLocalModified = () => {
+  if (inTx) { txMutated = true; return; }
+  idbSet('localModifiedAt', Date.now()).catch(() => {});
+  window.dispatchEvent(new CustomEvent('local-db-mutated'));
+};
+
 let worker = null;
 let nextId = 1;
 const pending = new Map();
@@ -69,7 +87,11 @@ export const initDb = async (dbName) => {
     }
   }
 };
-export const exec = async (sql, bind) => (await call('exec', { sql, bind })).rows;
+export const exec = async (sql, bind) => {
+  const rows = (await call('exec', { sql, bind })).rows;
+  if (MUTATE_RE.test(sql || '')) bumpLocalModified();
+  return rows;
+};
 export const exportDb = () => call('export');
 export const importDb = (bytes) => call('import', { bytes }, [bytes.buffer]);
 export const wipeDb = () => call('wipe');
@@ -87,19 +109,24 @@ export const decodeJSON = (raw, fallback) => {
 // throw. Single-writer (one worker per tab, OPFS holds an exclusive lock),
 // so BEGIN is safe. Nesting is not supported — SQLite will throw "cannot
 // start a transaction within a transaction" if called re-entrantly.
-let inTx = false;
 export const transaction = async (fn) => {
   if (inTx) throw new Error('transaction: nesting not supported');
   inTx = true;
+  txMutated = false;
   await call('exec', { sql: 'BEGIN' });
   try {
     const result = await fn();
     await call('exec', { sql: 'COMMIT' });
+    if (txMutated) {
+      idbSet('localModifiedAt', Date.now()).catch(() => {});
+      window.dispatchEvent(new CustomEvent('local-db-mutated'));
+    }
     return result;
   } catch (err) {
     try { await call('exec', { sql: 'ROLLBACK' }); } catch {}
     throw err;
   } finally {
     inTx = false;
+    txMutated = false;
   }
 };

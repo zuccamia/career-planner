@@ -229,25 +229,31 @@ test.describe('local applications page — inline details panel', () => {
 const installFakeStorageBackend = async (page: Page) => {
   await page.evaluate(async () => {
     const mod = await import('/static/js/storage/index.mjs');
+    // Strip the "attachments/" prefix the coordinator adds via attachmentKey()
+    // so the readback keys stay as `<folder>/<filename>` (test assertions).
+    const strip = (key: string) => key.startsWith('attachments/') ? key.slice('attachments/'.length) : key;
     // @ts-expect-error — expose blobs for cross-boundary reads
     window.__attachmentFiles = new Map<string, number>();
     const files: Map<string, Uint8Array> = new Map();
     const disk = mod.localDisk;
     disk.isReady = () => true;
     disk.isAvailable = () => true;
-    disk.hasAttachment = async (folder: string, filename: string) =>
-      files.has(`${folder}/${filename}`);
-    disk.saveAttachment = async (folder: string, filename: string, bytes: Uint8Array) => {
-      files.set(`${folder}/${filename}`, new Uint8Array(bytes));
+    disk.hasBlob = async (key: string) => files.has(strip(key));
+    disk.writeBlob = async (key: string, bytes: Uint8Array) => {
+      const k = strip(key);
+      files.set(k, new Uint8Array(bytes));
       // @ts-expect-error — mirror sizes into a plain-object map for readback
-      window.__attachmentFiles.set(`${folder}/${filename}`, bytes.byteLength);
-      return { storedFilename: filename, sizeBytes: bytes.byteLength };
+      window.__attachmentFiles.set(k, bytes.byteLength);
+      return { modifiedAt: new Date(), sizeBytes: bytes.byteLength };
     };
-    disk.loadAttachment = async (folder: string, filename: string) => {
-      const b = files.get(`${folder}/${filename}`);
-      if (!b) throw new Error(`not found: ${folder}/${filename}`);
+    disk.readBlob = async (key: string) => {
+      const b = files.get(strip(key));
+      if (!b) throw new Error(`not found: ${key}`);
       return b;
     };
+    // No-op delete on purpose: tests assert the "GC deferred" tradeoff where
+    // row deletion leaves the blob on the backend untouched.
+    disk.deleteBlob = async () => {};
   });
 };
 

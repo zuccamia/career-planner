@@ -5,15 +5,23 @@
 import { exportDb, importDb, wipeDb, disposeWorker } from '../../db/client.mjs';
 import {
   localDisk, googleDrive,
-  availableBackends, snapshotAllBackends,
+  availableBackends,
 } from '../../storage/index.mjs';
 import { LocalDiskBackend } from '../../storage/local-disk.mjs';
+import { reconcileAttachments, getLastAttachmentReconcileAt } from '../../storage/reconcile.mjs';
+import { isAutosyncEnabled, setAutosyncEnabled } from '../../storage/autosync.mjs';
+import { deleteAttachment } from '../../entities/attachments.mjs';
+import {
+  syncCurrentSnapshot, getActiveSyncLabel, hasUnsyncedLocalChanges,
+  finalizeSyncResult, markRestoredFromSnapshot, clearLocalModifiedAt,
+  getLastSyncedAt, getDivergenceState, resolveDivergence,
+} from '../../storage/sync-current.mjs';
+import { relativeAge } from '../../ui/format.mjs';
 import { snapshotFilename, sanitizeSnapshotLabel } from '../../storage/config.mjs';
 import { STATIC_ROOT } from '../../host.mjs';
 import {
   setCurrentSnapshotName, clearCurrentSnapshotName,
 } from '../../storage/current-snapshot.mjs';
-import { refreshCurrentSnapshotBadge } from '../../ui/current_snapshot.mjs';
 import { refreshAiModeBadge } from '../../ui/ai_mode_badge.mjs';
 import { refreshScraperModeBadge } from '../../ui/scraper_mode_badge.mjs';
 import { refreshSearchModeBadge } from '../../ui/search_mode_badge.mjs';
@@ -98,26 +106,43 @@ const render = (root) => {
         <div id="drive-snapshots"></div>
       </section>
 
-      <section class="${CLS.card}">
+      <div id="divergence-banner" class="hidden"></div>
+
+      <section id="sync-panel" class="${CLS.card}">
         <div class="space-y-1">
-          <p class="${CLS.eyebrow}">${t('settings.snapshot.eyebrow')}</p>
-          ${helpText(`${t('settings.snapshot.help_line1')} ${t('settings.snapshot.help_line2')}`)}
-          ${helpText(t('settings.snapshot.help_line3'))}
+          <p class="${CLS.eyebrow}">${t('settings.sync.eyebrow')}</p>
+          ${helpText(t('settings.sync.help_line1'))}
+          ${helpText(t('settings.sync.help_line2'))}
         </div>
-        ${inlineError({ id: 'snapshot-error' })}
+        ${inlineError({ id: 'sync-error' })}
         <div class="${CLS.formRow}">
           <label class="${CLS.responsiveRow} ${CLS.bodyText}">
-            ${t('settings.snapshot.keep_last_prefix')}
-            <input id="keep-count" type="number" min="1" value="5" class="${CLS.inputCompact}">
-            ${t('settings.snapshot.keep_last_suffix')}
+            ${t('settings.sync.label_field')}
+            <input id="sync-label" type="text" placeholder="${t('settings.sync.label_placeholder')}" maxlength="40" class="${CLS.inputCompact}" style="width: 14rem">
           </label>
-          <label class="${CLS.responsiveRow} ${CLS.bodyText}">
-            ${t('settings.snapshot.label_field')}
-            <input id="snapshot-label" type="text" placeholder="${t('settings.snapshot.label_placeholder')}" maxlength="40" class="${CLS.inputCompact}" style="width: 14rem">
-          </label>
-          ${button({ id: 'btn-snapshot-all', variant: 'primaryCompact', icon: 'camera', label: t('settings.snapshot.action.snapshot_all') })}
-          ${button({ id: 'btn-download-snapshot', variant: 'icon', icon: 'arrowDownTray', iconOnly: true, ariaLabel: t('settings.snapshot.action.download') })}
+          ${button({ id: 'btn-sync', variant: 'primaryCompact', icon: 'arrowPath', label: t('settings.sync.action.sync') })}
+          ${button({ id: 'btn-download-snapshot', variant: 'icon', icon: 'arrowDownTray', iconOnly: true, ariaLabel: t('settings.sync.action.download') })}
+          <span id="sync-status" class="${CLS.bodyText} text-slate-500"></span>
         </div>
+        <p id="sync-last" class="${CLS.helpText}"></p>
+        <label class="${CLS.rowInline} ${CLS.bodyText}">
+          <input id="autosync-toggle" type="checkbox" class="${CLS.checkbox}">
+          <span>${t('settings.sync.autosync.label')}</span>
+        </label>
+        ${helpText(t('settings.sync.autosync.help'))}
+      </section>
+
+      <section class="${CLS.card}">
+        <div class="space-y-1">
+          <p class="${CLS.eyebrow}">${t('settings.reconcile.eyebrow')}</p>
+          ${helpText(t('settings.reconcile.help'))}
+        </div>
+        ${inlineError({ id: 'reconcile-error' })}
+        <div class="${CLS.formRow}">
+          ${button({ id: 'btn-reconcile-attachments', variant: 'primaryCompact', icon: 'arrowPath', label: t('settings.reconcile.action.run') })}
+          <span id="reconcile-status" class="${CLS.bodyText} text-slate-500"></span>
+        </div>
+        <p id="reconcile-last" class="${CLS.helpText}"></p>
       </section>
 
       <section id="language" class="${CLS.card}">
@@ -204,13 +229,13 @@ const renderSnapshotList = (el, list, onRestore, onDelete) => {
             <p class="${CLS.helpText}">${s.createdAt.toLocaleString()} · ${kb(s.sizeBytes)}</p>
           </div>
           <div class="${CLS.headActions}">
-            ${button({ variant: 'icon', icon: 'arrowUpTray', iconOnly: true, ariaLabel: t('settings.snapshots.aria.restore', { name: s.name || s.id }), extraClass: 'js-restore', dataset: { id: s.id, name: s.name || s.id } })}
+            ${button({ variant: 'icon', icon: 'arrowUpTray', iconOnly: true, ariaLabel: t('settings.snapshots.aria.restore', { name: s.name || s.id }), extraClass: 'js-restore', dataset: { id: s.id, name: s.name || s.id, mtime: s.createdAt.getTime() } })}
             ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('settings.snapshots.aria.delete', { name: s.name || s.id }), extraClass: 'js-delete', dataset: { id: s.id, name: s.name || s.id } })}
           </div>
         </li>`).join('')}
     </ul>
   `;
-  el.querySelectorAll('.js-restore').forEach(b => b.addEventListener('click', () => onRestore(b.dataset.id, b.dataset.name)));
+  el.querySelectorAll('.js-restore').forEach(b => b.addEventListener('click', () => onRestore(b.dataset.id, b.dataset.name, Number(b.dataset.mtime))));
   el.querySelectorAll('.js-delete').forEach(b => b.addEventListener('click', () => onDelete(b.dataset.id, b.dataset.name)));
 };
 
@@ -284,7 +309,7 @@ const errorIdFor = (backend) =>
 // `id` is opaque on Drive; `displayName` is the human filename (may equal id
 // on local disk). Persist the human name so the sidebar badge shows something
 // meaningful across page reloads.
-const restoreSnapshot = (backend) => async (id, displayName) => {
+const restoreSnapshot = (backend) => async (id, displayName, mtimeMs) => {
   const shown = displayName || id;
   if (!confirm(t('settings.snapshots.confirm.restore', { name: shown }))) return;
   const errId = errorIdFor(backend);
@@ -293,6 +318,9 @@ const restoreSnapshot = (backend) => async (id, displayName) => {
     const bytes = await backend.loadSnapshot(id);
     await importDb(bytes);
     await setCurrentSnapshotName(shown);
+    // Stamp local's timestamp as the snapshot's own mtime — a fresher backend
+    // copy of the sync file will still win on the next sync (restore = viewing).
+    if (mtimeMs) await markRestoredFromSnapshot(mtimeMs);
     toast(t('settings.snapshots.toast.restored', { name: shown, size: kb(bytes.byteLength) }), 'ok');
     setTimeout(() => location.reload(), 500);
   } catch (err) {
@@ -563,41 +591,118 @@ const wireDrive = () => {
 };
 
 const wireSnapshotActions = () => {
-  document.getElementById('btn-snapshot-all').addEventListener('click', async () => {
-    setInlineError('snapshot-error', '');
+  document.getElementById('btn-sync').addEventListener('click', async () => {
+    setInlineError('sync-error', '');
+    const btn = document.getElementById('btn-sync');
+    const status = document.getElementById('sync-status');
+    const labelInput = document.getElementById('sync-label');
     const active = availableBackends();
     if (!active.length) {
-      setInlineError('snapshot-error', t('settings.snapshot.error.no_backends'));
+      setInlineError('sync-error', t('settings.sync.error.no_backends'));
       return;
     }
+    const requestedLabel = sanitizeSnapshotLabel(labelInput.value);
+    const currentLabel = await getActiveSyncLabel();
+    if (requestedLabel !== currentLabel && await hasUnsyncedLocalChanges()) {
+      const from = currentLabel || t('settings.sync.label.default');
+      const to = requestedLabel || t('settings.sync.label.default');
+      if (!confirm(t('settings.sync.confirm.switch_lossy', { from, to }))) return;
+    }
+    btn.disabled = true;
+    status.textContent = t('settings.sync.status.running');
     try {
-      const { bytes } = await exportDb();
-      const keep = Math.max(1, parseInt(document.getElementById('keep-count').value, 10) || 5);
-      const labelInput = document.getElementById('snapshot-label');
-      const label = sanitizeSnapshotLabel(labelInput.value);
-      const results = await snapshotAllBackends(bytes, { keep, label });
-      labelInput.value = '';
-      // Labeled snapshot = user-picked checkpoint → treat it as the new current
-      // point-in-time for the sidebar badge. Auto (unlabeled) snapshots don't
-      // change the "current" identity — they're just retention safety nets.
-      if (label) {
-        const ok = results.find(r => r.ok && r.meta?.name);
-        if (ok) {
-          await setCurrentSnapshotName(ok.meta.name);
-          refreshCurrentSnapshotBadge();
-        }
+      const result = await syncCurrentSnapshot({ label: requestedLabel });
+      status.textContent = '';
+      if (result.skipped === 'no_backends') {
+        setInlineError('sync-error', t('settings.sync.error.no_backends'));
+        return;
       }
-      const ok = results.filter(r => r.ok).length;
-      const failed = results.filter(r => !r.ok);
-      if (failed.length === 0) {
-        toast(t('settings.snapshot.toast.saved', { n: ok }), 'ok');
+      if (result.skipped === 'divergence') {
+        await refreshDivergenceBanner();
+        toast(t('settings.divergence.toast.detected'), 'warning');
+        return;
+      }
+      labelInput.value = requestedLabel;
+      await setCurrentSnapshotName(result.filename);
+      refreshSyncLast();
+      const { winner, errors, updated } = finalizeSyncResult(result);
+      if (errors.length === 0) {
+        toast(t('settings.sync.toast.done', {
+          file: result.filename, winner,
+          targets: updated.join(', ') || t('settings.sync.targets.none'),
+        }), 'ok');
       } else {
-        const msg = failed.map(f => `${f.backend}: ${f.error}`).join('; ');
-        if (ok) toast(t('settings.snapshot.toast.partial', { ok, failed: msg }), 'info');
-        else setInlineError('snapshot-error', t('settings.snapshot.error.all_failed', { msg }));
+        const msg = errors.map(e => `${e.backend}: ${e.error}`).join('; ');
+        toast(t('settings.sync.toast.partial', { winner, msg }), 'info');
       }
     } catch (err) {
-      setInlineError('snapshot-error', t('settings.snapshot.error.failed', { err: err.message }));
+      setInlineError('sync-error', t('settings.sync.error.failed', { err: err.message }));
+      status.textContent = '';
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('btn-reconcile-attachments').addEventListener('click', async () => {
+    setInlineError('reconcile-error', '');
+    const btn = document.getElementById('btn-reconcile-attachments');
+    const status = document.getElementById('reconcile-status');
+    btn.disabled = true;
+    status.textContent = t('settings.reconcile.status.running');
+    try {
+      const result = await reconcileAttachments({
+        onProgress: ({ done, total }) => {
+          status.textContent = t('settings.reconcile.status.progress', { done, total });
+        },
+      });
+      if (result.skipped === 'need_two_backends') {
+        setInlineError('reconcile-error', t('settings.reconcile.error.need_two_backends'));
+        status.textContent = '';
+        return;
+      }
+      status.textContent = '';
+      refreshReconcileLast();
+      const { copied, inSync, missing, errors, total } = result;
+      if (errors.length === 0 && missing.length === 0) {
+        toast(t('settings.reconcile.toast.done', { copied, inSync, total }), 'ok');
+      } else {
+        const details = [
+          ...missing.map(m => t('settings.reconcile.detail.missing', {
+            path: `${m.folder}/${m.filename}`,
+          })),
+          ...errors.map(e => t('settings.reconcile.detail.error', {
+            path: `${e.folder}/${e.filename}`,
+            stage: e.stage,
+            error: e.error || `${e.expected || ''} ≠ ${e.got || ''}`,
+          })),
+        ];
+        const action = missing.length > 0 ? {
+          label: t('settings.reconcile.action.prune_missing', { n: missing.length }),
+          onClick: async ({ dismiss }) => {
+            if (!confirm(t('settings.reconcile.confirm.prune_missing', { n: missing.length }))) return;
+            let deleted = 0;
+            const failures = [];
+            for (const m of missing) {
+              try { await deleteAttachment(m.id); deleted++; }
+              catch (err) { failures.push(`${m.folder}/${m.filename}: ${err.message}`); }
+            }
+            dismiss();
+            if (failures.length === 0) {
+              toast(t('settings.reconcile.toast.pruned', { n: deleted }), 'ok');
+            } else {
+              toast(t('settings.reconcile.toast.pruned_partial', { n: deleted, failed: failures.length }), 'info', { details: failures });
+            }
+          },
+        } : undefined;
+        toast(t('settings.reconcile.toast.partial', {
+          copied, inSync, missing: missing.length, errors: errors.length, total,
+        }), 'info', { details, action });
+      }
+    } catch (err) {
+      setInlineError('reconcile-error', t('settings.reconcile.error.failed', { err: err.message }));
+      status.textContent = '';
+    } finally {
+      btn.disabled = false;
     }
   });
 
@@ -611,6 +716,9 @@ const wireSnapshotActions = () => {
       await importDb(bytes);
       // Sample dataset overwrites the DB, so the tracked snapshot name no longer matches disk.
       await clearCurrentSnapshotName();
+      // Clear localModifiedAt so any real backend copy beats the demo data on
+      // the next sync (sample-load is throw-away state, not new truth).
+      await clearLocalModifiedAt();
       toast(t('settings.danger.toast.sample_loaded', { size: kb(bytes.byteLength) }), 'ok');
       setTimeout(() => location.reload(), 500);
     } catch (err) {
@@ -635,10 +743,10 @@ const wireSnapshotActions = () => {
   });
 
   document.getElementById('btn-download-snapshot').addEventListener('click', async () => {
-    setInlineError('snapshot-error', '');
+    setInlineError('sync-error', '');
     try {
       const { bytes } = await exportDb();
-      const label = sanitizeSnapshotLabel(document.getElementById('snapshot-label').value);
+      const label = sanitizeSnapshotLabel(document.getElementById('sync-label').value);
       const blob = new Blob([bytes], { type: 'application/vnd.sqlite3' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -648,11 +756,84 @@ const wireSnapshotActions = () => {
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast(t('settings.snapshot.toast.downloaded', { size: kb(bytes.byteLength) }), 'ok');
+      toast(t('settings.sync.toast.downloaded', { size: kb(bytes.byteLength) }), 'ok');
     } catch (err) {
-      setInlineError('snapshot-error', t('settings.snapshot.error.download_failed', { err: err.message }));
+      setInlineError('sync-error', t('settings.sync.error.download_failed', { err: err.message }));
     }
   });
+};
+
+// Divergence banner — shown when both local and a backend have edits since
+// the last sync. User picks a side via Keep-local / Keep-remote.
+const refreshDivergenceBanner = async () => {
+  const el = document.getElementById('divergence-banner');
+  if (!el) return;
+  const state = await getDivergenceState();
+  if (!state) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const localAge = relativeAge(new Date(state.localAtMs).toISOString());
+  const backendAge = relativeAge(new Date(state.backendMtime).toISOString());
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <section class="${CLS.warningBanner} space-y-3">
+      <div class="space-y-1">
+        <p class="font-semibold">${escapeHtml(t('settings.divergence.title'))}</p>
+        <p class="${CLS.bodyText}">${escapeHtml(t('settings.divergence.help'))}</p>
+      </div>
+      <ul class="${CLS.bodyText} space-y-1">
+        <li>${escapeHtml(t('settings.divergence.local_side', { age: localAge }))}</li>
+        <li>${escapeHtml(t('settings.divergence.remote_side', { backend: state.backendName, age: backendAge }))}</li>
+        <li>${escapeHtml(t('settings.divergence.backup_saved', { name: state.preSyncSnapshotName }))}</li>
+      </ul>
+      <div class="${CLS.formRow}">
+        ${button({ id: 'btn-divergence-keep-local', variant: 'primaryCompact', label: t('settings.divergence.action.keep_local') })}
+        ${button({ id: 'btn-divergence-keep-remote', variant: 'secondaryCompact', label: t('settings.divergence.action.keep_remote', { backend: state.backendName }) })}
+      </div>
+    </section>
+  `;
+  document.getElementById('btn-divergence-keep-local').addEventListener('click', () => onResolve('local'));
+  document.getElementById('btn-divergence-keep-remote').addEventListener('click', () => onResolve('backend'));
+};
+
+const onResolve = async (choice) => {
+  const confirmMsg = choice === 'local'
+    ? t('settings.divergence.confirm.keep_local')
+    : t('settings.divergence.confirm.keep_remote');
+  if (!confirm(confirmMsg)) return;
+  try {
+    const result = await resolveDivergence(choice);
+    await refreshDivergenceBanner();
+    refreshSyncLast();
+    if (result?.skipped === 'no_backends') {
+      toast(t('settings.sync.error.no_backends'), 'warning');
+      return;
+    }
+    // finalizeSyncResult refreshes the badge and reloads if a backend replaced
+    // local — which is what Keep-remote does. Keep-local pushes, no reload.
+    finalizeSyncResult(result);
+    toast(t('settings.divergence.toast.resolved', { choice }), 'ok');
+  } catch (err) {
+    toast(t('settings.divergence.toast.resolve_failed', { err: err.message }), 'error');
+  }
+};
+
+// Refresh the "Last synced Xm ago" line under the Sync button. Called on
+// mount and after every successful sync.
+const refreshSyncLast = async () => {
+  const el = document.getElementById('sync-last');
+  if (!el) return;
+  const at = await getLastSyncedAt();
+  el.textContent = at
+    ? t('settings.sync.last_synced', { age: relativeAge(new Date(at).toISOString()) })
+    : t('settings.sync.last_synced.never');
+};
+
+const refreshReconcileLast = async () => {
+  const el = document.getElementById('reconcile-last');
+  if (!el) return;
+  const at = await getLastAttachmentReconcileAt();
+  el.textContent = at
+    ? t('settings.reconcile.last_run', { age: relativeAge(new Date(at).toISOString()) })
+    : t('settings.reconcile.last_run.never');
 };
 
 // wireLocale is fire-and-reload: setLocale() persists the choice + writes the
@@ -681,6 +862,23 @@ export const mountSettings = async (root) => {
   wireLocalDisk();
   wireDrive();
   wireSnapshotActions();
+
+  // Pre-fill so the user sees which timeline they're on.
+  const syncLabelInput = document.getElementById('sync-label');
+  if (syncLabelInput) {
+    getActiveSyncLabel().then(label => { syncLabelInput.value = label || ''; });
+  }
+  refreshSyncLast();
+  refreshReconcileLast();
+  refreshDivergenceBanner();
+
+  const autosyncToggle = document.getElementById('autosync-toggle');
+  if (autosyncToggle) {
+    isAutosyncEnabled().then(on => { autosyncToggle.checked = on; });
+    autosyncToggle.addEventListener('change', (e) => setAutosyncEnabled(e.target.checked));
+  }
+  window.addEventListener('divergence-detected', refreshDivergenceBanner);
+  window.addEventListener('divergence-resolved', refreshDivergenceBanner);
 
   // Cross-page nav to #anchor: the browser scrolled before render() ran, so
   // re-scroll now that the section exists.

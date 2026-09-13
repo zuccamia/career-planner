@@ -49,10 +49,25 @@ export const snapshotFilename = (d = new Date(), label = '') => {
   return `${SNAPSHOT_PREFIX}${stamp(d)}${suffix}${SNAPSHOT_SUFFIX}`;
 };
 
-// A snapshot is "labeled" (user-named, keep forever) iff the filename
-// contains the label separator. Auto-generated snapshots do not.
-export const isLabeledSnapshot = (name) =>
-  typeof name === 'string' && name.includes(SNAPSHOT_LABEL_SEP);
+// Active sync file — one per backend, overwritten in place.
+// Empty label → current.sqlite; label → <sanitized>.sqlite.
+const DEFAULT_SYNC_FILENAME = `current${SNAPSHOT_SUFFIX}`;
+export const activeSyncFilename = (label = '') => {
+  const clean = sanitizeSnapshotLabel(label);
+  return clean ? `${clean}${SNAPSHOT_SUFFIX}` : DEFAULT_SYNC_FILENAME;
+};
+
+// BlobStore keys. Backends split on '/' — the leading `attachments/` prefix
+// also signals "route to visible folder" on backends that distinguish (Drive).
+export const ATTACHMENTS_ROOT = 'attachments';
+export const attachmentKey = (folder, filename) => `${ATTACHMENTS_ROOT}/${folder}/${filename}`;
+export const syncKey = (filename) => filename;
+
+// Filename for a pre-sync safety-net snapshot — dropped alongside the sync
+// file on every available backend before a divergent pull would overwrite
+// local. Shows up in listSnapshots so users can restore it later.
+export const preSyncSnapshotFilename = (d = new Date()) =>
+  `pre-sync-${stamp(d)}${SNAPSHOT_SUFFIX}`;
 
 // Fetches the OAuth client ID + scopes. Static builds read a committed
 // JSON file (workflow substitutes the client_id per deploy); the live

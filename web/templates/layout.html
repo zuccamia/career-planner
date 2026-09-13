@@ -15,15 +15,26 @@
 {{$navLabel := "font-mono text-[0.62rem] font-medium uppercase tracking-[0.14em] text-ink-faint px-4"}}
 {{$navLink  := "flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition"}}
 {{$navCount := "ml-auto hidden rounded-full bg-line px-2 py-0.5 font-mono text-xs font-medium tabular-nums text-ink-soft"}}
+{{$hdrBtn   := "inline-flex items-center justify-center rounded-xl border border-line-strong bg-surface p-2 text-ink-soft transition hover:border-brand hover:bg-brand-tint disabled:opacity-50"}}
 <body class="min-h-screen bg-paper text-ink antialiased">
   <header class="sticky top-0 z-30 flex items-center gap-3 border-b border-line bg-surface px-4 py-3 sm:px-6">
     <button id="sidebar-toggle" type="button" aria-controls="sidebar" aria-expanded="false"
             aria-label="{{ t "nav.aria.toggle" }}"
-            class="inline-flex items-center justify-center rounded-xl border border-line-strong bg-surface p-2 text-ink-soft transition hover:border-brand hover:bg-brand-tint">
+            class="{{$hdrBtn}}">
       <span data-icon="menu"></span>
     </button>
     <a class="hidden sm:inline font-display text-lg font-semibold text-ink" href="{{ urlFor "dashboard" }}">{{ t "app.name" }}</a>
     <div id="header-cta" class="sm:ml-10"></div>
+    <div class="ml-auto flex items-center gap-2">
+      <a id="quick-sync-label" href="{{ urlFor "settings#sync-panel" }}"
+         class="hidden transition hover:text-brand" title=""></a>
+      <button id="quick-sync" type="button"
+              class="{{$hdrBtn}}"
+              title="{{ t "nav.quick_sync.title" }}"
+              aria-label="{{ t "nav.quick_sync.title" }}">
+        <span id="quick-sync-icon" class="inline-flex"></span>
+      </button>
+    </div>
   </header>
 
   <aside id="sidebar"

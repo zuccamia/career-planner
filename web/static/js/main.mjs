@@ -19,6 +19,8 @@ import { refreshScraperModeBadge } from './ui/scraper_mode_badge.mjs';
 import { refreshSearchModeBadge } from './ui/search_mode_badge.mjs';
 import { refreshStorageModeBadge } from './ui/storage_mode_badge.mjs';
 import { mountHeaderCTA } from './ui/header_cta.mjs';
+import { mountQuickSync } from './ui/quick_sync.mjs';
+import { initAutosync } from './storage/autosync.mjs';
 import { restoreAll } from './storage/index.mjs';
 
 // Any promise rejection that escapes the app's own catch blocks lands here.
@@ -75,6 +77,8 @@ const boot = async () => {
     safeCall('scraper mode badge', refreshScraperModeBadge);
     safeCall('search mode badge', refreshSearchModeBadge);
     safeCall('header cta', mountHeaderCTA);
+    safeCall('quick sync button', mountQuickSync);
+    initAutosync();
 
     const page = appEl.dataset.page;
     if (page === 'dashboard') {

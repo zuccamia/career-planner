@@ -15,14 +15,19 @@ import { idbGet, idbSet, idbDel } from './idb.mjs';
 import { isStaticHost } from '../host.mjs';
 import {
   getGoogleOAuthConfig, GOOGLE_TOKEN_ENDPOINT, GOOGLE_REDIRECT_URI,
-  ATTACHMENTS_FOLDER_NAME, snapshotFilename,
-  driveFileURL, driveFilesListURL, driveMultipartUploadURL,
+  ATTACHMENTS_FOLDER_NAME, ATTACHMENTS_ROOT,
+  driveFileURL, driveFilesListURL, driveMultipartUploadURL, DRIVE_UPLOAD,
 } from './config.mjs';
+import { BlobStore } from './blob_store.mjs';
 
 const REFRESH_TOKEN_KEY = 'googleRefreshToken';
 const GIS_CONSENT_KEY = 'googleGisConsented';
 const ATTACHMENTS_FOLDER_KEY = 'googleAttachmentsFolderId';
 const GIS_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
+// Drive's magic parent alias for the hidden per-app data folder. Sync files
+// (current.sqlite, <label>.sqlite) live here; attachments live in the visible
+// "Career Planner - Attachments" folder tree.
+const APP_DATA_FOLDER = 'appDataFolder';
 
 // ---------- PKCE helpers ----------
 const b64url = (bytes) => btoa(String.fromCharCode(...bytes))
@@ -37,16 +42,18 @@ const sha256B64Url = async (str) => {
   return b64url(new Uint8Array(hash));
 };
 
-export class GoogleDriveBackend {
+export class GoogleDriveBackend extends BlobStore {
   constructor() {
+    super();
     this.name = 'google-drive';
     this.accessToken = null;
     this.accessTokenExpiresAt = 0;
     this.refreshToken = null;
     this._attachmentsFolder = null;
-    // Per-entity subfolder ID cache. Keyed by sanitized folder name (e.g., "google").
-    // Lives only in memory — cheap to rebuild via Drive search on next boot.
-    this._entityFolders = new Map();
+    // Sub-path → folder-ID cache (e.g. "attachments/google" → "0Bxyz…").
+    // Memory-only; rebuilt via Drive search on boot. Concurrent find-or-create
+    // calls are serialized via Web Locks keyed by path — see _resolveChildFolder.
+    this._folderIdCache = new Map();
   }
 
   static isSupported() { return true; }
@@ -71,10 +78,14 @@ export class GoogleDriveBackend {
     this.refreshToken = null;
     this._gisConsented = false;
     this._attachmentsFolder = null;
-    this._entityFolders.clear();
+    this._folderIdCache.clear();
     await idbDel(REFRESH_TOKEN_KEY);
     await idbDel(GIS_CONSENT_KEY);
   }
+
+  // BlobStore alias for the base contract; Settings UI uses signOut for its
+  // semantic ("Sign out of Google Drive").
+  forget() { return this.signOut(); }
 
   async connect() {
     if (isStaticHost()) return this._connectGIS();
@@ -233,39 +244,24 @@ export class GoogleDriveBackend {
     return res;
   }
 
-  async saveSnapshot(bytes, { label = '' } = {}) {
-    const createdAt = new Date();
-    const filename = snapshotFilename(createdAt, label);
-    const body = await this._multipartBody({ name: filename, parents: ['appDataFolder'] }, 'application/vnd.sqlite3', bytes);
-    const res = await this.apiFetch(
-      driveMultipartUploadURL('uploadType=multipart&fields=id,name,size,createdTime'),
-      { method: 'POST', body },
-    );
-    const file = await res.json();
-    return {
-      id: file.id,
-      name: file.name,
-      createdAt: new Date(file.createdTime),
-      sizeBytes: Number(file.size ?? bytes.byteLength),
-    };
-  }
-
   async listSnapshots() {
     const params = new URLSearchParams({
-      spaces: 'appDataFolder',
-      q: "name contains 'snapshot-' and trashed = false",
-      orderBy: 'createdTime desc',
+      spaces: APP_DATA_FOLDER,
+      q: "trashed = false",
+      orderBy: 'modifiedTime desc',
       pageSize: '100',
-      fields: 'files(id,name,size,createdTime)',
+      fields: 'files(id,name,size,createdTime,modifiedTime)',
     });
     const res = await this.apiFetch(driveFilesListURL(params));
     const data = await res.json();
-    return (data.files || []).map(f => ({
-      id: f.id,
-      name: f.name,
-      createdAt: new Date(f.createdTime),
-      sizeBytes: Number(f.size ?? 0),
-    }));
+    return (data.files || [])
+      .filter(f => typeof f.name === 'string' && f.name.endsWith('.sqlite'))
+      .map(f => ({
+        id: f.id,
+        name: f.name,
+        createdAt: new Date(f.modifiedTime || f.createdTime),
+        sizeBytes: Number(f.size ?? 0),
+      }));
   }
 
   async loadSnapshot(id) {
@@ -277,129 +273,190 @@ export class GoogleDriveBackend {
     await this.apiFetch(driveFileURL(id), { method: 'DELETE' });
   }
 
-  async _attachmentsFolderId() {
+  // Escape a value for use inside a single-quoted Drive `q` string literal.
+  _escapeQ(s) {
+    return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  }
+
+  // Resolve or create the top-level visible "Career Planner - Attachments"
+  // folder. Cached in IDB across sessions. Web-lock-serialized so concurrent
+  // callers (and other tabs) don't race to create duplicates.
+  async _getOrCreateAttachmentsFolder(create) {
     if (this._attachmentsFolder) return this._attachmentsFolder;
+    return navigator.locks.request('drive-folder:__root__', async () => {
+      if (this._attachmentsFolder) return this._attachmentsFolder;
+      return this._findOrCreateAttachmentsFolder(create);
+    });
+  }
+
+  async _findOrCreateAttachmentsFolder(create) {
     const cached = await idbGet(ATTACHMENTS_FOLDER_KEY);
     if (cached) {
       try {
         await this.apiFetch(driveFileURL(cached, 'fields=id,trashed'));
         this._attachmentsFolder = cached;
         return cached;
-      } catch { /* fall through, recreate */ }
+      } catch { /* stale — recreate below */ }
     }
     const q = new URLSearchParams({
       q: `name='${ATTACHMENTS_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-      fields: 'files(id,name)',
+      fields: 'files(id)',
       pageSize: '1',
     });
     const searchRes = await this.apiFetch(driveFilesListURL(q));
     const found = (await searchRes.json()).files?.[0];
-    let id;
     if (found) {
-      id = found.id;
+      this._attachmentsFolder = found.id;
     } else {
+      if (!create) return null;
       const createRes = await this.apiFetch(driveFilesListURL('fields=id'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: ATTACHMENTS_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' }),
       });
-      id = (await createRes.json()).id;
+      this._attachmentsFolder = (await createRes.json()).id;
     }
-    this._attachmentsFolder = id;
-    await idbSet(ATTACHMENTS_FOLDER_KEY, id);
-    return id;
+    await idbSet(ATTACHMENTS_FOLDER_KEY, this._attachmentsFolder);
+    return this._attachmentsFolder;
   }
 
-  // Escape a value for use inside a single-quoted Drive `q` string literal.
-  // Backslashes and apostrophes are the only characters that break the syntax.
-  _escapeQ(s) {
-    return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-  }
-
-  async _entityFolderId(folder) {
-    if (this._entityFolders.has(folder)) return this._entityFolders.get(folder);
-    const parent = await this._attachmentsFolderId();
-    const escaped = this._escapeQ(folder);
+  async _findChildFolder(parentId, name) {
     const q = new URLSearchParams({
-      q: `name='${escaped}' and mimeType='application/vnd.google-apps.folder' and '${parent}' in parents and trashed=false`,
+      q: `name='${this._escapeQ(name)}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`,
       fields: 'files(id)',
       pageSize: '1',
     });
-    const searchRes = await this.apiFetch(driveFilesListURL(q));
-    const found = (await searchRes.json()).files?.[0];
-    let id;
-    if (found) {
-      id = found.id;
-    } else {
-      const createRes = await this.apiFetch(driveFilesListURL('fields=id'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: folder,
-          mimeType: 'application/vnd.google-apps.folder',
-          parents: [parent],
-        }),
-      });
-      id = (await createRes.json()).id;
+    const res = await this.apiFetch(driveFilesListURL(q));
+    return (await res.json()).files?.[0]?.id || null;
+  }
+
+  async _createChildFolder(parentId, name) {
+    const res = await this.apiFetch(driveFilesListURL('fields=id'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+    });
+    return (await res.json()).id;
+  }
+
+  // Resolve a slash-delimited key to {parentId, name}. Returns null if the
+  // path doesn't exist and create=false. Routes attachments/* to the visible
+  // folder; anything else to appDataFolder.
+  // Web-lock-serialized: concurrent callers for the same path — even across
+  // tabs — wait on one another instead of racing to create duplicate folders.
+  async _resolveChildFolder(parentId, seg, cacheKey, create) {
+    if (this._folderIdCache.has(cacheKey)) return this._folderIdCache.get(cacheKey);
+    return navigator.locks.request(`drive-folder:${cacheKey}`, async () => {
+      if (this._folderIdCache.has(cacheKey)) return this._folderIdCache.get(cacheKey);
+      let id = await this._findChildFolder(parentId, seg);
+      if (!id) {
+        if (!create) return null;
+        id = await this._createChildFolder(parentId, seg);
+      }
+      this._folderIdCache.set(cacheKey, id);
+      return id;
+    });
+  }
+
+  async _resolveParent(key, { create = false } = {}) {
+    const parts = key.split('/');
+    const name = parts.pop();
+    if (parts.length === 0) return { parentId: APP_DATA_FOLDER, name };
+    if (parts[0] !== ATTACHMENTS_ROOT) {
+      throw new Error(`unrecognized key root: ${parts[0]}`);
     }
-    this._entityFolders.set(folder, id);
-    return id;
+    const attachmentsId = await this._getOrCreateAttachmentsFolder(create);
+    if (!attachmentsId) return null;
+    let parentId = attachmentsId;
+    const trail = [ATTACHMENTS_ROOT];
+    for (const seg of parts.slice(1)) {
+      trail.push(seg);
+      const id = await this._resolveChildFolder(parentId, seg, trail.join('/'), create);
+      if (!id) return null;
+      parentId = id;
+    }
+    return { parentId, name };
   }
 
-  async hasAttachment(folder, filename) {
-    if (!this.isReady()) return false;
-    try {
-      const parent = await this._entityFolderId(folder);
-      const q = new URLSearchParams({
-        q: `name='${this._escapeQ(filename)}' and '${parent}' in parents and trashed=false`,
-        fields: 'files(id)',
-        pageSize: '1',
-      });
-      const res = await this.apiFetch(driveFilesListURL(q));
-      return !!(await res.json()).files?.length;
-    } catch { return false; }
+  async _findFileByName(parentId, name) {
+    const params = new URLSearchParams({
+      ...(parentId === APP_DATA_FOLDER ? { spaces: APP_DATA_FOLDER } : {}),
+      q: `name='${this._escapeQ(name)}' and '${parentId}' in parents and trashed=false`,
+      fields: 'files(id,size,modifiedTime)',
+      pageSize: '1',
+    });
+    const res = await this.apiFetch(driveFilesListURL(params));
+    return (await res.json()).files?.[0] || null;
   }
 
-  async saveAttachment(folder, filename, bytes) {
-    const parent = await this._entityFolderId(folder);
+  // Sniff by extension — Drive's UI picks the file icon from mimeType. PATCH
+  // uses uploadType=media (content-only) so stored mimeType is preserved for
+  // existing files; new POSTs get the sniffed type in their metadata.
+  _mimeType(name) {
+    return name.endsWith('.sqlite') ? 'application/vnd.sqlite3' : 'application/octet-stream';
+  }
+
+  // ---- BlobStore primitives ----
+
+  async writeBlob(key, bytes) {
+    const target = await this._resolveParent(key, { create: true });
+    const mime = this._mimeType(target.name);
+    const existing = await this._findFileByName(target.parentId, target.name);
+    if (existing) {
+      const res = await this.apiFetch(
+        `${DRIVE_UPLOAD}/files/${existing.id}?uploadType=media&fields=size,modifiedTime`,
+        { method: 'PATCH', headers: { 'Content-Type': mime }, body: bytes },
+      );
+      const file = await res.json();
+      return { modifiedAt: new Date(file.modifiedTime), sizeBytes: Number(file.size ?? bytes.byteLength) };
+    }
     const body = await this._multipartBody(
-      { name: filename, parents: [parent] },
-      'application/octet-stream',
-      bytes,
+      { name: target.name, parents: [target.parentId] },
+      mime, bytes,
     );
-    await this.apiFetch(driveMultipartUploadURL('uploadType=multipart&fields=id'), {
-      method: 'POST', body,
-    });
-    return { storedFilename: filename, sizeBytes: bytes.byteLength };
+    const res = await this.apiFetch(
+      driveMultipartUploadURL('uploadType=multipart&fields=size,modifiedTime'),
+      { method: 'POST', body },
+    );
+    const file = await res.json();
+    return { modifiedAt: new Date(file.modifiedTime), sizeBytes: Number(file.size ?? bytes.byteLength) };
   }
 
-  async loadAttachment(folder, filename) {
-    const parent = await this._entityFolderId(folder);
-    const q = new URLSearchParams({
-      q: `name='${this._escapeQ(filename)}' and '${parent}' in parents and trashed=false`,
-      fields: 'files(id)',
-      pageSize: '1',
-    });
-    const listRes = await this.apiFetch(driveFilesListURL(q));
-    const file = (await listRes.json()).files?.[0];
-    if (!file) throw new Error(`attachment not found on Drive: ${folder}/${filename}`);
+  async readBlob(key) {
+    const target = await this._resolveParent(key);
+    if (!target) throw new Error(`not found on Drive: ${key}`);
+    const file = await this._findFileByName(target.parentId, target.name);
+    if (!file) throw new Error(`not found on Drive: ${key}`);
     const res = await this.apiFetch(driveFileURL(file.id, 'alt=media'));
     return new Uint8Array(await res.arrayBuffer());
   }
 
-  // Idempotent: a missing file is not an error (404).
-  async deleteAttachment(folder, filename) {
+  async hasBlob(key) {
+    if (!this.isReady()) return false;
+    try {
+      const target = await this._resolveParent(key);
+      if (!target) return false;
+      return !!(await this._findFileByName(target.parentId, target.name));
+    } catch { return false; }
+  }
+
+  async deleteBlob(key) {
     if (!this.isReady()) throw new Error('not connected');
-    const parent = await this._entityFolderId(folder);
-    const q = new URLSearchParams({
-      q: `name='${this._escapeQ(filename)}' and '${parent}' in parents and trashed=false`,
-      fields: 'files(id)',
-      pageSize: '1',
-    });
-    const listRes = await this.apiFetch(driveFilesListURL(q));
-    const file = (await listRes.json()).files?.[0];
+    const target = await this._resolveParent(key);
+    if (!target) return;
+    const file = await this._findFileByName(target.parentId, target.name);
     if (!file) return;
     await this.apiFetch(driveFileURL(file.id), { method: 'DELETE' });
+  }
+
+  async statBlob(key) {
+    if (!this.isAvailable()) return null;
+    try {
+      const target = await this._resolveParent(key);
+      if (!target) return null;
+      const file = await this._findFileByName(target.parentId, target.name);
+      return file ? { modifiedAt: new Date(file.modifiedTime), sizeBytes: Number(file.size ?? 0) } : null;
+    } catch { return null; }
   }
 
   async _multipartBody(metadata, contentType, bytes) {

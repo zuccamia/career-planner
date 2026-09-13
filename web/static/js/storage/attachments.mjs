@@ -10,6 +10,7 @@
 // NOT restore blobs — the metadata comes back, files are looked up live.
 
 import { availableBackends, localDisk, googleDrive } from './index.mjs';
+import { attachmentKey } from './config.mjs';
 
 const UPLOAD_LOCK = 'attachments';
 
@@ -54,7 +55,7 @@ const pickStoredFilename = async (backends, folder, desired) => {
   const [base, ext] = splitExt(desired);
   for (let n = 1; n <= 1000; n++) {
     const candidate = n === 1 ? desired : `${base} (${n})${ext}`;
-    const hits = await Promise.all(backends.map(b => b.hasAttachment(folder, candidate)));
+    const hits = await Promise.all(backends.map(b => b.hasBlob(attachmentKey(folder, candidate))));
     if (!hits.some(Boolean)) return candidate;
   }
   throw new Error(`too many name collisions in folder "${folder}" for "${desired}"`);
@@ -81,10 +82,10 @@ export const uploadAttachment = async (folder, file) => {
       throw err;
     }
     const storedFilename = await pickStoredFilename(backends, folder, originalFilename);
-    // Each backend gets its own Uint8Array view; Drive multipart Blob may
-    // retain the buffer, so we copy before handing over.
+    const key = attachmentKey(folder, storedFilename);
+    // Fresh Uint8Array per backend — Drive multipart Blob may retain the buffer.
     for (const b of backends) {
-      await b.saveAttachment(folder, storedFilename, new Uint8Array(buf));
+      await b.writeBlob(key, new Uint8Array(buf));
     }
     return {
       folder,
@@ -100,10 +101,11 @@ export const uploadAttachment = async (folder, file) => {
 // Read an attachment's bytes, preferring local disk over Drive. Callers get a
 // Uint8Array; UI can wrap in a Blob to trigger a download.
 export const downloadAttachment = async (folder, filename) => {
+  const key = attachmentKey(folder, filename);
   const order = [localDisk, googleDrive].filter(b => b.isAvailable());
   let lastErr;
   for (const b of order) {
-    try { return await b.loadAttachment(folder, filename); }
+    try { return await b.readBlob(key); }
     catch (err) { lastErr = err; }
   }
   throw new Error(`attachment unreachable on any backend: ${folder}/${filename}${lastErr ? ` — ${lastErr.message}` : ''}`);
@@ -116,11 +118,12 @@ export const downloadAttachment = async (folder, filename) => {
 // consistent across tabs.
 export const removeAttachment = async (folder, filename) => {
   return navigator.locks.request(UPLOAD_LOCK, async () => {
+    const key = attachmentKey(folder, filename);
     const backends = availableBackends();
     const results = [];
     for (const b of backends) {
       try {
-        await b.deleteAttachment(folder, filename);
+        await b.deleteBlob(key);
         results.push({ backend: b.name, ok: true });
       } catch (err) {
         console.warn(`removeAttachment: ${b.name} failed for ${folder}/${filename}:`, err);
