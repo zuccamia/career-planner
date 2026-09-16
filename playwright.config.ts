@@ -11,7 +11,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : 2,
+  // Single worker; CI parallelism happens externally via shards.
+  workers: 1,
   reporter: [['list']],
   // Hard ceiling per run (per shard on CI). Green runs finish in ~2m. Any
   // hang past that is a real signal something's wrong — cap at 10m so a

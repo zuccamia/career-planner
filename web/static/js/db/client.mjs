@@ -93,8 +93,15 @@ export const exec = async (sql, bind) => {
   return rows;
 };
 export const exportDb = () => call('export');
-export const importDb = (bytes) => call('import', { bytes }, [bytes.buffer]);
+// Passes bytes via structured clone (no transfer) so the caller keeps its copy
+// for downstream use — e.g. sync fan-out reuses the same bytes across backends.
+export const importDb = (bytes) => call('import', { bytes });
 export const wipeDb = () => call('wipe');
+
+// Load bytes into a scratch DB attached as `backend`; pair with diffClose.
+// Structured-cloned like importDb — caller keeps its copy.
+export const diffOpen = (bytes) => call('diff-open', { bytes });
+export const diffClose = () => call('diff-close');
 
 // decodeJSON parses a TEXT-JSON column value with a fallback for null / empty
 // / malformed input. Returned by reference — pass fresh values from the call

@@ -62,11 +62,11 @@ test.describe('local dashboard', () => {
     await expect(appliedCard).toContainText('1');
   });
 
-  test('sankey shows lead node and "Still <status>" sinks for non-terminal populations', async ({ page }) => {
+  test('sankey renders active statuses and surfaces residuals via node tooltip', async ({ page }) => {
     // Two leads that never advanced + one that made lead → applied. The sankey
-    // should render a synthetic "Still Lead (2)" sink (from the leads sitting
-    // in lead), a "Still Applied (1)" sink (from the one advanced app now
-    // parked in applied), and the Lead node itself as the source of both.
+    // should render Lead and Applied nodes (transition drives both into view),
+    // and each node's <title> tooltip should report the residual population
+    // currently sitting at that status.
     await gotoDashboard(page);
     await page.evaluate(async () => {
       // @ts-expect-error — module exposed for e2e diagnostics
@@ -87,8 +87,10 @@ test.describe('local dashboard', () => {
     await expect(page.getByRole('heading', { name: 'Application pipeline' })).toBeVisible({ timeout: 30_000 });
 
     const sankey = page.locator('#pipeline-sankey');
-    await expect(sankey.locator('tspan:text-is("Still Lead (2)")')).toBeVisible({ timeout: 15_000 });
-    await expect(sankey.locator('tspan:text-is("Still Applied (1)")')).toBeVisible();
-    await expect(sankey.locator('tspan:text-is("Lead")')).toBeVisible();
+    await expect(sankey.locator('tspan:text-is("Lead")')).toBeVisible({ timeout: 15_000 });
+    await expect(sankey.locator('tspan:text-is("Applied")')).toBeVisible();
+    // Residuals moved from ghost "still" sinks into the SVG <title> tooltip.
+    await expect(sankey.locator('title', { hasText: 'Lead' })).toContainText('Currently here: 2');
+    await expect(sankey.locator('title', { hasText: 'Applied' })).toContainText('Currently here: 1');
   });
 });

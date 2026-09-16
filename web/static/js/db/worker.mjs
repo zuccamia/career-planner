@@ -8,9 +8,12 @@ import sqlite3InitModule from 'https://cdn.jsdelivr.net/npm/@sqlite.org/sqlite-w
 // when you're prepared to abandon or migrate existing browser-local data.
 const POOL_NAME = 'career-planner-local-pool';
 const DEFAULT_DB = '/career-planner.sqlite';
+const DIFF_SCRATCH_DB = '/diff-scratch.sqlite';
+const DIFF_ATTACH_ALIAS = 'backend';
 
 let sqlite3 = null;
 let poolUtil = null;
+let poolVfsName = null;
 let db = null;
 let dbFilename = null;
 
@@ -39,12 +42,21 @@ self.onmessage = async (ev) => {
           throw new Error('installOpfsSAHPoolVfs missing — sqlite-wasm build lacks OPFS SAH Pool support');
         }
         poolUtil = await sqlite3.installOpfsSAHPoolVfs({ name: POOL_NAME });
+        poolVfsName =
+          poolUtil.vfsName ||
+          poolUtil.getConfig?.().name ||
+          POOL_NAME;
+        if (!sqlite3.capi.sqlite3_vfs_find(poolVfsName)) {
+          throw new Error(`OPFS SAH pool VFS "${poolVfsName}" not registered`);
+        }
+        // Reap any scratch DB left over from a prior session's diff.
+        try { await poolUtil.unlink(DIFF_SCRATCH_DB); } catch {}
       }
       openDb(dbName || DEFAULT_DB);
       send(id, true, {
         version: sqlite3.version.libVersion,
         filename: dbFilename,
-        vfs: 'opfs-sahpool',
+        vfs: poolVfsName,
         poolCapacity: poolUtil.getCapacity(),
         poolUsed: poolUtil.getFileCount(),
       });
@@ -71,9 +83,34 @@ self.onmessage = async (ev) => {
       const name = dbFilename;
       db.close();
       db = null;
-      await poolUtil.importDb(name, bytes);
+      try {
+        await poolUtil.importDb(name, bytes);
+      } catch (err) {
+        // db was closed above — reopen so the worker stays usable. importDb
+        // validates before writing, so the file still holds the pre-import DB.
+        openDb(name);
+        throw err;
+      }
       openDb(name);
       send(id, true, { filename: dbFilename, sizeBytes: bytes.byteLength });
+      return;
+    }
+
+    // Load bytes into a scratch DB and ATTACH as `backend` for cross-schema diff queries.
+    if (type === 'diff-open') {
+      if (!(bytes instanceof Uint8Array)) throw new Error('diff-open requires Uint8Array bytes');
+      try { db.exec(`DETACH ${DIFF_ATTACH_ALIAS}`); } catch {}
+      try { await poolUtil.unlink(DIFF_SCRATCH_DB); } catch {}
+      await poolUtil.importDb(DIFF_SCRATCH_DB, bytes);
+      db.exec(`ATTACH 'file:${DIFF_SCRATCH_DB}?vfs=${poolVfsName}' AS ${DIFF_ATTACH_ALIAS}`);
+      send(id, true, { attached: true, alias: DIFF_ATTACH_ALIAS });
+      return;
+    }
+
+    if (type === 'diff-close') {
+      try { db.exec(`DETACH ${DIFF_ATTACH_ALIAS}`); } catch {}
+      try { await poolUtil.unlink(DIFF_SCRATCH_DB); } catch {}
+      send(id, true, { detached: true });
       return;
     }
 

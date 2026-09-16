@@ -13,9 +13,11 @@ import { isAutosyncEnabled, setAutosyncEnabled } from '../../storage/autosync.mj
 import { deleteAttachment } from '../../entities/attachments.mjs';
 import {
   syncCurrentSnapshot, getActiveSyncLabel, hasUnsyncedLocalChanges,
-  finalizeSyncResult, markRestoredFromSnapshot, clearLocalModifiedAt,
+  finalizeSyncResult, clearLocalModifiedAt,
   getLastSyncedAt, getDivergenceState, resolveDivergence,
+  importSnapshotFromBackend,
 } from '../../storage/sync-current.mjs';
+import { diffAgainstSnapshot } from '../../storage/diff-snapshot.mjs';
 import { relativeAge } from '../../ui/format.mjs';
 import { snapshotFilename, sanitizeSnapshotLabel } from '../../storage/config.mjs';
 import { STATIC_ROOT } from '../../host.mjs';
@@ -315,12 +317,7 @@ const restoreSnapshot = (backend) => async (id, displayName, mtimeMs) => {
   const errId = errorIdFor(backend);
   setInlineError(errId, '');
   try {
-    const bytes = await backend.loadSnapshot(id);
-    await importDb(bytes);
-    await setCurrentSnapshotName(shown);
-    // Stamp local's timestamp as the snapshot's own mtime — a fresher backend
-    // copy of the sync file will still win on the next sync (restore = viewing).
-    if (mtimeMs) await markRestoredFromSnapshot(mtimeMs);
+    const bytes = await importSnapshotFromBackend({ backend, snapshotId: id, displayName: shown, mtimeMs });
     toast(t('settings.snapshots.toast.restored', { name: shown, size: kb(bytes.byteLength) }), 'ok');
     setTimeout(() => location.reload(), 500);
   } catch (err) {
@@ -784,6 +781,12 @@ const refreshDivergenceBanner = async () => {
         <li>${escapeHtml(t('settings.divergence.remote_side', { backend: state.backendName, age: backendAge }))}</li>
         <li>${escapeHtml(t('settings.divergence.backup_saved', { name: state.preSyncSnapshotName }))}</li>
       </ul>
+      <details id="divergence-diff">
+        <summary class="${CLS.linkAction} cursor-pointer">${escapeHtml(t('settings.divergence.diff.toggle'))}</summary>
+        <div id="divergence-diff-body" class="mt-2 ${CLS.bodyText}">
+          <p class="${CLS.placeholder}">${escapeHtml(t('settings.divergence.diff.loading'))}</p>
+        </div>
+      </details>
       <div class="${CLS.formRow}">
         ${button({ id: 'btn-divergence-keep-local', variant: 'primaryCompact', label: t('settings.divergence.action.keep_local') })}
         ${button({ id: 'btn-divergence-keep-remote', variant: 'secondaryCompact', label: t('settings.divergence.action.keep_remote', { backend: state.backendName }) })}
@@ -792,6 +795,80 @@ const refreshDivergenceBanner = async () => {
   `;
   document.getElementById('btn-divergence-keep-local').addEventListener('click', () => onResolve('local'));
   document.getElementById('btn-divergence-keep-remote').addEventListener('click', () => onResolve('backend'));
+  wireDivergenceDiff(state);
+};
+
+// Lazy: only fetches + diffs when the user opens the disclosure.
+const wireDivergenceDiff = (state) => {
+  const details = document.getElementById('divergence-diff');
+  if (!details) return;
+  let loaded = false;
+  details.addEventListener('toggle', async () => {
+    if (!details.open || loaded) return;
+    loaded = true;
+    const body = document.getElementById('divergence-diff-body');
+    try {
+      const backend = availableBackends().find(b => b.name === state.backendName);
+      if (!backend) throw new Error(t('settings.divergence.diff.error.backend_unavailable'));
+      const bytes = await backend.readBlob(state.filename);
+      const diff = await diffAgainstSnapshot(new Uint8Array(bytes));
+      body.innerHTML = renderDivergenceDiff(diff, state.backendName);
+    } catch (err) {
+      body.innerHTML = `<p class="text-status-out">${escapeHtml(t('settings.divergence.diff.error.failed', { err: err.message }))}</p>`;
+    }
+  });
+};
+
+const renderDivergenceDiff = (diff, backendName) => {
+  if (!diff.tables.length) return `<p class="${CLS.placeholder}">${escapeHtml(t('settings.divergence.diff.empty'))}</p>`;
+  return diff.tables.map(t2 => {
+    if (t2.skipped) {
+      return `<div class="mt-2"><p class="${CLS.label}">${escapeHtml(t2.table)}</p><p class="${CLS.helpText}">${escapeHtml(t('settings.divergence.diff.skipped', { reason: t2.skipped }))}</p></div>`;
+    }
+    const counts = t('settings.divergence.diff.counts', {
+      added: t2.added.length, removed: t2.removed.length, modified: t2.modified.length,
+    });
+    return `
+      <details class="mt-2">
+        <summary class="cursor-pointer">
+          <span class="${CLS.label}">${escapeHtml(t2.table)}</span>
+          <span class="${CLS.helpText} ml-2">${escapeHtml(counts)}</span>
+        </summary>
+        <div class="mt-1 pl-4 space-y-2">
+          ${renderRowList('added', t2.added, backendName)}
+          ${renderRowList('removed', t2.removed, backendName)}
+          ${renderModifiedList(t2.modified)}
+        </div>
+      </details>`;
+  }).join('');
+};
+
+const renderRowList = (kind, rows, backendName) => {
+  if (!rows.length) return '';
+  const heading = kind === 'added'
+    ? t('settings.divergence.diff.added_heading', { backend: backendName })
+    : t('settings.divergence.diff.removed_heading', { backend: backendName });
+  const items = rows.map(r => `<li>${escapeHtml(r.label)}</li>`).join('');
+  return `<div><p class="${CLS.helpText}">${escapeHtml(heading)}</p><ul class="${CLS.tightList} list-disc pl-5">${items}</ul></div>`;
+};
+
+const renderModifiedList = (rows) => {
+  if (!rows.length) return '';
+  const items = rows.map(r => {
+    const changes = r.changes.map(c => `
+      <li><span class="${CLS.codeText}">${escapeHtml(c.column)}</span>:
+        <span class="${CLS.metaText} line-through">${escapeHtml(formatDiffValue(c.before))}</span>
+        → <span>${escapeHtml(formatDiffValue(c.after))}</span></li>`).join('');
+    return `<li><span>${escapeHtml(r.label)}</span><ul class="${CLS.tightList} list-disc pl-5">${changes}</ul></li>`;
+  }).join('');
+  return `<div><p class="${CLS.helpText}">${escapeHtml(t('settings.divergence.diff.modified_heading'))}</p><ul class="${CLS.tightList} list-disc pl-5">${items}</ul></div>`;
+};
+
+// Truncate long fields so a JSON column doesn't blow up the banner.
+const formatDiffValue = (value) => {
+  if (value == null) return '∅';
+  const str = String(value);
+  return str.length > 120 ? str.slice(0, 117) + '…' : str;
 };
 
 const onResolve = async (choice) => {

@@ -39,6 +39,8 @@ const STAGE_DEFINITIONS = [
 // fill; the four interview sub-stages share a brass ramp (light → dark by
 // depth) per §9 so the Sankey shows progression a flat brass would hide.
 // Withdrawn and Ghosted are distinct terminal sinks; both status-hold gray.
+// `terminal` marks final outcomes for link-color inheritance — non-outcome
+// statuses can still act as leaf sinks in the diagram when they hold residuals.
 const SANKEY_STATUS_DEFS = [
   { status: 'lead',                 label: 'Lead',                 color: '#4E6E8E', depth: 0, verticalOrder: 2, terminal: false },
   { status: 'applied',              label: 'Applied',              color: '#0F5C5B', depth: 1, verticalOrder: 2, terminal: false },
@@ -105,10 +107,6 @@ const buildPipelineStages = async () => {
   return stages.map(s => ({ ...s, width: scaledFunnelWidth(s.count, total) }));
 };
 
-// Gray fill for the synthetic "still in <status>" sinks — same hue family as
-// the hold statuses but lighter so it reads as in-progress rather than terminal.
-const STILL_NODE_COLOR = '#B0B7BC';
-
 const buildSankeyData = async () => {
   const [rows, currentCounts] = await Promise.all([
     listStatusTransitionCounts(),
@@ -117,32 +115,19 @@ const buildSankeyData = async () => {
   const defByStatus = new Map(SANKEY_STATUS_DEFS.map(d => [d.status, d]));
   const aggregated = new Map(); // key: `${from}->${to}` → n
   const activeStatuses = new Set();
-  const valueByStatus = new Map();
   for (const r of rows) {
     if (!defByStatus.has(r.from_status) || !defByStatus.has(r.to_status)) continue;
     const key = `${r.from_status}->${r.to_status}`;
     aggregated.set(key, (aggregated.get(key) || 0) + r.n);
     activeStatuses.add(r.from_status);
     activeStatuses.add(r.to_status);
-    valueByStatus.set(r.from_status, (valueByStatus.get(r.from_status) || 0) + r.n);
-    valueByStatus.set(r.to_status, (valueByStatus.get(r.to_status) || 0) + r.n);
   }
 
-  // For every non-terminal status with applications currently sitting in it,
-  // emit a synthetic "still in <status>" sink so the diagram accounts for the
-  // full pipeline population — not just what has already transitioned.
-  const stillCounts = new Map();
-  for (const def of SANKEY_STATUS_DEFS) {
-    if (def.terminal) continue;
-    const still = currentCounts.get(def.status) || 0;
-    if (still <= 0) continue;
-    stillCounts.set(def.status, still);
-    activeStatuses.add(def.status);
-    valueByStatus.set(def.status, (valueByStatus.get(def.status) || 0) + still);
-  }
+  if (aggregated.size === 0) return { nodes: [], links: [] };
 
-  if (aggregated.size === 0 && stillCounts.size === 0) return { nodes: [], links: [] };
-
+  // Any status can act as a terminal sink: statuses with residual population
+  // just render as leaves in the Sankey. Residuals are surfaced via the node
+  // tooltip rather than a synthetic "still in <status>" ghost node.
   const nodes = [];
   const indexByStatus = new Map();
   for (const def of SANKEY_STATUS_DEFS) {
@@ -152,24 +137,10 @@ const buildSankeyData = async () => {
       id: def.status,
       name: t(`applications.status.${def.status}`),
       color: def.color,
-      value: valueByStatus.get(def.status) || 0,
+      residual: currentCounts.get(def.status) || 0,
       depth: def.depth,
       verticalOrder: def.verticalOrder,
       terminal: def.terminal,
-    });
-  }
-  const stillIndexByStatus = new Map();
-  for (const [status, count] of stillCounts) {
-    const parent = defByStatus.get(status);
-    stillIndexByStatus.set(status, nodes.length);
-    nodes.push({
-      id: `${status}__still`,
-      name: t('dashboard.sankey.still', { status: t(`applications.status.${status}`), n: count }),
-      color: STILL_NODE_COLOR,
-      value: count,
-      depth: parent.depth + 1,
-      verticalOrder: (parent.verticalOrder ?? 0) + 0.5,
-      terminal: true,
     });
   }
   const links = [];
@@ -179,9 +150,6 @@ const buildSankeyData = async () => {
       if (!n) continue;
       links.push({ source: indexByStatus.get(from.status), target: indexByStatus.get(to.status), value: n });
     }
-  }
-  for (const [status, count] of stillCounts) {
-    links.push({ source: indexByStatus.get(status), target: stillIndexByStatus.get(status), value: count });
   }
   return { nodes, links };
 };
@@ -491,6 +459,9 @@ const renderSankey = async (data) => {
     .attr('fill', d => d.color)
     .attr('stroke', CFG.nodeStroke)
     .attr('stroke-width', 1);
+  nodes.append('title').text(d => t('dashboard.sankey.tooltip', {
+    status: d.name, total: d.value || 0, residual: d.residual || 0,
+  }));
 
   const label = nodes.append('text')
     .attr('text-anchor', 'start')

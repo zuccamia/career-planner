@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/zuccamia/career-planner/internal/sources/llm"
+	"github.com/zuccamia/career-planner/internal/util"
 )
 
 // ---- import-overview helpers ----
@@ -177,7 +178,7 @@ func finalizeImportedBrags(out ImportBragsResult) []ImportedBrag {
 		if llm.IsSuspiciousText(companyHint) {
 			companyHint = ""
 		}
-		var entryYear *int
+		var entryYear *util.FlexInt
 		if raw.EntryYear != nil && *raw.EntryYear >= 1970 && *raw.EntryYear <= 2100 {
 			y := *raw.EntryYear
 			entryYear = &y

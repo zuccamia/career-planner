@@ -7,7 +7,7 @@ import {
 } from '../storage/sync-current.mjs';
 import { availableBackends } from '../storage/index.mjs';
 import { activeSyncFilename } from '../storage/config.mjs';
-import { STATIC_ROOT } from '../host.mjs';
+import { urlFor } from '../host.mjs';
 import { toast } from './toast.mjs';
 import { icon } from './icons.mjs';
 import { CLS } from './classes.mjs';
@@ -90,7 +90,7 @@ export const mountQuickSync = async () => {
     // In a divergent state, clicking navigates to Settings instead of firing
     // sync — the resolution UI lives there.
     if (await getDivergenceState()) {
-      location.href = `${STATIC_ROOT}settings#sync-panel`;
+      location.href = urlFor('settings#divergence-banner');
       return;
     }
     if (availableBackends().length === 0) {

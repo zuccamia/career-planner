@@ -63,7 +63,7 @@ type JobDescriptionStructured struct {
 	EmploymentType string     `json:"employment_type"`
 	Function       string     `json:"function,omitempty"`
 	Season         string     `json:"season"`
-	Year           int        `json:"year"`
+	Year           util.FlexInt `json:"year"`
 	Locations      util.StringList `json:"locations"`
 	LocationNotes  string     `json:"location_notes"`
 	Salary         struct {

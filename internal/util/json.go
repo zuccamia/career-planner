@@ -7,6 +7,7 @@ package util
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -43,6 +44,47 @@ func (s *FlexString) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 	return fmt.Errorf("decode flex string: expected string, bool, or number")
+}
+
+// FlexInt accepts a number or numeric string from JSON and normalizes to an
+// int. LLMs sometimes emit years or counts as quoted strings ("2024") instead
+// of numbers. Non-numeric strings and null decode to 0.
+type FlexInt int
+
+func (i *FlexInt) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*i = 0
+		return nil
+	}
+	var n int
+	if err := json.Unmarshal(data, &n); err == nil {
+		*i = FlexInt(n)
+		return nil
+	}
+	var f float64
+	if err := json.Unmarshal(data, &f); err == nil {
+		*i = FlexInt(int(f))
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			*i = 0
+			return nil
+		}
+		if n, err := strconv.Atoi(s); err == nil {
+			*i = FlexInt(n)
+			return nil
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			*i = FlexInt(int(f))
+			return nil
+		}
+		*i = 0
+		return nil
+	}
+	return fmt.Errorf("decode flex int: expected number, numeric string, or null")
 }
 
 // StringList accepts either a JSON array of strings or a single string,

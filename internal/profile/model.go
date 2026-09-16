@@ -1,6 +1,9 @@
 package profile
 
-import "github.com/zuccamia/career-planner/internal/sources/llm"
+import (
+	"github.com/zuccamia/career-planner/internal/sources/llm"
+	"github.com/zuccamia/career-planner/internal/util"
+)
 
 // Service exposes LLM-backed helpers for the profile domain: overview
 // extraction, structured-résumé extraction, and brag-entry helpers (tag
@@ -21,9 +24,9 @@ func NewService(client llm.Client) *Service {
 // Skill mirrors the browser-side hydrateSkills shape (name + optional years
 // and level). Levels outside SkillLevels are dropped in finalize.
 type Skill struct {
-	Name  string `json:"name"`
-	Years *int   `json:"years,omitempty"`
-	Level string `json:"level,omitempty"`
+	Name  string        `json:"name"`
+	Years *util.FlexInt `json:"years,omitempty"`
+	Level string        `json:"level,omitempty"`
 }
 
 // ImportedOverview is the decoded LLM response for résumé → profile-overview
@@ -67,7 +70,7 @@ type ImportedBrag struct {
 	Impact     string   `json:"impact"`
 	Tags       []string `json:"tags"`
 	Company    string   `json:"company,omitempty"`
-	EntryYear  *int     `json:"entry_year,omitempty"`
+	EntryYear  *util.FlexInt `json:"entry_year,omitempty"`
 	Category   string   `json:"category"`
 	Confidence float64  `json:"confidence"`
 }

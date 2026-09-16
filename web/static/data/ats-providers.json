@@ -68,6 +68,12 @@
     "slug_in_path": false
   },
   {
+    "provider": "careerpuck",
+    "search_hosts": ["app.careerpuck.com"],
+    "host_pattern": "^app\\.careerpuck\\.com$",
+    "slug_in_path": true
+  },
+  {
     "provider": "internal",
     "search_hosts": [],
     "host_pattern": "^careers\\.",

@@ -34,12 +34,13 @@ type smokeTarget struct {
 // The exact URLs will go stale — updating them is the maintenance task the
 // nightly workflow surfaces.
 var smokeTargets = []smokeTarget{
-	{"greenhouse", providers.NewGreenhouse(),      "https://job-boards.greenhouse.io/anthropic/jobs/5101378008"},
-	{"lever",      providers.NewLever(),           "https://jobs.lever.co/matchgroup/3414ba28-35f7-45d3-8e13-35c883959635"},
-	{"ashby",      providers.NewAshby(),           "https://jobs.ashbyhq.com/openai/7af121a1-d29a-4745-84c1-ef1b58a3b840"},
+	{"greenhouse", providers.NewGreenhouse(),      "https://job-boards.greenhouse.io/anthropic/jobs/4461450008"},
+	{"lever",      providers.NewLever(),           "https://jobs.lever.co/matchgroup/cb977666-1e41-4098-ad9c-6ab387e56a7a"},
+	{"ashby",      providers.NewAshby(),           "https://jobs.ashbyhq.com/openai/8fb1615c-34bf-47c4-a1d1-b7b2f836bbd3"},
 	{"eightfold",  providers.NewEightfold(),       "https://bostonscientific.eightfold.ai/careers/job/563602811481461-r-d-software-engineer-intern-arden-hills-us-mn-united-states-n-a?domain=bostonscientific.com"},
 	{"smartrec",   providers.NewSmartRecruiters(), "https://jobs.smartrecruiters.com/DeliveryHero/744000143698619-associate-commercial-groceries-instashop"},
-	{"workable",   providers.NewWorkable(),        "https://apply.workable.com/trycaddi/j/9D1291C697"},
+	{"workable",   providers.NewWorkable(),        "https://apply.workable.com/huggingface/j/002470F128"},
+	{"careerpuck", providers.NewCareerpuck(),      "https://app.careerpuck.com/job-board/domino-data-lab/job/8174947"},
 }
 
 func TestExtractorSmoke(t *testing.T) {

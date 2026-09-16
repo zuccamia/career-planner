@@ -7,6 +7,7 @@ import { availableBackends } from './index.mjs';
 import { activeSyncFilename, syncKey, preSyncSnapshotFilename } from './config.mjs';
 import { t } from '../i18n.mjs';
 import { refreshCurrentSnapshotBadge } from '../ui/current_snapshot.mjs';
+import { setCurrentSnapshotName } from './current-snapshot.mjs';
 
 const LOCK = 'sync-current';
 
@@ -34,6 +35,16 @@ export const hasUnsyncedLocalChanges = async () => {
   if (!modified) return false;
   if (!synced) return true;
   return modified > synced;
+};
+
+// Load a snapshot from `backend` and import it. Shared between the first-sync
+// seed path and Settings' explicit restore.
+export const importSnapshotFromBackend = async ({ backend, snapshotId, displayName = '', mtimeMs = null }) => {
+  const bytes = new Uint8Array(await backend.loadSnapshot(snapshotId));
+  await importDb(bytes);
+  if (displayName) await setCurrentSnapshotName(displayName);
+  if (mtimeMs != null) await markRestoredFromSnapshot(mtimeMs);
+  return bytes;
 };
 
 // Divergence: local edited AND some backend copy also updated, both since the
@@ -92,6 +103,26 @@ export const syncCurrentSnapshot = async ({ label = '', forceWinner = null } = {
       .filter(bi => bi.at)
       .sort((a, b) => b.at - a.at)[0] || null;
 
+    // First-sync seed: blank local + no active sync file on any backend, but
+    // some backend has other snapshots (labeled files, downloaded snapshots).
+    // Pick the newest across all backends and import it instead of uploading
+    // a blank current.sqlite.
+    let firstSyncSeed = null;
+    if (!forceWinner && !localAtMs && !lastSyncedAt && !newestBackendCopy) {
+      const scans = await Promise.all(backends.map(async (b) => {
+        try { return { backend: b, snaps: await b.listSnapshots() }; }
+        catch { return { backend: b, snaps: [] }; }
+      }));
+      for (const { backend, snaps } of scans) {
+        for (const s of snaps) {
+          const at = s.createdAt instanceof Date ? s.createdAt : new Date(s.createdAt);
+          if (!firstSyncSeed || at > firstSyncSeed.at) {
+            firstSyncSeed = { backend, snap: s, at };
+          }
+        }
+      }
+    }
+
     // If a previous run already recorded divergence, surface it as-is instead
     // of re-detecting — otherwise every retry click drops another pre-sync
     // snapshot onto the backends.
@@ -126,17 +157,20 @@ export const syncCurrentSnapshot = async ({ label = '', forceWinner = null } = {
       return { skipped: 'divergence', divergence };
     }
 
-    // Winner selection. Ties favor local; if neither side has anything, stamp
-    // local as source. forceWinner overrides for user-resolved divergence.
+    // Winner selection. Ties favor local; forceWinner overrides for
+    // user-resolved divergence. Seed only fires on a provably blank first sync.
+    const backendWinner = () => ({ source: 'backend', backend: newestBackendCopy.backend, at: newestBackendCopy.at });
     let winner;
     if (forceWinner === 'local') {
       winner = { source: 'local', at: new Date() };
     } else if (forceWinner === 'backend' && newestBackendCopy) {
-      winner = { source: 'backend', backend: newestBackendCopy.backend, at: newestBackendCopy.at };
+      winner = backendWinner();
     } else if (localAt && (!newestBackendCopy || localAt >= newestBackendCopy.at)) {
       winner = { source: 'local', at: localAt };
     } else if (newestBackendCopy) {
-      winner = { source: 'backend', backend: newestBackendCopy.backend, at: newestBackendCopy.at };
+      winner = backendWinner();
+    } else if (firstSyncSeed) {
+      winner = { source: 'seed', backend: firstSyncSeed.backend, at: firstSyncSeed.at, snap: firstSyncSeed.snap };
     } else {
       winner = { source: 'local', at: new Date() };
     }
@@ -144,9 +178,24 @@ export const syncCurrentSnapshot = async ({ label = '', forceWinner = null } = {
     let bytes;
     if (winner.source === 'local') {
       bytes = (await exportDb()).bytes;
+    } else if (winner.source === 'seed') {
+      bytes = await importSnapshotFromBackend({
+        backend: winner.backend,
+        snapshotId: winner.snap.id,
+        displayName: winner.snap.name,
+      });
     } else {
-      bytes = await winner.backend.readBlob(key);
-      await importDb(new Uint8Array(bytes));
+      bytes = new Uint8Array(await winner.backend.readBlob(key));
+      try {
+        await importDb(bytes);
+      } catch (err) {
+        // Backend copy is unreadable (e.g. corrupted by an earlier fan-out bug).
+        // Fall back to local-wins so the write loop overwrites the bad blob
+        // with a valid one — otherwise the device is permanently stuck.
+        console.warn('[sync] backend import failed, falling back to local-wins:', err.message);
+        winner = { source: 'local', at: new Date() };
+        bytes = (await exportDb()).bytes;
+      }
     }
 
     const results = [];
@@ -156,7 +205,7 @@ export const syncCurrentSnapshot = async ({ label = '', forceWinner = null } = {
         continue;
       }
       try {
-        const meta = await bi.backend.writeBlob(key, new Uint8Array(bytes));
+        const meta = await bi.backend.writeBlob(key, bytes);
         results.push({ backend: bi.backend.name, action: 'updated', at: meta.modifiedAt });
       } catch (err) {
         results.push({ backend: bi.backend.name, action: 'error', error: err.message });
@@ -175,6 +224,7 @@ export const syncCurrentSnapshot = async ({ label = '', forceWinner = null } = {
       winner: winner.source === 'local' ? 'local' : winner.backend.name,
       at: winner.at,
       results,
+      seededFrom: winner.source === 'seed' ? winner.snap.name : undefined,
     };
   });
 };
