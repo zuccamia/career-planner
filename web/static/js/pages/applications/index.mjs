@@ -9,6 +9,7 @@ import {
   APPLICATION_STATUSES,
   listApplications, getApplication,
   createApplication, updateApplication, updateApplicationStatus,
+  undoLatestStatusChange,
   deleteApplication, updateApplicationExtraction,
   listEventsByApplication, clearAllApplications,
   headlineStatus, statusSince,
@@ -614,7 +615,16 @@ const detailsHtml = (a, events, attachments, tailored = [], { editing = false, c
 
       <div class="grid gap-4 lg:grid-cols-2">
         <div class="space-y-3">
-          ${sectionTitle(t('applications.details.timeline'))}
+          <div class="flex items-center justify-between gap-3">
+            ${sectionTitle(t('applications.details.timeline'))}
+            ${button({
+              id: 'btn-details-undo-status',
+              variant: 'icon',
+              icon: 'undo',
+              iconOnly: true,
+              ariaLabel: t('applications.aria.undo_status'),
+            })}
+          </div>
           ${events.length ? timelineHtml(events) : emptyState({ message: t('applications.details.timeline_empty') })}
         </div>
         ${attachmentsSectionHtml(a, attachments)}
@@ -932,6 +942,22 @@ const wireDetails = (app) => {
       triggerEl: ev.currentTarget,
       onClose: () => renderDetails(),
     });
+  });
+
+  document.getElementById('btn-details-undo-status')?.addEventListener('click', async () => {
+    setInlineError('details-error', '');
+    try {
+      const result = await undoLatestStatusChange(app.id);
+      if (!result) {
+        toast(t('applications.toast.nothing_to_undo'), 'warning');
+        return;
+      }
+      toast(t('applications.toast.status_reverted', { status: statusLabel(result.status) }), 'ok');
+      await renderDetails();
+      await refreshList();
+    } catch (err) {
+      setInlineError('details-error', t('applications.error.status_update_failed', { err: err.message }));
+    }
   });
 
   document.getElementById('quick-status-form')?.addEventListener('submit', async (ev) => {

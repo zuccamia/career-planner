@@ -240,11 +240,14 @@ const threadFormHtml = ({ mode, initial = {} }) => {
   const eyebrowKey = isEdit ? 'people.thread_form.edit_eyebrow' : 'people.thread_form.new_eyebrow';
   const saveAria   = isEdit ? 'people.aria.save_thread_edit'   : 'people.aria.create_thread';
   const cancelAria = isEdit ? 'people.aria.cancel_thread_edit' : 'people.aria.cancel_new_thread';
-  const formId     = isEdit ? 'edit-thread-form'   : 'new-thread-form';
-  const cancelId   = isEdit ? 'btn-cancel-edit-thread' : 'btn-cancel-new-thread';
-  const errorId    = isEdit ? 'edit-thread-error'  : 'new-thread-error';
-  const subjectId  = isEdit ? 'edit_thread_subject' : 'new_thread_subject';
-  const channelId  = isEdit ? 'edit_thread_channel' : 'new_thread_channel';
+  // Edit-mode ids are per-thread so multiple open <details> can host their
+  // own edit form without id collisions.
+  const suffix     = isEdit ? `-${initial.id}` : '';
+  const formId     = isEdit ? `edit-thread-form${suffix}`   : 'new-thread-form';
+  const cancelId   = isEdit ? `btn-cancel-edit-thread${suffix}` : 'btn-cancel-new-thread';
+  const errorId    = isEdit ? `edit-thread-error${suffix}`  : 'new-thread-error';
+  const subjectId  = isEdit ? `edit_thread_subject${suffix}` : 'new_thread_subject';
+  const channelId  = isEdit ? `edit_thread_channel${suffix}` : 'new_thread_channel';
   const subject    = initial.subject ?? '';
   const channel    = initial.channel ?? '';
   return `
@@ -286,7 +289,14 @@ const threadListHtml = (threads, openThreadID) => {
         const expanded = th.id === openThreadID;
         return `
           <li>
-            <div class="${CLS.surfaceCard} ${expanded ? 'ring-1 ring-brand/30' : ''}">
+            <div
+              class="${CLS.surfaceCard} ${CLS.toggleTarget} js-toggle-thread ${expanded ? 'ring-1 ring-brand/30' : ''}"
+              role="button"
+              tabindex="0"
+              aria-expanded="${expanded}"
+              aria-controls="thread-detail-${th.id}"
+              aria-label="${escapeHtml(th.subject) || t('people.threads.untitled')}"
+              data-id="${th.id}">
               <div class="${CLS.cardHeadRow}">
                 <div class="space-y-1 min-w-0">
                   <div class="${CLS.chipRowInline}">
@@ -301,7 +311,6 @@ const threadListHtml = (threads, openThreadID) => {
                   </p>
                 </div>
                 <div class="${CLS.headActions}">
-                  ${button({ variant: 'secondaryCompact', label: expanded ? t('people.action.hide') : t('people.action.open_thread'), extraClass: 'js-toggle-thread', dataset: { id: th.id } })}
                   ${button({
                     variant: 'icon',
                     icon: th.status === 'open' ? 'linkSlash' : 'link',
@@ -314,7 +323,7 @@ const threadListHtml = (threads, openThreadID) => {
                   ${button({ variant: 'dangerIcon', icon: 'trash', iconOnly: true, ariaLabel: t('people.aria.delete_thread', { subject: th.subject }), extraClass: 'js-delete-thread', dataset: { id: th.id, subject: th.subject } })}
                 </div>
               </div>
-              <div id="thread-edit-container-${th.id}"></div>
+              <div id="thread-edit-container-${th.id}" class="empty:mt-0 mt-2"></div>
               ${expanded ? `<div id="thread-detail-${th.id}" class="mt-4 ${CLS.dividerTop}"></div>` : ''}
             </div>
           </li>`;
@@ -386,32 +395,34 @@ const todayLocalDate = () => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
 
-const newEntryFormHtml = () => `
-  <form id="new-entry-form" class="space-y-3 rounded-xl border border-line bg-surface p-3">
+// Per-thread ids so multiple open <details> can host their own entry form
+// without colliding on the same #new-entry-form / #entry_content etc.
+const newEntryFormHtml = (threadID) => `
+  <form id="new-entry-form-${threadID}" class="space-y-3 rounded-xl border border-line bg-surface p-3">
     <div class="${CLS.formHeadRow}">
       <p class="${CLS.eyebrow}">${t('people.entry_form.new_eyebrow')}</p>
       <div class="${CLS.rowInline}">
         ${button({ type: 'submit', variant: 'iconPrimary', icon: 'check', iconOnly: true, ariaLabel: t('people.aria.create_entry') })}
-        ${button({ id: 'btn-cancel-new-entry', variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('people.aria.cancel_new_entry') })}
+        ${button({ id: `btn-cancel-new-entry-${threadID}`, variant: 'icon', icon: 'close', iconOnly: true, ariaLabel: t('people.aria.cancel_new_entry') })}
       </div>
     </div>
-    ${inlineError({ id: 'new-entry-error' })}
+    ${inlineError({ id: `new-entry-error-${threadID}` })}
     <div class="${CLS.gridTwoCol} gap-3 sm:items-start">
       <div class="grid gap-1">
-        <label class="${CLS.label}" for="entry_direction">${t('people.entry_form.direction.label')}</label>
-        <select id="entry_direction" name="direction" class="${CLS.select}">
+        <label class="${CLS.label}" for="entry_direction-${threadID}">${t('people.entry_form.direction.label')}</label>
+        <select id="entry_direction-${threadID}" name="direction" class="${CLS.select}">
           ${COMMUNICATION_DIRECTIONS.map(d => `<option value="${d}">${titleCase(d)}</option>`).join('')}
         </select>
       </div>
       <div class="grid gap-1">
-        <label class="${CLS.label}" for="entry_occurred_at">${t('people.entry_form.occurred_at.label')}</label>
-        <input id="entry_occurred_at" name="occurred_at" type="date"
+        <label class="${CLS.label}" for="entry_occurred_at-${threadID}">${t('people.entry_form.occurred_at.label')}</label>
+        <input id="entry_occurred_at-${threadID}" name="occurred_at" type="date"
                value="${todayLocalDate()}" class="${CLS.input}">
       </div>
     </div>
     <div class="grid gap-1">
-      <label class="${CLS.label}" for="entry_content">${t('people.entry_form.content.label')}</label>
-      <textarea id="entry_content" name="content" rows="3" required class="${CLS.textarea}"
+      <label class="${CLS.label}" for="entry_content-${threadID}">${t('people.entry_form.content.label')}</label>
+      <textarea id="entry_content-${threadID}" name="content" rows="3" required class="${CLS.textarea}"
                 placeholder="${t('people.entry_form.content.placeholder')}"></textarea>
     </div>
   </form>
@@ -718,14 +729,24 @@ const wireThreadsPanel = () => {
     deletePersonFromList(openThreadsPerson.id, openThreadsPerson.full_name, 'threads-error');
   });
 
-  document.querySelectorAll('.js-toggle-thread').forEach(btn =>
-    btn.addEventListener('click', () => toggleThread(Number(btn.dataset.id))));
+  document.querySelectorAll('.js-toggle-thread').forEach(el => {
+    el.addEventListener('click', () => toggleThread(Number(el.dataset.id)));
+    el.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        toggleThread(Number(el.dataset.id));
+      }
+    });
+  });
+  // stopPropagation so action-button clicks don't bubble up to the card's
+  // js-toggle-thread and fire an unrelated re-render.
+  const stopThenRun = (fn) => (ev) => { ev.stopPropagation(); fn(ev); };
   document.querySelectorAll('.js-toggle-status').forEach(btn =>
-    btn.addEventListener('click', () => toggleThreadStatus(Number(btn.dataset.id), btn.dataset.status)));
+    btn.addEventListener('click', stopThenRun(() => toggleThreadStatus(Number(btn.dataset.id), btn.dataset.status))));
   document.querySelectorAll('.js-edit-thread').forEach(btn =>
-    btn.addEventListener('click', () => openEditThreadForm(Number(btn.dataset.id))));
+    btn.addEventListener('click', stopThenRun(() => openEditThreadForm(Number(btn.dataset.id)))));
   document.querySelectorAll('.js-delete-thread').forEach(btn =>
-    btn.addEventListener('click', () => deleteThreadFromList(Number(btn.dataset.id), btn.dataset.subject)));
+    btn.addEventListener('click', stopThenRun(() => deleteThreadFromList(Number(btn.dataset.id), btn.dataset.subject))));
 };
 
 const openNewThreadForm = () => {
@@ -767,17 +788,20 @@ const openEditThreadForm = async (threadID) => {
   const container = document.getElementById(`thread-edit-container-${threadID}`);
   if (!container) return;
   container.innerHTML = threadFormHtml({ mode: 'edit', initial: thread });
-  container.querySelector('#edit_thread_subject')?.focus();
-  document.getElementById('btn-cancel-edit-thread').addEventListener('click', () => {
+  // Same rationale as the detail pane: keep the edit form's clicks scoped.
+  container.addEventListener('click', (ev) => ev.stopPropagation());
+  const errorId = `edit-thread-error-${threadID}`;
+  container.querySelector(`#edit_thread_subject-${threadID}`)?.focus();
+  document.getElementById(`btn-cancel-edit-thread-${threadID}`).addEventListener('click', () => {
     container.innerHTML = '';
   });
-  document.getElementById('edit-thread-form').addEventListener('submit', async (ev) => {
+  document.getElementById(`edit-thread-form-${threadID}`).addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    setInlineError('edit-thread-error', '');
+    setInlineError(errorId, '');
     const fd = new FormData(ev.target);
     const subject = (fd.get('subject') || '').toString().trim();
     if (!subject) {
-      setInlineError('edit-thread-error', t('people.error.subject_required'));
+      setInlineError(errorId, t('people.error.subject_required'));
       return;
     }
     try {
@@ -785,7 +809,7 @@ const openEditThreadForm = async (threadID) => {
       toast(t('people.toast.thread_updated'), 'ok');
       await renderThreadsList();
     } catch (err) {
-      setInlineError('edit-thread-error', err.message);
+      setInlineError(errorId, err.message);
     }
   });
 };
@@ -836,6 +860,9 @@ const renderThreadDetail = async (threadID) => {
 
 const wireThreadDetail = (thread, entries) => {
   const container = document.getElementById(`thread-detail-${thread.id}`);
+  // Prevent every click inside the expanded detail (entry actions, drafts,
+  // summarize, etc.) from bubbling up to the card's js-toggle-thread handler.
+  container.addEventListener('click', (ev) => ev.stopPropagation());
 
   container.querySelector('#btn-new-entry').addEventListener('click', () => openNewEntryForm(thread));
 
@@ -858,18 +885,19 @@ const openNewEntryForm = (thread) => {
     container.innerHTML = '';
     return;
   }
-  container.innerHTML = newEntryFormHtml();
-  container.querySelector('#entry_content')?.focus();
-  document.getElementById('btn-cancel-new-entry').addEventListener('click', () => {
+  container.innerHTML = newEntryFormHtml(thread.id);
+  const errorId = `new-entry-error-${thread.id}`;
+  container.querySelector(`#entry_content-${thread.id}`)?.focus();
+  document.getElementById(`btn-cancel-new-entry-${thread.id}`).addEventListener('click', () => {
     container.innerHTML = '';
   });
-  document.getElementById('new-entry-form').addEventListener('submit', async (ev) => {
+  document.getElementById(`new-entry-form-${thread.id}`).addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    setInlineError('new-entry-error', '');
+    setInlineError(errorId, '');
     const fd = new FormData(ev.target);
     const content = (fd.get('content') || '').toString().trim();
     if (!content) {
-      setInlineError('new-entry-error', t('people.error.entry_content_required'));
+      setInlineError(errorId, t('people.error.entry_content_required'));
       return;
     }
     // A date input yields bare "YYYY-MM-DD", which `new Date(s)` treats as
@@ -888,7 +916,7 @@ const openNewEntryForm = (thread) => {
       toast(t('people.toast.entry_added'), 'ok');
       await renderThreadDetail(thread.id);
     } catch (err) {
-      setInlineError('new-entry-error', t('people.error.add_entry_failed', { err: err.message }));
+      setInlineError(errorId, t('people.error.add_entry_failed', { err: err.message }));
     }
   });
 };

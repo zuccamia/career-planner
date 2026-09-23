@@ -217,6 +217,31 @@ export const updateApplicationStatus = async ({ id, status, occurred_at, notes }
   return getApplication(id);
 };
 
+// undoLatestStatusChange reverts the most recent status_changed event: sets
+// the application's status back to that event's from_status and deletes the
+// event row. Returns { status } after the revert, or null if there's nothing
+// to undo (no status_changed history, or only the seed `created` event).
+export const undoLatestStatusChange = async (id) => {
+  const rows = await exec(
+    `SELECT id, from_status FROM application_events
+     WHERE application_id = ? AND type = 'status_changed' AND from_status != ''
+     ORDER BY datetime(occurred_at) DESC, id DESC
+     LIMIT 1`,
+    [id],
+  );
+  const lastTransition = rows[0];
+  if (!lastTransition) return null;
+
+  await transaction(async () => {
+    await exec(
+      `UPDATE applications SET status = ?, updated_at = datetime('now') WHERE id = ?`,
+      [lastTransition.from_status, id],
+    );
+    await exec('DELETE FROM application_events WHERE id = ?', [lastTransition.id]);
+  });
+  return { status: lastTransition.from_status };
+};
+
 // updateApplicationExtraction persists an LLM-extracted JD payload (and the
 // resolved raw text, which the server may have fetched from the posting URL).
 // Used by the "Extract description" affordance on the detail page.

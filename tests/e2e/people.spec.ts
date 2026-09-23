@@ -147,7 +147,8 @@ test.describe('local people page', () => {
       .locator('#thread-list li', { hasText: 'Intro chat' })
       .getByRole('button', { name: /^Edit thread Intro chat$/ })
       .click();
-    const editForm = page.locator('#edit-thread-form');
+    // Per-thread id lets multiple edit forms coexist; scope to the thread's li.
+    const editForm = page.locator('#thread-list li', { hasText: 'Intro chat' }).locator('form[id^="edit-thread-form-"]');
     await expect(editForm).toBeVisible();
     await expect(editForm.getByLabel('Subject')).toHaveValue('Intro chat');
     await expect(editForm.getByLabel('Channel')).toHaveValue('email');

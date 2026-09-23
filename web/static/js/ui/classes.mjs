@@ -88,6 +88,9 @@ export const CLS = {
   cardHeadRow:          'flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between',
   panelHeadRow:         'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4',
   headActions:          'flex flex-wrap shrink-0 items-center gap-2',
+  // Click/keyboard-focusable area that toggles a disclosure. Pair with
+  // role="button", tabindex="0", aria-expanded, and a keydown handler.
+  toggleTarget:    'cursor-pointer rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand',
   dividerTop:           'border-t border-line pt-4',
   hairline:             'border-b border-line',
   dot:                  'inline-block h-2 w-2 rounded-full',

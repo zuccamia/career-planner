@@ -407,8 +407,7 @@ const renderSankey = async (data) => {
   // touching nodes separate cleanly.
   const CFG = {
     width: 1080, height: 380, nodeWidth: 12, nodePadding: 22,
-    labelOffset: 10, rightPad: 16, gutterFallback: 170, cornerRadius: 5,
-    depthEasing: 1.5,
+    labelOffset: 10, gutterFallback: 170, cornerRadius: 5,
     link: { base: 0.40, hot: 0.68, muted: 0.12 },
     nodeMuted: 0.35,
     nodeStroke: '#FBFCFB',       // --color-surface
@@ -441,9 +440,6 @@ const renderSankey = async (data) => {
     })),
   });
 
-  const maxDepth = d3.max(graph.nodes, d => d.depth) || 0;
-  const frac = (depth) => (maxDepth === 0 ? 0 : Math.pow((depth || 0) / maxDepth, CFG.depthEasing));
-
   const links = svg.append('g')
     .attr('fill', 'none')
     .selectAll('path')
@@ -469,30 +465,13 @@ const renderSankey = async (data) => {
   label.append('tspan').attr('dy', '-0.15em').attr('font-size', 11).attr('font-weight', 500).attr('fill', CFG.nameFill).text(d => d.name);
   label.append('tspan').attr('dy', '1.3em').attr('font-size', 11).attr('font-weight', 500).attr('fill', CFG.countFill).text(d => d.value || 0);
 
-  let widestLabel = 0;
-  label.selectAll('tspan').each(function () {
-    const len = this.getComputedTextLength ? this.getComputedTextLength() : 0;
-    if (len > widestLabel) widestLabel = len;
-  });
-
-  margin.right = widestLabel > 0 ? CFG.labelOffset + widestLabel + CFG.rightPad : CFG.gutterFallback;
-  const rightEdge = CFG.width - margin.right - CFG.nodeWidth;
-  const usableWidth = rightEdge - margin.left;
-
-  graph.nodes.forEach(node => {
-    node.x0 = margin.left + frac(node.depth) * usableWidth;
-    node.x1 = node.x0 + CFG.nodeWidth;
-    node.labelX = node.x1 + CFG.labelOffset;
-  });
-  sankey.update(graph);
-
   rects
     .attr('x', d => d.x0).attr('y', d => d.y0)
     .attr('width', d => d.x1 - d.x0)
     .attr('height', d => Math.max(1, d.y1 - d.y0));
   links.attr('d', d3.sankeyLinkHorizontal());
   label.attr('y', d => (d.y0 + d.y1) / 2);
-  label.selectAll('tspan').attr('x', d => d.labelX);
+  label.selectAll('tspan').attr('x', d => d.x1 + CFG.labelOffset);
 
   const trace = (start) => {
     const litLinks = new Set();
