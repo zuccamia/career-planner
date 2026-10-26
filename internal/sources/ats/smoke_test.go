@@ -39,8 +39,8 @@ var smokeTargets = []smokeTarget{
 	{"ashby",      providers.NewAshby(),           "https://jobs.ashbyhq.com/openai/8fb1615c-34bf-47c4-a1d1-b7b2f836bbd3"},
 	{"eightfold",  providers.NewEightfold(),       "https://bostonscientific.eightfold.ai/careers/job/563602811481461-r-d-software-engineer-intern-arden-hills-us-mn-united-states-n-a?domain=bostonscientific.com"},
 	{"smartrec",   providers.NewSmartRecruiters(), "https://jobs.smartrecruiters.com/DeliveryHero/744000143698619-associate-commercial-groceries-instashop"},
-	{"workable",   providers.NewWorkable(),        "https://apply.workable.com/huggingface/j/002470F128"},
-	{"careerpuck", providers.NewCareerpuck(),      "https://app.careerpuck.com/job-board/domino-data-lab/job/8174947"},
+	{"workable",   providers.NewWorkable(),        "https://apply.workable.com/huggingface/j/0BD8C06DB3"},
+	{"careerpuck", providers.NewCareerpuck(),      "https://app.careerpuck.com/job-board/domino-data-lab/job/8025977"},
 }
 
 func TestExtractorSmoke(t *testing.T) {
