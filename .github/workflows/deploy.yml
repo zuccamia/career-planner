@@ -58,23 +58,28 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Sync GitHub Secrets to Secret Manager
+        # Only credentials live in Secret Manager; non-sensitive config is
+        # passed as plain env vars in the deploy step. A version is added only
+        # when the value changed, and older versions are destroyed since every
+        # binding uses :latest (each active version is billed monthly).
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
-          LLM_MODEL: ${{ secrets.LLM_MODEL }}
           LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND }}
-          SCRAPER_BASE_URL: ${{ secrets.SCRAPER_BASE_URL }}
           SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
-          SEARCH_BACKEND: ${{ secrets.SEARCH_BACKEND }}
-          SEARCH_BASE_URL: ${{ secrets.SEARCH_BASE_URL }}
           BRAVE_API_KEY: ${{ secrets.BRAVE_API_KEY }}
           BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD }}
         run: |
           set -euo pipefail
+
+          prune_old_versions() {
+            local name="$1"
+            gcloud secrets versions list "$name" --project="$PROJECT_ID" \
+              --filter="state!=DESTROYED" --sort-by=~createTime --format='value(name.basename())' \
+              | tail -n +2 \
+              | xargs -r -I{} gcloud secrets versions destroy {} --secret="$name" --project="$PROJECT_ID" --quiet
+          }
 
           upsert_secret() {
             local name="$1"
@@ -86,20 +91,20 @@ jobs:
             if ! gcloud secrets describe "$name" --project="$PROJECT_ID" >/dev/null 2>&1; then
               gcloud secrets create "$name" --project="$PROJECT_ID" --replication-policy=automatic
             fi
-            printf '%s' "$value" | gcloud secrets versions add "$name" --project="$PROJECT_ID" --data-file=-
+            local current
+            current=$(gcloud secrets versions access latest --secret="$name" --project="$PROJECT_ID" 2>/dev/null || true)
+            if [ "$current" = "$value" ]; then
+              echo "unchanged $name"
+            else
+              printf '%s' "$value" | gcloud secrets versions add "$name" --project="$PROJECT_ID" --data-file=-
+            fi
+            prune_old_versions "$name"
           }
 
-          upsert_secret cp-llm-provider              "$LLM_PROVIDER"
-          upsert_secret cp-llm-model                 "$LLM_MODEL"
-          upsert_secret cp-llm-base-url              "$LLM_BASE_URL"
-          upsert_secret cp-llm-api-key               "$LLM_API_KEY"
-          upsert_secret cp-google-oauth-client-id     "$GOOGLE_OAUTH_CLIENT_ID"
+          upsert_secret cp-llm-base-url               "$LLM_BASE_URL"
+          upsert_secret cp-llm-api-key                "$LLM_API_KEY"
           upsert_secret cp-google-oauth-client-secret "$GOOGLE_OAUTH_CLIENT_SECRET"
-          upsert_secret cp-scraper-backend            "$SCRAPER_BACKEND"
-          upsert_secret cp-scraper-base-url           "$SCRAPER_BASE_URL"
           upsert_secret cp-scraper-api-key            "$SCRAPER_API_KEY"
-          upsert_secret cp-search-backend             "$SEARCH_BACKEND"
-          upsert_secret cp-search-base-url            "$SEARCH_BASE_URL"
           upsert_secret cp-brave-api-key              "$BRAVE_API_KEY"
           upsert_secret cp-basic-auth-password        "$BASIC_AUTH_PASSWORD"
 
@@ -151,21 +156,12 @@ jobs:
             --member="serviceAccount:cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
             --role=roles/run.invoker
 
-          # Auto-fill cp-scraper-base-url with the just-deployed URL so the
-          # main service can find it. If the operator set SCRAPER_BASE_URL
-          # in GitHub Secrets to a non-Cloud-Run URL, they can leave that
-          # secret populated to override.
+          # Hand the just-deployed URL to the main service deploy unless the
+          # operator pinned SCRAPER_BASE_URL in GitHub Secrets.
           if [ -z "${{ secrets.SCRAPER_BASE_URL }}" ]; then
             SCRAPER_URL=$(gcloud run services describe "$SCRAPER_SERVICE" \
               --project "$PROJECT_ID" --region "$GCP_REGION" --format='value(status.url)')
-            # The sync step above skips creating cp-scraper-base-url when the
-            # GH secret is empty — which is the intended path here. Create it
-            # if missing so `versions add` doesn't 404 on the first deploy.
-            if ! gcloud secrets describe cp-scraper-base-url --project="$PROJECT_ID" >/dev/null 2>&1; then
-              gcloud secrets create cp-scraper-base-url --project="$PROJECT_ID" --replication-policy=automatic
-            fi
-            printf '%s' "$SCRAPER_URL" | gcloud secrets versions add cp-scraper-base-url \
-              --project="$PROJECT_ID" --data-file=-
+            echo "AUTO_SCRAPER_BASE_URL=$SCRAPER_URL" >> "$GITHUB_ENV"
           fi
 
       - name: Deploy SearXNG to Cloud Run (optional)
@@ -213,38 +209,49 @@ jobs:
             --member="serviceAccount:cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
             --role=roles/run.invoker
 
-          # Auto-fill cp-search-base-url unless the operator pinned an
-          # external instance in GitHub Secrets.
+          # Hand the just-deployed URL to the main service deploy unless the
+          # operator pinned SEARCH_BASE_URL in GitHub Secrets.
           if [ -z "${{ secrets.SEARCH_BASE_URL }}" ]; then
             SEARCH_URL=$(gcloud run services describe "$SEARCH_SERVICE" \
               --project "$PROJECT_ID" --region "$GCP_REGION" --format='value(status.url)')
-            if ! gcloud secrets describe cp-search-base-url --project="$PROJECT_ID" >/dev/null 2>&1; then
-              gcloud secrets create cp-search-base-url --project="$PROJECT_ID" --replication-policy=automatic
-            fi
-            printf '%s' "$SEARCH_URL" | gcloud secrets versions add cp-search-base-url \
-              --project="$PROJECT_ID" --data-file=-
+            echo "AUTO_SEARCH_BASE_URL=$SEARCH_URL" >> "$GITHUB_ENV"
           fi
 
       - name: Deploy to Cloud Run
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          HAS_LLM_PROVIDER: ${{ secrets.LLM_PROVIDER != '' }}
-          HAS_LLM_MODEL: ${{ secrets.LLM_MODEL != '' }}
+          LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          PINNED_SCRAPER_BASE_URL: ${{ secrets.SCRAPER_BASE_URL }}
+          PINNED_SEARCH_BASE_URL: ${{ secrets.SEARCH_BASE_URL }}
           HAS_LLM_BASE_URL: ${{ secrets.LLM_BASE_URL != '' }}
           HAS_LLM_API_KEY: ${{ secrets.LLM_API_KEY != '' }}
-          HAS_OAUTH_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID != '' }}
           HAS_OAUTH_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET != '' }}
-          HAS_SCRAPER_BACKEND: ${{ secrets.SCRAPER_BACKEND != '' }}
-          HAS_SCRAPER_BASE_URL: ${{ secrets.SCRAPER_BASE_URL != '' }}
           HAS_SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY != '' }}
-          HAS_SEARCH_BACKEND: ${{ secrets.SEARCH_BACKEND != '' }}
-          HAS_SEARCH_BASE_URL: ${{ secrets.SEARCH_BASE_URL != '' }}
           HAS_BASIC_AUTH_PASSWORD: ${{ secrets.BASIC_AUTH_PASSWORD != '' }}
-          # Bind these when a sidecar deploy above auto-populated the URL.
-          AUTO_POPULATED_SCRAPER_URL: ${{ secrets.SCRAPER_BACKEND == 'crawl4ai' && secrets.SCRAPER_BASE_URL == '' }}
-          AUTO_POPULATED_SEARCH_URL: ${{ secrets.SEARCH_BACKEND == 'searxng' && secrets.SEARCH_BASE_URL == '' }}
         run: |
           set -euo pipefail
+
+          # Non-sensitive config as plain env vars; empty values are omitted.
+          # A JSON file (valid YAML) avoids gcloud's comma-splitting of values.
+          SCRAPER_BASE_URL="${PINNED_SCRAPER_BASE_URL:-${AUTO_SCRAPER_BASE_URL:-}}"
+          SEARCH_BASE_URL="${PINNED_SEARCH_BASE_URL:-${AUTO_SEARCH_BASE_URL:-}}"
+          ENV_FILE="$RUNNER_TEMP/cloud-run-env.json"
+          jq -n \
+            --arg LLM_PROVIDER "$LLM_PROVIDER" \
+            --arg LLM_MODEL "$LLM_MODEL" \
+            --arg GOOGLE_OAUTH_CLIENT_ID "$GOOGLE_OAUTH_CLIENT_ID" \
+            --arg SCRAPER_BACKEND "$SCRAPER_BACKEND" \
+            --arg SCRAPER_BASE_URL "$SCRAPER_BASE_URL" \
+            --arg SEARCH_BACKEND "$SEARCH_BACKEND" \
+            --arg SEARCH_BASE_URL "$SEARCH_BASE_URL" \
+            '$ARGS.named | with_entries(select(.value != ""))' > "$ENV_FILE"
+
+          ENV_ARG=(--clear-env-vars)
+          if [ "$(jq 'length' "$ENV_FILE")" -gt 0 ]; then
+            ENV_ARG=(--env-vars-file="$ENV_FILE")
+          fi
 
           # Only bind secrets that were actually populated in GitHub Secrets.
           # Missing LLM_* is fine — the server boots BYOK-only in that case
@@ -255,20 +262,15 @@ jobs:
             if [ -n "$SECRETS" ]; then SECRETS+=","; fi
             SECRETS+="$1"
           }
-          [ "$HAS_LLM_PROVIDER" = "true" ] && append_secret "LLM_PROVIDER=cp-llm-provider:latest"
-          [ "$HAS_LLM_MODEL"    = "true" ] && append_secret "LLM_MODEL=cp-llm-model:latest"
           [ "$HAS_LLM_BASE_URL" = "true" ] && append_secret "LLM_BASE_URL=cp-llm-base-url:latest"
           [ "$HAS_LLM_API_KEY"  = "true" ] && append_secret "LLM_API_KEY=cp-llm-api-key:latest"
-          [ "$HAS_OAUTH_ID"     = "true" ] && append_secret "GOOGLE_OAUTH_CLIENT_ID=cp-google-oauth-client-id:latest"
           [ "$HAS_OAUTH_SECRET" = "true" ] && append_secret "GOOGLE_OAUTH_CLIENT_SECRET=cp-google-oauth-client-secret:latest"
-          [ "$HAS_SCRAPER_BACKEND" = "true" ]                                    && append_secret "SCRAPER_BACKEND=cp-scraper-backend:latest"
-          { [ "$HAS_SCRAPER_BASE_URL" = "true" ] || [ "$AUTO_POPULATED_SCRAPER_URL" = "true" ]; } && append_secret "SCRAPER_BASE_URL=cp-scraper-base-url:latest"
-          [ "$HAS_SCRAPER_API_KEY" = "true" ]                                    && append_secret "SCRAPER_API_KEY=cp-scraper-api-key:latest"
-          [ "$HAS_SEARCH_BACKEND" = "true" ]                                     && append_secret "SEARCH_BACKEND=cp-search-backend:latest"
-          { [ "$HAS_SEARCH_BASE_URL" = "true" ] || [ "$AUTO_POPULATED_SEARCH_URL" = "true" ]; } && append_secret "SEARCH_BASE_URL=cp-search-base-url:latest"
+          [ "$HAS_SCRAPER_API_KEY" = "true" ] && append_secret "SCRAPER_API_KEY=cp-scraper-api-key:latest"
           [ "$HAS_BASIC_AUTH_PASSWORD" = "true" ] && append_secret "BASIC_AUTH_PASSWORD=cp-basic-auth-password:latest"
 
-          SET_SECRETS_ARG=()
+          # --set-secrets/--clear-secrets replace every prior secret binding,
+          # so names that moved to plain env vars don't collide.
+          SET_SECRETS_ARG=(--clear-secrets)
           if [ -n "$SECRETS" ]; then
             SET_SECRETS_ARG=(--set-secrets="$SECRETS")
           fi
@@ -286,6 +288,7 @@ jobs:
             --min-instances 0 \
             --max-instances 2 \
             --service-account "cp-runtime@${PROJECT_ID}.iam.gserviceaccount.com" \
+            "${ENV_ARG[@]}" \
             "${SET_SECRETS_ARG[@]}"
 
       - name: Show service URL
